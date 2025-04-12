@@ -190,7 +190,165 @@ public class CardUIManager : MonoBehaviourPunCallbacks
         if (localPlayer == null || !localPlayer.photonView.IsMine || !localPlayer.IsMyTurn)
             return;
         
-        // For now, just play the card with no target
-        localPlayer.PlayCard(cardIndex, -1);
+        // Show targeting UI to choose between opponent or pet
+        ShowTargetingUI(cardIndex);
+    }
+    
+    private void ShowTargetingUI(int cardIndex)
+    {
+        PlayerController localPlayer = FindObjectOfType<PlayerController>();
+        if (localPlayer == null) return;
+        
+        // Create targeting popup
+        GameObject targetingUI = new GameObject("TargetingUI");
+        targetingUI.transform.SetParent(handPanel.transform.parent, false);
+        
+        RectTransform targetingRect = targetingUI.AddComponent<RectTransform>();
+        targetingRect.anchorMin = new Vector2(0.5f, 0.3f);
+        targetingRect.anchorMax = new Vector2(0.5f, 0.5f);
+        targetingRect.sizeDelta = new Vector2(300, 150);
+        
+        Image bgImage = targetingUI.AddComponent<Image>();
+        bgImage.color = new Color(0.1f, 0.1f, 0.1f, 0.9f);
+        
+        // Create vertical layout
+        VerticalLayoutGroup layout = targetingUI.AddComponent<VerticalLayoutGroup>();
+        layout.spacing = 10;
+        layout.padding = new RectOffset(10, 10, 10, 10);
+        layout.childAlignment = TextAnchor.MiddleCenter;
+        
+        // Create title
+        GameObject titleObj = new GameObject("Title");
+        titleObj.transform.SetParent(targetingUI.transform, false);
+        
+        TextMeshProUGUI titleText = titleObj.AddComponent<TextMeshProUGUI>();
+        titleText.text = "Select Target";
+        titleText.fontSize = 20;
+        titleText.alignment = TextAlignmentOptions.Center;
+        titleText.color = Color.white;
+        
+        // Create opponent button
+        GameObject opponentBtn = new GameObject("OpponentButton");
+        opponentBtn.transform.SetParent(targetingUI.transform, false);
+        
+        Image opponentBtnImage = opponentBtn.AddComponent<Image>();
+        opponentBtnImage.color = new Color(0.8f, 0.2f, 0.2f, 1); // Red for opponent
+        
+        Button opponentButton = opponentBtn.AddComponent<Button>();
+        opponentButton.targetGraphic = opponentBtnImage;
+        
+        GameObject opponentTextObj = new GameObject("Text");
+        opponentTextObj.transform.SetParent(opponentBtn.transform, false);
+        
+        TextMeshProUGUI opponentText = opponentTextObj.AddComponent<TextMeshProUGUI>();
+        opponentText.text = "Enemy Monster";
+        opponentText.fontSize = 16;
+        opponentText.alignment = TextAlignmentOptions.Center;
+        opponentText.color = Color.white;
+        
+        RectTransform opponentTextRect = opponentTextObj.GetComponent<RectTransform>();
+        opponentTextRect.anchorMin = Vector2.zero;
+        opponentTextRect.anchorMax = Vector2.one;
+        opponentTextRect.sizeDelta = Vector2.zero;
+        
+        // Create pet button
+        GameObject petBtn = new GameObject("PetButton");
+        petBtn.transform.SetParent(targetingUI.transform, false);
+        
+        Image petBtnImage = petBtn.AddComponent<Image>();
+        petBtnImage.color = new Color(0.2f, 0.6f, 0.8f, 1); // Blue for pet
+        
+        Button petButton = petBtn.AddComponent<Button>();
+        petButton.targetGraphic = petBtnImage;
+        
+        GameObject petTextObj = new GameObject("Text");
+        petTextObj.transform.SetParent(petBtn.transform, false);
+        
+        TextMeshProUGUI petText = petTextObj.AddComponent<TextMeshProUGUI>();
+        petText.text = "My Pet";
+        petText.fontSize = 16;
+        petText.alignment = TextAlignmentOptions.Center;
+        petText.color = Color.white;
+        
+        RectTransform petTextRect = petTextObj.GetComponent<RectTransform>();
+        petTextRect.anchorMin = Vector2.zero;
+        petTextRect.anchorMax = Vector2.one;
+        petTextRect.sizeDelta = Vector2.zero;
+        
+        // Create cancel button
+        GameObject cancelBtn = new GameObject("CancelButton");
+        cancelBtn.transform.SetParent(targetingUI.transform, false);
+        
+        Image cancelBtnImage = cancelBtn.AddComponent<Image>();
+        cancelBtnImage.color = new Color(0.5f, 0.5f, 0.5f, 1); // Gray for cancel
+        
+        Button cancelButton = cancelBtn.AddComponent<Button>();
+        cancelButton.targetGraphic = cancelBtnImage;
+        
+        GameObject cancelTextObj = new GameObject("Text");
+        cancelTextObj.transform.SetParent(cancelBtn.transform, false);
+        
+        TextMeshProUGUI cancelText = cancelTextObj.AddComponent<TextMeshProUGUI>();
+        cancelText.text = "Cancel";
+        cancelText.fontSize = 16;
+        cancelText.alignment = TextAlignmentOptions.Center;
+        cancelText.color = Color.white;
+        
+        RectTransform cancelTextRect = cancelTextObj.GetComponent<RectTransform>();
+        cancelTextRect.anchorMin = Vector2.zero;
+        cancelTextRect.anchorMax = Vector2.one;
+        cancelTextRect.sizeDelta = Vector2.zero;
+        
+        // Button actions
+        opponentButton.onClick.AddListener(() => {
+            localPlayer.PlayCard(cardIndex, -1); // -1 for opponent
+            Destroy(targetingUI);
+        });
+        
+        petButton.onClick.AddListener(() => {
+            localPlayer.PlayCardOnPet(cardIndex);
+            Destroy(targetingUI);
+        });
+        
+        cancelButton.onClick.AddListener(() => {
+            Destroy(targetingUI);
+        });
+    }
+    
+    // Add helper method to get a card's details if needed
+    public Card GetCardDetails(string cardId)
+    {
+        // This would ideally be a lookup in a card database
+        // For now, just return a basic card
+        switch (cardId)
+        {
+            case "strike_basic":
+                return new Card
+                {
+                    CardId = "strike_basic",
+                    CardName = "Strike",
+                    CardDescription = "Deal 6 damage.",
+                    EnergyCost = 1,
+                    CardType = CardType.Attack,
+                    CardRarity = CardRarity.Basic,
+                    DamageAmount = 6
+                };
+                
+            case "defend_basic":
+                return new Card
+                {
+                    CardId = "defend_basic",
+                    CardName = "Defend",
+                    CardDescription = "Gain 5 Block.",
+                    EnergyCost = 1,
+                    CardType = CardType.Skill,
+                    CardRarity = CardRarity.Basic,
+                    BlockAmount = 5
+                };
+                
+            default:
+                Debug.LogWarning("Unknown card ID: " + cardId);
+                return null;
+        }
     }
 }

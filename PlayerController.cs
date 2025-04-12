@@ -49,18 +49,23 @@ public class PlayerController : MonoBehaviourPunCallbacks, IPunObservable
     [SerializeField] private List<Card> discardPile = new List<Card>();
     [SerializeField] private int handSize = 5;
     
+    // Pet References
+    [Header("Pet References")]
+    [SerializeField] private MonsterController petMonster; // Reference to the player's own monster
+    
     // Properties
-public string PlayerName { get => playerName; private set => playerName = value; }
-public int MaxHealth { get => maxHealth; set => maxHealth = value; }
-public int CurrentHealth { get => currentHealth; set => currentHealth = value; }
-public int MaxEnergy { get => maxEnergy; set => maxEnergy = value; }
-public int CurrentEnergy { get => currentEnergy; set => currentEnergy = value; }
-public int Block { get => block; set => block = value; }
-public int StrengthModifier { get => strengthModifier; set => strengthModifier = value; }
-public int DexterityModifier { get => dexterityModifier; set => dexterityModifier = value; }
-public int RoundsWon { get => roundsWon; set => roundsWon = value; }
-public bool IsMyTurn { get => isMyTurn; set => isMyTurn = value; }
-public bool IsInCombat { get => isInCombat; set => isInCombat = value; }
+    public string PlayerName { get => playerName; private set => playerName = value; }
+    public int MaxHealth { get => maxHealth; set => maxHealth = value; }
+    public int CurrentHealth { get => currentHealth; set => currentHealth = value; }
+    public int MaxEnergy { get => maxEnergy; set => maxEnergy = value; }
+    public int CurrentEnergy { get => currentEnergy; set => currentEnergy = value; }
+    public int Block { get => block; set => block = value; }
+    public int StrengthModifier { get => strengthModifier; set => strengthModifier = value; }
+    public int DexterityModifier { get => dexterityModifier; set => dexterityModifier = value; }
+    public int RoundsWon { get => roundsWon; set => roundsWon = value; }
+    public bool IsMyTurn { get => isMyTurn; set => isMyTurn = value; }
+    public bool IsInCombat { get => isInCombat; set => isInCombat = value; }
+    public MonsterController PetMonster { get => petMonster; set => petMonster = value; }
     
     #endregion
     
@@ -278,6 +283,110 @@ public bool IsInCombat { get => isInCombat; set => isInCombat = value; }
         dexterityText.text = "Dexterity: " + dexterityModifier;
         RectTransform dexterityRect = dexterityObj.GetComponent<RectTransform>();
         dexterityRect.sizeDelta = new Vector2(0, 30);
+        
+        // Create pet info panel
+        CreatePetInfoPanel();
+    }
+    
+    private void CreatePetInfoPanel()
+    {
+        // Create a panel to show basic info about the player's pet
+        GameObject petPanel = new GameObject("PetInfoPanel");
+        petPanel.transform.SetParent(playerUICanvas.transform, false);
+        
+        RectTransform petPanelRect = petPanel.AddComponent<RectTransform>();
+        petPanelRect.anchorMin = new Vector2(0.8f, 1);
+        petPanelRect.anchorMax = new Vector2(1, 1);
+        petPanelRect.pivot = new Vector2(1, 1);
+        petPanelRect.anchoredPosition = new Vector2(-20, -20);
+        petPanelRect.sizeDelta = new Vector2(0, 100);
+        
+        Image petPanelImage = petPanel.AddComponent<Image>();
+        petPanelImage.color = new Color(0.3f, 0.3f, 0.3f, 0.8f);
+        
+        // Create title
+        GameObject petTitleObj = new GameObject("PetTitle");
+        petTitleObj.transform.SetParent(petPanel.transform, false);
+        
+        TextMeshProUGUI petTitleText = petTitleObj.AddComponent<TextMeshProUGUI>();
+        petTitleText.text = "My Pet";
+        petTitleText.fontSize = 18;
+        petTitleText.alignment = TextAlignmentOptions.Center;
+        petTitleText.color = Color.white;
+        
+        RectTransform petTitleRect = petTitleObj.GetComponent<RectTransform>();
+        petTitleRect.anchorMin = new Vector2(0, 0.7f);
+        petTitleRect.anchorMax = new Vector2(1, 1);
+        petTitleRect.sizeDelta = Vector2.zero;
+        
+        // Pet status will be updated when the pet is assigned
+    }
+    
+    private void UpdatePetInfoUI()
+    {
+        if (!photonView.IsMine || petMonster == null) return;
+        
+        // Update pet info in the UI
+        Transform petPanel = playerUICanvas.transform.Find("PetInfoPanel");
+        if (petPanel == null) return;
+        
+        // Check if pet info elements already exist
+        Transform petNameObj = petPanel.Find("PetName");
+        Transform petHealthObj = petPanel.Find("PetHealth");
+        
+        // Create or update pet name
+        if (petNameObj == null)
+        {
+            // Create pet name
+            GameObject nameObj = new GameObject("PetName");
+            nameObj.transform.SetParent(petPanel, false);
+            
+            TextMeshProUGUI nameText = nameObj.AddComponent<TextMeshProUGUI>();
+            nameText.text = petMonster.MonsterName;
+            nameText.fontSize = 16;
+            nameText.alignment = TextAlignmentOptions.Center;
+            nameText.color = Color.white;
+            
+            RectTransform nameRect = nameObj.GetComponent<RectTransform>();
+            nameRect.anchorMin = new Vector2(0, 0.4f);
+            nameRect.anchorMax = new Vector2(1, 0.7f);
+            nameRect.sizeDelta = Vector2.zero;
+        }
+        else
+        {
+            TextMeshProUGUI nameText = petNameObj.GetComponent<TextMeshProUGUI>();
+            if (nameText != null)
+            {
+                nameText.text = petMonster.MonsterName;
+            }
+        }
+        
+        // Create or update pet health
+        if (petHealthObj == null)
+        {
+            // Create pet health
+            GameObject healthObj = new GameObject("PetHealth");
+            healthObj.transform.SetParent(petPanel, false);
+            
+            TextMeshProUGUI healthText = healthObj.AddComponent<TextMeshProUGUI>();
+            healthText.text = $"HP: {petMonster.CurrentHealth}/{petMonster.MaxHealth}";
+            healthText.fontSize = 14;
+            healthText.alignment = TextAlignmentOptions.Center;
+            healthText.color = Color.white;
+            
+            RectTransform healthRect = healthObj.GetComponent<RectTransform>();
+            healthRect.anchorMin = new Vector2(0, 0.1f);
+            healthRect.anchorMax = new Vector2(1, 0.4f);
+            healthRect.sizeDelta = Vector2.zero;
+        }
+        else
+        {
+            TextMeshProUGUI healthText = petHealthObj.GetComponent<TextMeshProUGUI>();
+            if (healthText != null)
+            {
+                healthText.text = $"HP: {petMonster.CurrentHealth}/{petMonster.MaxHealth}";
+            }
+        }
     }
     
     private void UpdateUI()
@@ -305,6 +414,12 @@ public bool IsInCombat { get => isInCombat; set => isInCombat = value; }
         
         if (dexterityText != null)
             dexterityText.text = "Dexterity: " + dexterityModifier;
+            
+        // Update pet info if available
+        if (petMonster != null)
+        {
+            UpdatePetInfoUI();
+        }
     }
     
     #endregion
@@ -369,6 +484,13 @@ public bool IsInCombat { get => isInCombat; set => isInCombat = value; }
         
         // Update UI
         UpdateUI();
+        
+        // Update battle overview UI
+        BattleUIManager battleUI = FindObjectOfType<BattleUIManager>();
+        if (battleUI != null)
+        {
+            battleUI.UpdateBattleCard(photonView.Owner.ActorNumber, true, currentHealth, maxHealth);
+        }
     }
     
     [PunRPC]
@@ -376,6 +498,13 @@ public bool IsInCombat { get => isInCombat; set => isInCombat = value; }
     {
         currentHealth = Mathf.Min(maxHealth, currentHealth + amount);
         UpdateUI();
+        
+        // Update battle overview UI
+        BattleUIManager battleUI = FindObjectOfType<BattleUIManager>();
+        if (battleUI != null)
+        {
+            battleUI.UpdateBattleCard(photonView.Owner.ActorNumber, true, currentHealth, maxHealth);
+        }
     }
     
     [PunRPC]
@@ -427,6 +556,93 @@ public bool IsInCombat { get => isInCombat; set => isInCombat = value; }
         opponentMonster = monster;
     }
     
+    public void SetPetMonster(MonsterController monster)
+    {
+        petMonster = monster;
+        if (monster != null)
+        {
+            Debug.Log($"Set pet monster for player {playerName}: {monster.MonsterName}");
+            UpdatePetInfoUI();
+        }
+    }
+    
+    public void PlayCardOnPet(int cardIndex)
+    {
+        if (!photonView.IsMine || !isMyTurn || cardIndex >= hand.Count) return;
+        
+        Card cardToPlay = hand[cardIndex];
+        
+        // Check if we have enough energy
+        if (currentEnergy < cardToPlay.EnergyCost)
+        {
+            Debug.Log("Not enough energy to play this card!");
+            return;
+        }
+        
+        // Make sure we have a pet to support
+        if (petMonster == null)
+        {
+            Debug.Log("No pet monster to support!");
+            return;
+        }
+        
+        // Spend energy
+        currentEnergy -= cardToPlay.EnergyCost;
+        
+        // Apply card effects to pet based on type
+        switch (cardToPlay.CardType)
+        {
+            case CardType.Attack:
+                // For attack cards, add temporary strength to pet
+                petMonster.ModifyStrength(cardToPlay.DamageAmount / 2);
+                break;
+                
+            case CardType.Skill:
+                // Apply block to pet
+                if (cardToPlay.BlockAmount > 0)
+                {
+                    petMonster.AddBlock(cardToPlay.BlockAmount);
+                }
+                
+                // Apply other effects
+                if (cardToPlay.HealAmount > 0)
+                {
+                    petMonster.Heal(cardToPlay.HealAmount);
+                }
+                
+                if (cardToPlay.StrengthModifier != 0)
+                {
+                    petMonster.ModifyStrength(cardToPlay.StrengthModifier);
+                }
+                
+                if (cardToPlay.DexterityModifier != 0)
+                {
+                    petMonster.ModifyDexterity(cardToPlay.DexterityModifier);
+                }
+                break;
+                
+            case CardType.Power:
+                // Handle persistent effects for pet
+                break;
+        }
+        
+        // Remove card from hand and add to discard
+        hand.RemoveAt(cardIndex);
+        
+        if (cardToPlay.Exhaust)
+        {
+            // Exhausted cards don't go to discard
+        }
+        else if (cardToPlay.CardType != CardType.Power)
+        {
+            discardPile.Add(cardToPlay);
+        }
+        
+        // Update UI
+        cardUIManager?.RemoveCardFromHand(cardIndex);
+        UpdateUI();
+    }
+    
     #endregion
     
     #region Card Methods
@@ -467,6 +683,31 @@ public bool IsInCombat { get => isInCombat; set => isInCombat = value; }
             };
             deck.Add(defendCard);
         }
+        
+        // Add pet support cards
+        Card supportCard = new Card
+        {
+            CardId = "pet_support",
+            CardName = "Pet Support",
+            CardDescription = "Give your pet 4 Block.",
+            EnergyCost = 1,
+            CardType = CardType.Skill,
+            CardRarity = CardRarity.Basic,
+            BlockAmount = 4
+        };
+        deck.Add(supportCard);
+        
+        Card powerUpCard = new Card
+        {
+            CardId = "pet_power",
+            CardName = "Power Up",
+            CardDescription = "Give your pet 2 Strength.",
+            EnergyCost = 1,
+            CardType = CardType.Skill,
+            CardRarity = CardRarity.Basic,
+            StrengthModifier = 2
+        };
+        deck.Add(powerUpCard);
         
         // Shuffle the deck
         ShuffleDeck();

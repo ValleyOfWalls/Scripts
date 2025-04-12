@@ -14,6 +14,7 @@ public class GameManager : MonoBehaviourPunCallbacks
     [SerializeField] private UIManager uiManager;
     [SerializeField] private LobbyManager lobbyManager;
     [SerializeField] private GameplayManager gameplayManager;
+    [SerializeField] private BattleUIManager battleUIManager;
 
     // Game state
     public enum GameState { Connecting, Lobby, Draft, Battle }
@@ -78,6 +79,11 @@ public class GameManager : MonoBehaviourPunCallbacks
         if (gameplayManager == null)
         {
             gameplayManager = CreateManager<GameplayManager>("GameplayManager");
+        }
+        
+        if (battleUIManager == null)
+        {
+            battleUIManager = CreateManager<BattleUIManager>("BattleUIManager");
         }
 
         // Allow UI Manager to initialize before setting state
@@ -254,6 +260,11 @@ public class GameManager : MonoBehaviourPunCallbacks
     public GameplayManager GetGameplayManager()
     {
         return gameplayManager;
+    }
+    
+    public BattleUIManager GetBattleUIManager()
+    {
+        return battleUIManager;
     }
 }
 

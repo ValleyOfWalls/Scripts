@@ -13,7 +13,7 @@ public class GameplayManager : MonoBehaviourPunCallbacks
 
     // Game parameters
     [Header("Game Parameters")]
-    [SerializeField] private int pointsToWin = 3;
+    [SerializeField] private int pointsToWin = 10; // Changed to 10 as per game description
     [SerializeField] private int maxRounds = 10;
     [SerializeField] private int currentRound = 0;
     [SerializeField] private GamePhase currentPhase = GamePhase.Setup;
@@ -52,6 +52,7 @@ public class GameplayManager : MonoBehaviourPunCallbacks
     private NetworkManager networkManager;
     private DeckManager deckManager;
     private CardUIManager cardUIManager;
+    private BattleUIManager battleUIManager;
     
     // Properties
     public GamePhase CurrentPhase { get => currentPhase; }
@@ -89,6 +90,13 @@ public class GameplayManager : MonoBehaviourPunCallbacks
             GameObject cardUIMgrObj = new GameObject("CardUIManager");
             cardUIMgrObj.transform.SetParent(transform);
             cardUIManager = cardUIMgrObj.AddComponent<CardUIManager>();
+        }
+        
+        if (battleUIManager == null)
+        {
+            GameObject battleUIMgrObj = new GameObject("BattleUIManager");
+            battleUIMgrObj.transform.SetParent(transform);
+            battleUIManager = battleUIMgrObj.AddComponent<BattleUIManager>();
         }
         
         // Setup cross-references
@@ -384,6 +392,15 @@ public class GameplayManager : MonoBehaviourPunCallbacks
             monster.IsInCombat = true;
         }
         
+        // Establish player-pet relationships
+        EstablishPlayerPetRelationships();
+        
+        // Show battle overview UI
+        if (battleUIManager != null)
+        {
+            battleUIManager.ShowBattleOverview(playerMonsterPairs);
+        }
+        
         // Show phase announcement
         ShowPhaseAnnouncement($"Battle Phase - Round {currentRound}");
         
@@ -391,6 +408,25 @@ public class GameplayManager : MonoBehaviourPunCallbacks
         if (PhotonNetwork.IsMasterClient)
         {
             StartCoroutine(StartCombatTurns());
+        }
+    }
+    
+    public void EstablishPlayerPetRelationships()
+    {
+        // For each player, set their pet monster
+        foreach (var playerEntry in players)
+        {
+            int playerActorNumber = playerEntry.Key;
+            PlayerController player = playerEntry.Value;
+            
+            // Find the monster owned by this player
+            if (monsters.ContainsKey(playerActorNumber))
+            {
+                MonsterController pet = monsters[playerActorNumber];
+                
+                // Set the relationship
+                player.SetPetMonster(pet);
+            }
         }
     }
     
@@ -592,6 +628,12 @@ public class GameplayManager : MonoBehaviourPunCallbacks
         // Reset players who have finished drafting
         playersFinishedDraft.Clear();
         
+        // Hide battle overview if active
+        if (battleUIManager != null)
+        {
+            battleUIManager.HideBattleOverview();
+        }
+        
         // Show phase announcement
         ShowPhaseAnnouncement($"Draft Phase - Round {currentRound}");
         
@@ -685,19 +727,75 @@ public class GameplayManager : MonoBehaviourPunCallbacks
                 break;
                 
             case UpgradeType.PlayerCardAdd:
-                // We'd need to generate a random card here
-                upgrade.CardId = "basic_strike";  // Placeholder
-                upgrade.Description = "Add a basic Strike card to player's deck";
+                // Generate a random card
+                upgrade.CardId = GetRandomCardId();
+                upgrade.Description = $"Add {GetCardNameFromId(upgrade.CardId)} to player's deck";
                 break;
                 
             case UpgradeType.MonsterCardAdd:
-                // We'd need to generate a random card here
-                upgrade.CardId = "monster_attack";  // Placeholder
-                upgrade.Description = "Add a basic Attack card to monster's deck";
+                // Generate a random monster card
+                upgrade.CardId = GetRandomMonsterCardId();
+                upgrade.Description = $"Add {GetMonsterCardNameFromId(upgrade.CardId)} to monster's deck";
                 break;
         }
         
         return upgrade;
+    }
+    
+    private string GetRandomCardId()
+    {
+        string[] cardIds = {
+            "strike_basic",
+            "defend_basic",
+            "pet_support",
+            "pet_power",
+            "energy_potion",
+            "draw_card",
+            "strength_potion"
+        };
+        
+        return cardIds[Random.Range(0, cardIds.Length)];
+    }
+    
+    private string GetCardNameFromId(string cardId)
+    {
+        switch (cardId)
+        {
+            case "strike_basic": return "Strike";
+            case "defend_basic": return "Defend";
+            case "pet_support": return "Pet Support";
+            case "pet_power": return "Power Up";
+            case "energy_potion": return "Energy Potion";
+            case "draw_card": return "Card Draw";
+            case "strength_potion": return "Strength Potion";
+            default: return "Unknown Card";
+        }
+    }
+    
+    private string GetRandomMonsterCardId()
+    {
+        string[] cardIds = {
+            "monster_attack_basic",
+            "monster_defend_basic",
+            "monster_buff_strength",
+            "monster_buff_dexterity",
+            "monster_heal"
+        };
+        
+        return cardIds[Random.Range(0, cardIds.Length)];
+    }
+    
+    private string GetMonsterCardNameFromId(string cardId)
+    {
+        switch (cardId)
+        {
+            case "monster_attack_basic": return "Monster Strike";
+            case "monster_defend_basic": return "Monster Defend";
+            case "monster_buff_strength": return "Monster Rage";
+            case "monster_buff_dexterity": return "Monster Agility";
+            case "monster_heal": return "Monster Heal";
+            default: return "Unknown Monster Card";
+        }
     }
     
     [PunRPC]
@@ -941,10 +1039,10 @@ public class GameplayManager : MonoBehaviourPunCallbacks
         
         switch (cardId)
         {
-            case "basic_strike":
+            case "strike_basic":
                 return new Card
                 {
-                    CardId = "basic_strike",
+                    CardId = "strike_basic",
                     CardName = "Strike",
                     CardDescription = "Deal 6 damage.",
                     EnergyCost = 1,
@@ -953,16 +1051,76 @@ public class GameplayManager : MonoBehaviourPunCallbacks
                     DamageAmount = 6
                 };
                 
-            case "basic_defend":
+            case "defend_basic":
                 return new Card
                 {
-                    CardId = "basic_defend",
+                    CardId = "defend_basic",
                     CardName = "Defend",
                     CardDescription = "Gain 5 Block.",
                     EnergyCost = 1,
                     CardType = CardType.Skill,
                     CardRarity = CardRarity.Basic,
                     BlockAmount = 5
+                };
+                
+            case "pet_support":
+                return new Card
+                {
+                    CardId = "pet_support",
+                    CardName = "Pet Support",
+                    CardDescription = "Give your pet 4 Block.",
+                    EnergyCost = 1,
+                    CardType = CardType.Skill,
+                    CardRarity = CardRarity.Basic,
+                    BlockAmount = 4
+                };
+                
+            case "pet_power":
+                return new Card
+                {
+                    CardId = "pet_power",
+                    CardName = "Power Up",
+                    CardDescription = "Give your pet 2 Strength.",
+                    EnergyCost = 1,
+                    CardType = CardType.Skill,
+                    CardRarity = CardRarity.Basic,
+                    StrengthModifier = 2
+                };
+                
+            case "energy_potion":
+                return new Card
+                {
+                    CardId = "energy_potion",
+                    CardName = "Energy Potion",
+                    CardDescription = "Gain 2 Energy.",
+                    EnergyCost = 0,
+                    CardType = CardType.Skill,
+                    CardRarity = CardRarity.Common,
+                    // Energy gain would need special handling
+                };
+                
+            case "draw_card":
+                return new Card
+                {
+                    CardId = "draw_card",
+                    CardName = "Card Draw",
+                    CardDescription = "Draw 2 cards.",
+                    EnergyCost = 1,
+                    CardType = CardType.Skill,
+                    CardRarity = CardRarity.Common,
+                    DrawAmount = 2
+                };
+                
+            case "strength_potion":
+                return new Card
+                {
+                    CardId = "strength_potion",
+                    CardName = "Strength Potion",
+                    CardDescription = "Gain 2 Strength.",
+                    EnergyCost = 1,
+                    CardType = CardType.Skill,
+                    CardRarity = CardRarity.Common,
+                    StrengthModifier = 2
                 };
                 
             default:
@@ -1025,9 +1183,25 @@ public class GameplayManager : MonoBehaviourPunCallbacks
                 
                 string winnerName = PhotonNetwork.CurrentRoom.GetPlayer(score.Key).NickName;
                 ShowWinner(winnerName);
+                
+                // Notify all players about the winner
+                photonView.RPC("RPC_AnnounceWinner", RpcTarget.All, score.Key, winnerName);
                 break;
             }
         }
+    }
+    
+    [PunRPC]
+    private void RPC_AnnounceWinner(int winnerActorNumber, string winnerName)
+    {
+        // Show game over UI with winner announcement
+        if (winnerText != null)
+        {
+            winnerText.text = $"Winner: {winnerName} with {playerScores[winnerActorNumber]} points!";
+        }
+        
+        // Show game over panel
+        ShowGameOver();
     }
     
     private void ShowGameOver()
@@ -1124,7 +1298,7 @@ public class GameplayManager : MonoBehaviourPunCallbacks
         winnerText.color = Color.white;
         winnerText.text = "Winner: ";
         
-        RectTransform winnerTextRect = winnerTextObj.GetComponent<RectTransform>();
+       RectTransform winnerTextRect = winnerTextObj.GetComponent<RectTransform>();
         winnerTextRect.anchorMin = new Vector2(0.5f, 0.5f);
         winnerTextRect.anchorMax = new Vector2(0.5f, 0.6f);
         winnerTextRect.sizeDelta = new Vector2(600, 80);
@@ -1171,7 +1345,7 @@ public class GameplayManager : MonoBehaviourPunCallbacks
         RectTransform draftRect = draftPanel.AddComponent<RectTransform>();
         draftRect.anchorMin = new Vector2(0.5f, 0.5f);
         draftRect.anchorMax = new Vector2(0.5f, 0.5f);
-        draftRect.sizeDelta = new Vector2(800, 400);
+        draftRect.sizeDelta = new Vector2(800, 500); // Increased height for better UI
         
         Image draftBg = draftPanel.AddComponent<Image>();
         draftBg.color = new Color(0, 0, 0, 0.9f);
@@ -1225,28 +1399,78 @@ public class GameplayManager : MonoBehaviourPunCallbacks
         titleRect.anchorMax = new Vector2(1, 1);
         titleRect.sizeDelta = Vector2.zero;
         
-        // Create upgrade options container
-        GameObject optionsContainer = new GameObject("OptionsContainer");
-        optionsContainer.transform.SetParent(draftPanel.transform, false);
+        // Add subtitle explaining draft mechanics
+        GameObject subtitleObj = new GameObject("DraftSubtitle");
+        subtitleObj.transform.SetParent(draftPanel.transform, false);
         
-        RectTransform optionsRect = optionsContainer.AddComponent<RectTransform>();
-        optionsRect.anchorMin = new Vector2(0.1f, 0.2f);
-        optionsRect.anchorMax = new Vector2(0.9f, 0.85f);
-        optionsRect.sizeDelta = Vector2.zero;
+        TextMeshProUGUI subtitleText = subtitleObj.AddComponent<TextMeshProUGUI>();
+        subtitleText.fontSize = 16;
+        subtitleText.alignment = TextAlignmentOptions.Center;
+        subtitleText.color = new Color(0.8f, 0.8f, 0.8f, 1);
+        subtitleText.text = "Choose one upgrade. Remaining options will be passed to the next player.";
+        
+        RectTransform subtitleRect = subtitleObj.GetComponent<RectTransform>();
+        subtitleRect.anchorMin = new Vector2(0, 0.8f);
+        subtitleRect.anchorMax = new Vector2(1, 0.85f);
+        subtitleRect.sizeDelta = Vector2.zero;
+        
+        // Create upgrade options container with scroll view for many options
+        GameObject scrollViewObj = new GameObject("ScrollView");
+        scrollViewObj.transform.SetParent(draftPanel.transform, false);
+        
+        RectTransform scrollRect = scrollViewObj.AddComponent<RectTransform>();
+        scrollRect.anchorMin = new Vector2(0.05f, 0.1f);
+        scrollRect.anchorMax = new Vector2(0.95f, 0.8f);
+        scrollRect.sizeDelta = Vector2.zero;
+        
+        ScrollRect scrollView = scrollViewObj.AddComponent<ScrollRect>();
+        
+        // Create viewport
+        GameObject viewportObj = new GameObject("Viewport");
+        viewportObj.transform.SetParent(scrollViewObj.transform, false);
+        
+        RectTransform viewportRect = viewportObj.AddComponent<RectTransform>();
+        viewportRect.anchorMin = Vector2.zero;
+        viewportRect.anchorMax = Vector2.one;
+        viewportRect.sizeDelta = Vector2.zero;
+        
+        Image viewportImage = viewportObj.AddComponent<Image>();
+        viewportImage.color = new Color(0.1f, 0.1f, 0.1f, 0.5f);
+        
+        Mask viewportMask = viewportObj.AddComponent<Mask>();
+        viewportMask.showMaskGraphic = false;
+        
+        // Create content container
+        GameObject contentObj = new GameObject("Content");
+        contentObj.transform.SetParent(viewportObj.transform, false);
+        
+        RectTransform contentRect = contentObj.AddComponent<RectTransform>();
+        contentRect.anchorMin = Vector2.zero;
+        contentRect.anchorMax = new Vector2(1, 1);
+        contentRect.sizeDelta = Vector2.zero;
         
         // Add grid layout
-        GridLayoutGroup gridLayout = optionsContainer.AddComponent<GridLayoutGroup>();
-        gridLayout.cellSize = new Vector2(180, 200);
+        GridLayoutGroup gridLayout = contentObj.AddComponent<GridLayoutGroup>();
+        gridLayout.cellSize = new Vector2(180, 220);
         gridLayout.spacing = new Vector2(20, 20);
         gridLayout.padding = new RectOffset(10, 10, 10, 10);
-        gridLayout.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
-        gridLayout.constraintCount = 3;
+        gridLayout.constraint = GridLayoutGroup.Constraint.Flexible;
+        
+        // Calculate columns based on upgrade count
+        int columns = Mathf.Min(3, upgrades.Count);
+        gridLayout.constraintCount = columns;
         
         // Add upgrade options
         for (int i = 0; i < upgrades.Count; i++)
         {
-            CreateUpgradeOption(optionsContainer, upgrades[i], i);
+            CreateUpgradeOption(contentObj, upgrades[i], i);
         }
+        
+        // Configure scroll view
+        scrollView.content = contentRect;
+        scrollView.viewport = viewportRect;
+        scrollView.horizontal = false;
+        scrollView.vertical = true;
         
         // Show panel
         draftPanel.SetActive(true);
@@ -1290,6 +1514,19 @@ public class GameplayManager : MonoBehaviourPunCallbacks
         vertLayout.childForceExpandWidth = true;
         vertLayout.childForceExpandHeight = false;
         
+        // Create icon
+        GameObject iconObj = new GameObject("Icon");
+        iconObj.transform.SetParent(optionObj.transform, false);
+        
+        Image iconImage = iconObj.AddComponent<Image>();
+        iconImage.color = new Color(1, 1, 1, 0.8f);
+        
+        // Set icon based on upgrade type
+        iconImage.sprite = CreateCircleSprite(); // You could create different sprites based on upgrade type
+        
+        RectTransform iconRect = iconObj.GetComponent<RectTransform>();
+        iconRect.sizeDelta = new Vector2(50, 50);
+        
         // Create title
         GameObject titleObj = new GameObject("Title");
         titleObj.transform.SetParent(optionObj.transform, false);
@@ -1314,7 +1551,41 @@ public class GameplayManager : MonoBehaviourPunCallbacks
         descText.text = upgrade.Description;
         
         RectTransform descRect = descObj.GetComponent<RectTransform>();
-        descRect.sizeDelta = new Vector2(0, 60);
+        descRect.sizeDelta = new Vector2(0, 80);
+    }
+    
+    // Helper method to create a simple circle sprite for icons
+    private Sprite CreateCircleSprite()
+    {
+        int width = 64;
+        int height = 64;
+        Texture2D texture = new Texture2D(width, height);
+        
+        Color[] colors = new Color[width * height];
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                float distX = x - width / 2;
+                float distY = y - height / 2;
+                float dist = Mathf.Sqrt(distX * distX + distY * distY);
+                float radius = width / 2;
+                
+                if (dist <= radius)
+                {
+                    colors[y * width + x] = Color.white;
+                }
+                else
+                {
+                    colors[y * width + x] = Color.clear;
+                }
+            }
+        }
+        
+        texture.SetPixels(colors);
+        texture.Apply();
+        
+        return Sprite.Create(texture, new Rect(0, 0, width, height), new Vector2(0.5f, 0.5f));
     }
     
     private Color GetUpgradeColor(UpgradeType type)
@@ -1372,6 +1643,25 @@ public class GameplayManager : MonoBehaviourPunCallbacks
         {
             draftPanel.SetActive(false);
         }
+    }
+    
+    // Public utility methods for access by other managers
+    public PlayerController GetPlayerById(int actorNumber)
+    {
+        if (players.ContainsKey(actorNumber))
+        {
+            return players[actorNumber];
+        }
+        return null;
+    }
+    
+    public MonsterController GetMonsterById(int actorNumber)
+    {
+        if (monsters.ContainsKey(actorNumber))
+        {
+            return monsters[actorNumber];
+        }
+        return null;
     }
     
     #endregion
