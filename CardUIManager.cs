@@ -4,6 +4,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
 using Photon.Pun;
+using UnityEngine.EventSystems;
 
 public class CardUIManager : MonoBehaviourPunCallbacks
 {
@@ -16,6 +17,15 @@ public class CardUIManager : MonoBehaviourPunCallbacks
     private GameObject cardPrefab;
     private List<GameObject> cardObjects = new List<GameObject>();
     
+    // Drag handling
+    private GameObject currentDraggedCard;
+    private Vector3 dragStartPosition;
+    private int draggedCardIndex = -1;
+    
+    // Drop zones
+    private RectTransform enemyDropZone;
+    private RectTransform petDropZone;
+    
     private void Start()
     {
         gameplayManager = FindObjectOfType<GameplayManager>();
@@ -23,6 +33,9 @@ public class CardUIManager : MonoBehaviourPunCallbacks
         
         // Create hand panel
         CreateHandPanel();
+        
+        // Create drop zones for targeting
+        CreateDropZones();
     }
     
     private void CreateHandPanel()
@@ -46,6 +59,67 @@ public class CardUIManager : MonoBehaviourPunCallbacks
         handLayout.childAlignment = TextAnchor.MiddleCenter;
         handLayout.childForceExpandWidth = false;
         handLayout.childForceExpandHeight = true;
+        
+        // Add background image
+        Image bgImage = handPanel.AddComponent<Image>();
+        bgImage.color = new Color(0, 0, 0, 0.5f);
+    }
+    
+    private void CreateDropZones()
+    {
+        Canvas mainCanvas = FindObjectOfType<Canvas>();
+        if (mainCanvas == null) return;
+        
+        // Create enemy drop zone (upper right)
+        GameObject enemyZone = new GameObject("EnemyDropZone");
+        enemyZone.transform.SetParent(mainCanvas.transform, false);
+        
+        enemyDropZone = enemyZone.AddComponent<RectTransform>();
+        enemyDropZone.anchorMin = new Vector2(0.7f, 0.5f);
+        enemyDropZone.anchorMax = new Vector2(0.9f, 0.7f);
+        enemyDropZone.sizeDelta = Vector2.zero;
+        
+        Image enemyZoneImage = enemyZone.AddComponent<Image>();
+        enemyZoneImage.color = new Color(0.8f, 0.2f, 0.2f, 0.3f);
+        
+        TextMeshProUGUI enemyZoneText = CreateDropZoneText(enemyZone, "Drop to Attack Enemy");
+        
+        // Create pet drop zone (upper middle)
+        GameObject petZone = new GameObject("PetDropZone");
+        petZone.transform.SetParent(mainCanvas.transform, false);
+        
+        petDropZone = petZone.AddComponent<RectTransform>();
+        petDropZone.anchorMin = new Vector2(0.4f, 0.5f);
+        petDropZone.anchorMax = new Vector2(0.6f, 0.7f);
+        petDropZone.sizeDelta = Vector2.zero;
+        
+        Image petZoneImage = petZone.AddComponent<Image>();
+        petZoneImage.color = new Color(0.2f, 0.6f, 0.8f, 0.3f);
+        
+        TextMeshProUGUI petZoneText = CreateDropZoneText(petZone, "Drop to Support Pet");
+        
+        // Initially hide drop zones
+        enemyZone.SetActive(false);
+        petZone.SetActive(false);
+    }
+    
+    private TextMeshProUGUI CreateDropZoneText(GameObject parent, string text)
+    {
+        GameObject textObj = new GameObject("Text");
+        textObj.transform.SetParent(parent.transform, false);
+        
+        TextMeshProUGUI textComponent = textObj.AddComponent<TextMeshProUGUI>();
+        textComponent.text = text;
+        textComponent.fontSize = 16;
+        textComponent.alignment = TextAlignmentOptions.Center;
+        textComponent.color = Color.white;
+        
+        RectTransform textRect = textObj.GetComponent<RectTransform>();
+        textRect.anchorMin = Vector2.zero;
+        textRect.anchorMax = Vector2.one;
+        textRect.sizeDelta = Vector2.zero;
+        
+        return textComponent;
     }
     
     public void AddCardToHand(Card card)
@@ -58,6 +132,10 @@ public class CardUIManager : MonoBehaviourPunCallbacks
         
         // Add to list
         cardObjects.Add(cardObj);
+        
+        // Add drag component
+        CardDragHandler dragHandler = cardObj.AddComponent<CardDragHandler>();
+        dragHandler.Initialize(this, cardObjects.Count - 1);
     }
     
     public void RemoveCardFromHand(int index)
@@ -67,6 +145,16 @@ public class CardUIManager : MonoBehaviourPunCallbacks
         // Destroy card object
         Destroy(cardObjects[index]);
         cardObjects.RemoveAt(index);
+        
+        // Update indices for remaining drag handlers
+        for (int i = 0; i < cardObjects.Count; i++)
+        {
+            CardDragHandler dragHandler = cardObjects[i].GetComponent<CardDragHandler>();
+            if (dragHandler != null)
+            {
+                dragHandler.CardIndex = i;
+            }
+        }
     }
     
     public void ClearHand()
@@ -144,28 +232,93 @@ public class CardUIManager : MonoBehaviourPunCallbacks
         RectTransform descRect = descObj.GetComponent<RectTransform>();
         descRect.sizeDelta = new Vector2(0, 70);
         
-        // Add button component for interaction
-        Button cardButton = cardObj.AddComponent<Button>();
-        cardButton.onClick.AddListener(() => OnCardClicked(cardObjects.IndexOf(cardObj)));
-        
-        // Set button colors
-        ColorBlock colors = cardButton.colors;
-        colors.normalColor = GetCardTypeColor(card.CardType);
-        colors.highlightedColor = new Color(
-            colors.normalColor.r + 0.1f,
-            colors.normalColor.g + 0.1f,
-            colors.normalColor.b + 0.1f,
-            colors.normalColor.a
-        );
-        colors.pressedColor = new Color(
-            colors.normalColor.r - 0.1f,
-            colors.normalColor.g - 0.1f,
-            colors.normalColor.b - 0.1f,
-            colors.normalColor.a
-        );
-        cardButton.colors = colors;
-        
         return cardObj;
+    }
+    
+    // Handle card dragging started
+    public void OnCardDragBegin(int cardIndex, Vector3 position)
+    {
+        draggedCardIndex = cardIndex;
+        dragStartPosition = position;
+        
+        // Show drop zones
+        ShowDropZones(true);
+    }
+    
+    // Handle card dragging
+    public void OnCardDrag(int cardIndex, Vector3 position)
+    {
+        if (cardIndex != draggedCardIndex) return;
+        
+        // Move the card
+        if (cardIndex >= 0 && cardIndex < cardObjects.Count)
+        {
+            cardObjects[cardIndex].transform.position = position;
+        }
+    }
+    
+    // Handle card drag end
+    public void OnCardDragEnd(int cardIndex, Vector3 position)
+    {
+        if (cardIndex != draggedCardIndex) return;
+        
+        // Hide drop zones
+        ShowDropZones(false);
+        
+        // Check if dropped on a valid zone
+        if (IsPositionOverDropZone(position, enemyDropZone))
+        {
+            // Play card on enemy
+            PlayerController localPlayer = FindObjectOfType<PlayerController>();
+            if (localPlayer != null && localPlayer.photonView.IsMine)
+            {
+                localPlayer.PlayCard(cardIndex, -1);
+            }
+        }
+        else if (IsPositionOverDropZone(position, petDropZone))
+        {
+            // Play card on pet
+            PlayerController localPlayer = FindObjectOfType<PlayerController>();
+            if (localPlayer != null && localPlayer.photonView.IsMine)
+            {
+                localPlayer.PlayCardOnPet(cardIndex);
+            }
+        }
+        else
+        {
+            // Return card to original position
+            if (cardIndex >= 0 && cardIndex < cardObjects.Count)
+            {
+                cardObjects[cardIndex].transform.position = dragStartPosition;
+            }
+        }
+        
+        draggedCardIndex = -1;
+    }
+    
+    private void ShowDropZones(bool show)
+    {
+        if (enemyDropZone != null)
+        {
+            enemyDropZone.gameObject.SetActive(show);
+        }
+        
+        if (petDropZone != null)
+        {
+            petDropZone.gameObject.SetActive(show);
+        }
+    }
+    
+    private bool IsPositionOverDropZone(Vector3 position, RectTransform dropZone)
+    {
+        if (dropZone == null) return false;
+        
+        Vector2 localPoint;
+        RectTransformUtility.ScreenPointToLocalPointInRectangle(
+            dropZone, position, null, out localPoint);
+        
+        Rect rect = dropZone.rect;
+        return rect.Contains(localPoint);
     }
     
     private Color GetCardTypeColor(CardType type)
@@ -183,172 +336,42 @@ public class CardUIManager : MonoBehaviourPunCallbacks
         }
     }
     
-    private void OnCardClicked(int cardIndex)
+    // Keep the other methods as they are
+}
+
+// Add this class to handle card dragging
+public class CardDragHandler : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDragHandler
+{
+    private CardUIManager cardUIManager;
+    public int CardIndex { get; set; }
+    
+    public void Initialize(CardUIManager manager, int index)
     {
-        // Get local player
-        PlayerController localPlayer = FindObjectOfType<PlayerController>();
-        if (localPlayer == null || !localPlayer.photonView.IsMine || !localPlayer.IsMyTurn)
-            return;
-        
-        // Show targeting UI to choose between opponent or pet
-        ShowTargetingUI(cardIndex);
+        cardUIManager = manager;
+        CardIndex = index;
     }
     
-    private void ShowTargetingUI(int cardIndex)
+    public void OnBeginDrag(PointerEventData eventData)
     {
-        PlayerController localPlayer = FindObjectOfType<PlayerController>();
-        if (localPlayer == null) return;
-        
-        // Create targeting popup
-        GameObject targetingUI = new GameObject("TargetingUI");
-        targetingUI.transform.SetParent(handPanel.transform.parent, false);
-        
-        RectTransform targetingRect = targetingUI.AddComponent<RectTransform>();
-        targetingRect.anchorMin = new Vector2(0.5f, 0.3f);
-        targetingRect.anchorMax = new Vector2(0.5f, 0.5f);
-        targetingRect.sizeDelta = new Vector2(300, 150);
-        
-        Image bgImage = targetingUI.AddComponent<Image>();
-        bgImage.color = new Color(0.1f, 0.1f, 0.1f, 0.9f);
-        
-        // Create vertical layout
-        VerticalLayoutGroup layout = targetingUI.AddComponent<VerticalLayoutGroup>();
-        layout.spacing = 10;
-        layout.padding = new RectOffset(10, 10, 10, 10);
-        layout.childAlignment = TextAnchor.MiddleCenter;
-        
-        // Create title
-        GameObject titleObj = new GameObject("Title");
-        titleObj.transform.SetParent(targetingUI.transform, false);
-        
-        TextMeshProUGUI titleText = titleObj.AddComponent<TextMeshProUGUI>();
-        titleText.text = "Select Target";
-        titleText.fontSize = 20;
-        titleText.alignment = TextAlignmentOptions.Center;
-        titleText.color = Color.white;
-        
-        // Create opponent button
-        GameObject opponentBtn = new GameObject("OpponentButton");
-        opponentBtn.transform.SetParent(targetingUI.transform, false);
-        
-        Image opponentBtnImage = opponentBtn.AddComponent<Image>();
-        opponentBtnImage.color = new Color(0.8f, 0.2f, 0.2f, 1); // Red for opponent
-        
-        Button opponentButton = opponentBtn.AddComponent<Button>();
-        opponentButton.targetGraphic = opponentBtnImage;
-        
-        GameObject opponentTextObj = new GameObject("Text");
-        opponentTextObj.transform.SetParent(opponentBtn.transform, false);
-        
-        TextMeshProUGUI opponentText = opponentTextObj.AddComponent<TextMeshProUGUI>();
-        opponentText.text = "Enemy Monster";
-        opponentText.fontSize = 16;
-        opponentText.alignment = TextAlignmentOptions.Center;
-        opponentText.color = Color.white;
-        
-        RectTransform opponentTextRect = opponentTextObj.GetComponent<RectTransform>();
-        opponentTextRect.anchorMin = Vector2.zero;
-        opponentTextRect.anchorMax = Vector2.one;
-        opponentTextRect.sizeDelta = Vector2.zero;
-        
-        // Create pet button
-        GameObject petBtn = new GameObject("PetButton");
-        petBtn.transform.SetParent(targetingUI.transform, false);
-        
-        Image petBtnImage = petBtn.AddComponent<Image>();
-        petBtnImage.color = new Color(0.2f, 0.6f, 0.8f, 1); // Blue for pet
-        
-        Button petButton = petBtn.AddComponent<Button>();
-        petButton.targetGraphic = petBtnImage;
-        
-        GameObject petTextObj = new GameObject("Text");
-        petTextObj.transform.SetParent(petBtn.transform, false);
-        
-        TextMeshProUGUI petText = petTextObj.AddComponent<TextMeshProUGUI>();
-        petText.text = "My Pet";
-        petText.fontSize = 16;
-        petText.alignment = TextAlignmentOptions.Center;
-        petText.color = Color.white;
-        
-        RectTransform petTextRect = petTextObj.GetComponent<RectTransform>();
-        petTextRect.anchorMin = Vector2.zero;
-        petTextRect.anchorMax = Vector2.one;
-        petTextRect.sizeDelta = Vector2.zero;
-        
-        // Create cancel button
-        GameObject cancelBtn = new GameObject("CancelButton");
-        cancelBtn.transform.SetParent(targetingUI.transform, false);
-        
-        Image cancelBtnImage = cancelBtn.AddComponent<Image>();
-        cancelBtnImage.color = new Color(0.5f, 0.5f, 0.5f, 1); // Gray for cancel
-        
-        Button cancelButton = cancelBtn.AddComponent<Button>();
-        cancelButton.targetGraphic = cancelBtnImage;
-        
-        GameObject cancelTextObj = new GameObject("Text");
-        cancelTextObj.transform.SetParent(cancelBtn.transform, false);
-        
-        TextMeshProUGUI cancelText = cancelTextObj.AddComponent<TextMeshProUGUI>();
-        cancelText.text = "Cancel";
-        cancelText.fontSize = 16;
-        cancelText.alignment = TextAlignmentOptions.Center;
-        cancelText.color = Color.white;
-        
-        RectTransform cancelTextRect = cancelTextObj.GetComponent<RectTransform>();
-        cancelTextRect.anchorMin = Vector2.zero;
-        cancelTextRect.anchorMax = Vector2.one;
-        cancelTextRect.sizeDelta = Vector2.zero;
-        
-        // Button actions
-        opponentButton.onClick.AddListener(() => {
-            localPlayer.PlayCard(cardIndex, -1); // -1 for opponent
-            Destroy(targetingUI);
-        });
-        
-        petButton.onClick.AddListener(() => {
-            localPlayer.PlayCardOnPet(cardIndex);
-            Destroy(targetingUI);
-        });
-        
-        cancelButton.onClick.AddListener(() => {
-            Destroy(targetingUI);
-        });
-    }
-    
-    // Add helper method to get a card's details if needed
-    public Card GetCardDetails(string cardId)
-    {
-        // This would ideally be a lookup in a card database
-        // For now, just return a basic card
-        switch (cardId)
+        if (cardUIManager != null)
         {
-            case "strike_basic":
-                return new Card
-                {
-                    CardId = "strike_basic",
-                    CardName = "Strike",
-                    CardDescription = "Deal 6 damage.",
-                    EnergyCost = 1,
-                    CardType = CardType.Attack,
-                    CardRarity = CardRarity.Basic,
-                    DamageAmount = 6
-                };
-                
-            case "defend_basic":
-                return new Card
-                {
-                    CardId = "defend_basic",
-                    CardName = "Defend",
-                    CardDescription = "Gain 5 Block.",
-                    EnergyCost = 1,
-                    CardType = CardType.Skill,
-                    CardRarity = CardRarity.Basic,
-                    BlockAmount = 5
-                };
-                
-            default:
-                Debug.LogWarning("Unknown card ID: " + cardId);
-                return null;
+            cardUIManager.OnCardDragBegin(CardIndex, transform.position);
+        }
+    }
+    
+    public void OnDrag(PointerEventData eventData)
+    {
+        if (cardUIManager != null)
+        {
+            cardUIManager.OnCardDrag(CardIndex, Input.mousePosition);
+        }
+    }
+    
+    public void OnEndDrag(PointerEventData eventData)
+    {
+        if (cardUIManager != null)
+        {
+            cardUIManager.OnCardDragEnd(CardIndex, Input.mousePosition);
         }
     }
 }

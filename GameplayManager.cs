@@ -7,13 +7,13 @@ using System.Linq;
 using UnityEngine.UI;
 using TMPro;
 
-public class GameplayManager : MonoBehaviourPunCallbacks
+public class GameplayManager : MonoBehaviourPunCallbacks, IPunObservable
 {
     #region Variables and Properties
 
     // Game parameters
     [Header("Game Parameters")]
-    [SerializeField] private int pointsToWin = 10; // Changed to 10 as per game description
+    [SerializeField] private int pointsToWin = 10;
     [SerializeField] private int maxRounds = 10;
     [SerializeField] private int currentRound = 0;
     [SerializeField] private GamePhase currentPhase = GamePhase.Setup;
@@ -53,6 +53,10 @@ public class GameplayManager : MonoBehaviourPunCallbacks
     private DeckManager deckManager;
     private CardUIManager cardUIManager;
     private BattleUIManager battleUIManager;
+    private BattleUI battleUI;
+    
+    // Flag to track prefab spawning
+    private bool hasSpawnedPrefabs = false;
     
     // Properties
     public GamePhase CurrentPhase { get => currentPhase; }
@@ -72,46 +76,67 @@ public class GameplayManager : MonoBehaviourPunCallbacks
     #region Unity and Photon Callbacks
     
     private void Awake()
+{
+    // Verify that we have a PhotonView component
+    PhotonView photonView = GetComponent<PhotonView>();
+    if (photonView == null)
     {
-        // Get references to other managers
-        uiManager = FindObjectOfType<UIManager>();
-        networkManager = FindObjectOfType<NetworkManager>();
-        
-        // Create required managers if they don't exist
-        if (deckManager == null)
-        {
-            GameObject deckMgrObj = new GameObject("DeckManager");
-            deckMgrObj.transform.SetParent(transform);
-            deckManager = deckMgrObj.AddComponent<DeckManager>();
-        }
-        
-        if (cardUIManager == null)
-        {
-            GameObject cardUIMgrObj = new GameObject("CardUIManager");
-            cardUIMgrObj.transform.SetParent(transform);
-            cardUIManager = cardUIMgrObj.AddComponent<CardUIManager>();
-        }
-        
-        if (battleUIManager == null)
-        {
-            GameObject battleUIMgrObj = new GameObject("BattleUIManager");
-            battleUIMgrObj.transform.SetParent(transform);
-            battleUIManager = battleUIMgrObj.AddComponent<BattleUIManager>();
-        }
-        
-        // Setup cross-references
-        deckManager.SetupCardUIManager(cardUIManager);
-        
-        // Create UI elements
-        CreateGameplayUI();
+        Debug.LogError("GameplayManager prefab missing PhotonView component!");
+        return;
     }
+    
+    Debug.Log("GameplayManager initialized with PhotonView ID: " + photonView.ViewID);
+    
+    // Get references to other managers
+    uiManager = FindObjectOfType<UIManager>();
+    networkManager = FindObjectOfType<NetworkManager>();
+    
+    // Create required managers if they don't exist
+    if (deckManager == null)
+    {
+        GameObject deckMgrObj = new GameObject("DeckManager");
+        deckMgrObj.transform.SetParent(transform);
+        deckManager = deckMgrObj.AddComponent<DeckManager>();
+    }
+    
+    if (cardUIManager == null)
+    {
+        GameObject cardUIMgrObj = new GameObject("CardUIManager");
+        cardUIMgrObj.transform.SetParent(transform);
+        cardUIManager = cardUIMgrObj.AddComponent<CardUIManager>();
+    }
+    
+    if (battleUIManager == null)
+    {
+        GameObject battleUIMgrObj = new GameObject("BattleUIManager");
+        battleUIMgrObj.transform.SetParent(transform);
+        battleUIManager = battleUIMgrObj.AddComponent<BattleUIManager>();
+    }
+    
+    // Create BattleUI
+    GameObject battleUIObj = new GameObject("BattleUI");
+    battleUIObj.transform.SetParent(transform);
+    battleUI = battleUIObj.AddComponent<BattleUI>();
+    
+    // Setup cross-references
+    deckManager.SetupCardUIManager(cardUIManager);
+    
+    // Create UI elements
+    CreateGameplayUI();
+}
     
     private void Start()
     {
+        // Initialize BattleUI
+        if (battleUI != null)
+        {
+            battleUI.Initialize();
+        }
+        
         if (PhotonNetwork.IsMasterClient)
         {
             // Initialize the game when all players are ready
-            if (PhotonNetwork.CurrentRoom.PlayerCount >= 2)
+            if (PhotonNetwork.InRoom && PhotonNetwork.CurrentRoom.PlayerCount >= 2)
             {
                 StartCoroutine(StartGameWhenPlayersReady());
             }
@@ -198,6 +223,28 @@ public class GameplayManager : MonoBehaviourPunCallbacks
         }
     }
     
+    // Implement IPunObservable
+    public void OnPhotonSerializeView(PhotonStream stream, PhotonMessageInfo info)
+    {
+        // Synchronize important game state
+        if (stream.IsWriting)
+        {
+            // Send data
+            stream.SendNext(currentRound);
+            stream.SendNext((int)currentPhase);
+            stream.SendNext(isBattlePhaseActive);
+            stream.SendNext(currentPlayerTurn);
+        }
+        else
+        {
+            // Receive data
+            currentRound = (int)stream.ReceiveNext();
+            currentPhase = (GamePhase)(int)stream.ReceiveNext();
+            isBattlePhaseActive = (bool)stream.ReceiveNext();
+            currentPlayerTurn = (int)stream.ReceiveNext();
+        }
+    }
+    
     #endregion
     
     #region Player and Monster Registration
@@ -209,8 +256,18 @@ public class GameplayManager : MonoBehaviourPunCallbacks
         if (!players.ContainsKey(actorNumber))
         {
             players.Add(actorNumber, player);
-            playerScores.Add(actorNumber, 0);
-            activePlayers.Add(actorNumber);
+            
+            // Initialize player score if needed
+            if (!playerScores.ContainsKey(actorNumber))
+            {
+                playerScores.Add(actorNumber, 0);
+            }
+            
+            // Add to active players if not already there
+            if (!activePlayers.Contains(actorNumber))
+            {
+                activePlayers.Add(actorNumber);
+            }
             
             Debug.Log($"Player registered: {player.photonView.Owner.NickName} (ActorNumber: {actorNumber})");
             
@@ -219,6 +276,25 @@ public class GameplayManager : MonoBehaviourPunCallbacks
             {
                 player.SetupDeckManager(deckManager);
                 player.SetupCardUIManager(cardUIManager);
+                
+                // Update BattleUI with player stats
+                if (battleUI != null)
+                {
+                    battleUI.UpdatePlayerStats(player);
+                }
+            }
+            
+            // Check if we should initialize battles
+            if (currentPhase == GamePhase.Battle && hasSpawnedPrefabs)
+            {
+                // If we're already in battle phase, update UI and initialize relationships
+                UpdateBattleUI();
+                
+                // Initialize battle relationships if master client
+                if (PhotonNetwork.IsMasterClient && playerMonsterPairs.Count == 0)
+                {
+                    AssignMonstersToPlayers();
+                }
             }
         }
     }
@@ -242,6 +318,13 @@ public class GameplayManager : MonoBehaviourPunCallbacks
             }
             
             Debug.Log($"Monster registered for player: {monster.photonView.Owner.NickName} (ActorNumber: {actorNumber})");
+            
+            // Check if we should initialize battles
+            if (currentPhase == GamePhase.Battle && hasSpawnedPrefabs)
+            {
+                // If we're already in battle phase, update UI
+                UpdateBattleUI();
+            }
         }
     }
     
@@ -255,6 +338,94 @@ public class GameplayManager : MonoBehaviourPunCallbacks
             }
         }
         return null;
+    }
+    
+    // Method to be called when prefabs are spawned
+    public void OnPlayerAndMonsterSpawned()
+    {
+        Debug.Log("GameplayManager: Player and Monster spawned");
+        hasSpawnedPrefabs = true;
+        
+        // If already in battle phase, initialize it properly
+        if (currentPhase == GamePhase.Battle)
+        {
+            Debug.Log("Already in battle phase, initializing battle");
+            InitializeBattlePhase();
+        }
+    }
+    
+    private void RefreshPlayerAndMonsterReferences()
+    {
+        Debug.Log("Refreshing player and monster references");
+        
+        // Find all PlayerController objects in the scene
+        PlayerController[] allPlayers = FindObjectsOfType<PlayerController>();
+        foreach (PlayerController player in allPlayers)
+        {
+            int actorNumber = player.photonView.Owner.ActorNumber;
+            if (!players.ContainsKey(actorNumber))
+            {
+                players.Add(actorNumber, player);
+                
+                // Initialize player score if needed
+                if (!playerScores.ContainsKey(actorNumber))
+                {
+                    playerScores.Add(actorNumber, 0);
+                }
+                
+                // Add to active players if not already there
+                if (!activePlayers.Contains(actorNumber))
+                {
+                    activePlayers.Add(actorNumber);
+                }
+                
+                Debug.Log($"Added player {player.PlayerName} with actor number {actorNumber}");
+            }
+        }
+        
+        // Find all MonsterController objects in the scene
+        MonsterController[] allMonsters = FindObjectsOfType<MonsterController>();
+        foreach (MonsterController monster in allMonsters)
+        {
+            int actorNumber = monster.photonView.Owner.ActorNumber;
+            if (!monsters.ContainsKey(actorNumber))
+            {
+                monsters.Add(actorNumber, monster);
+                Debug.Log($"Added monster with actor number {actorNumber}");
+            }
+        }
+        
+        // Update BattleUI
+        UpdateBattleUI();
+    }
+    
+    private void UpdateBattleUI()
+    {
+        // Update battle UI with the local player and monsters
+        PlayerController localPlayer = GetLocalPlayer();
+        if (localPlayer != null && battleUI != null)
+        {
+            battleUI.UpdatePlayerStats(localPlayer);
+            
+            // Find opponent monster based on pairings
+            int playerActorNumber = localPlayer.photonView.Owner.ActorNumber;
+            if (playerMonsterPairs.ContainsKey(playerActorNumber))
+            {
+                int monsterOwnerActorNumber = playerMonsterPairs[playerActorNumber];
+                if (monsters.ContainsKey(monsterOwnerActorNumber))
+                {
+                    MonsterController opponentMonster = monsters[monsterOwnerActorNumber];
+                    battleUI.UpdateMonsterStats(opponentMonster);
+                }
+            }
+            
+            // Find player's pet monster
+            if (monsters.ContainsKey(playerActorNumber))
+            {
+                MonsterController petMonster = monsters[playerActorNumber];
+                battleUI.UpdatePetStats(petMonster);
+            }
+        }
     }
     
     #endregion
@@ -302,7 +473,7 @@ public class GameplayManager : MonoBehaviourPunCallbacks
         // Wait a moment for UI updates
         yield return new WaitForSeconds(2.0f);
         
-        // Assign monsters to players for this round
+        // Assign monsters to players for this round (if master client)
         if (PhotonNetwork.IsMasterClient)
         {
             AssignMonstersToPlayers();
@@ -322,9 +493,6 @@ public class GameplayManager : MonoBehaviourPunCallbacks
         
         // Get list of player actor numbers
         List<int> playerActors = new List<int>(players.Keys);
-        
-        // If odd number of players, one player will face their own monster
-        bool oddNumberOfPlayers = playerActors.Count % 2 != 0;
         
         // Shuffle the player list
         for (int i = 0; i < playerActors.Count; i++)
@@ -373,13 +541,31 @@ public class GameplayManager : MonoBehaviourPunCallbacks
             monster.SetOpponentPlayer(player);
             
             Debug.Log($"Set player {playerActorNumber} to fight monster owned by {monsterOwnerActorNumber}");
+            
+            // Update UI if this is the local player
+            if (player.photonView.IsMine && battleUI != null)
+            {
+                battleUI.UpdateMonsterStats(monster);
+            }
         }
     }
     
     public void InitializeBattlePhase()
     {
+        Debug.Log("Initializing Battle Phase");
+        
         // Reset players who have finished combat
         playersFinishedCombat.Clear();
+        
+        // Ensure we have prefabs spawned
+        if (!hasSpawnedPrefabs)
+        {
+            Debug.LogWarning("Battle phase initialized before prefabs were spawned");
+            return;
+        }
+        
+        // Make sure we have the right player and monster references
+        RefreshPlayerAndMonsterReferences();
         
         // Set all players and monsters to combat mode
         foreach (PlayerController player in players.Values)
@@ -394,6 +580,19 @@ public class GameplayManager : MonoBehaviourPunCallbacks
         
         // Establish player-pet relationships
         EstablishPlayerPetRelationships();
+        
+        // Show battle UI
+        if (battleUI != null)
+        {
+            battleUI.Show();
+            
+            // Update player turn status
+            PlayerController localPlayer = GetLocalPlayer();
+            if (localPlayer != null)
+            {
+                battleUI.ShowPlayerTurn(localPlayer.IsMyTurn);
+            }
+        }
         
         // Show battle overview UI
         if (battleUIManager != null)
@@ -426,6 +625,12 @@ public class GameplayManager : MonoBehaviourPunCallbacks
                 
                 // Set the relationship
                 player.SetPetMonster(pet);
+                
+                // Update battle UI if this is the local player
+                if (player.photonView.IsMine && battleUI != null)
+                {
+                    battleUI.UpdatePetStats(pet);
+                }
             }
         }
     }
@@ -447,18 +652,30 @@ public class GameplayManager : MonoBehaviourPunCallbacks
     }
     
     private void StartPlayerTurn(int playerActorNumber)
+{
+    if (players.ContainsKey(playerActorNumber))
     {
-        if (players.ContainsKey(playerActorNumber))
+        // Make sure we have a valid PhotonView before sending RPC
+        PhotonView photonView = GetComponent<PhotonView>();
+        if (photonView != null && photonView.ViewID != 0)
         {
             // Notify all clients of turn change
             photonView.RPC("RPC_StartPlayerTurn", RpcTarget.All, playerActorNumber);
         }
         else
         {
-            // Player not found, move to next
-            AdvanceToNextPlayer();
+            Debug.LogError($"Cannot send RPC: PhotonView is invalid (ViewID: {(photonView != null ? photonView.ViewID : 0)})");
+            
+            // Fallback: Call the method directly for local player
+            RPC_StartPlayerTurn(playerActorNumber);
         }
     }
+    else
+    {
+        // Player not found, move to next
+        AdvanceToNextPlayer();
+    }
+}
     
     [PunRPC]
     private void RPC_StartPlayerTurn(int playerActorNumber)
@@ -470,12 +687,24 @@ public class GameplayManager : MonoBehaviourPunCallbacks
             player.StartTurn();
             
             Debug.Log($"Started turn for player {player.photonView.Owner.NickName}");
+            
+            // Update UI to show whose turn it is
+            if (battleUI != null && player.photonView.IsMine)
+            {
+                battleUI.ShowPlayerTurn(true);
+            }
         }
     }
     
     public void PlayerEndedTurn()
     {
         // This is called by the PlayerController when they end their turn
+        PlayerController localPlayer = GetLocalPlayer();
+        if (localPlayer != null && battleUI != null)
+        {
+            battleUI.ShowPlayerTurn(false);
+        }
+        
         if (PhotonNetwork.IsMasterClient && isBattlePhaseActive)
         {
             // After player's turn, the monster gets a turn
@@ -628,6 +857,12 @@ public class GameplayManager : MonoBehaviourPunCallbacks
         // Reset players who have finished drafting
         playersFinishedDraft.Clear();
         
+        // Hide battle UI
+        if (battleUI != null)
+        {
+            battleUI.Hide();
+        }
+        
         // Hide battle overview if active
         if (battleUIManager != null)
         {
@@ -654,14 +889,23 @@ public class GameplayManager : MonoBehaviourPunCallbacks
         // Initialize draft queues for each player
         draftQueues.Clear();
         
-        // Set initial draft options for the first player
-        int firstPlayerIndex = 0;
-        int firstPlayerActor = activePlayers[firstPlayerIndex];
-        
-        draftQueues.Add(firstPlayerActor, new List<Upgrade>(availableUpgrades));
-        
-        // Start draft for first player
-        photonView.RPC("RPC_StartPlayerDraft", RpcTarget.All, firstPlayerActor);
+        // Ensure we have active players
+        if (activePlayers.Count > 0)
+        {
+            // Set initial draft options for the first player
+            int firstPlayerIndex = 0;
+            int firstPlayerActor = activePlayers[firstPlayerIndex];
+            
+            draftQueues.Add(firstPlayerActor, new List<Upgrade>(availableUpgrades));
+            
+            // Start draft for first player
+            photonView.RPC("RPC_StartPlayerDraft", RpcTarget.All, firstPlayerActor);
+        }
+        else
+        {
+            // No active players, move to next round
+            FinishRound();
+        }
     }
     
     private void GenerateUpgrades()
@@ -815,7 +1059,21 @@ public class GameplayManager : MonoBehaviourPunCallbacks
                 {
                     PlayerFinishedDraft(playerActorNumber, -1);
                 }
+                else
+                {
+                    photonView.RPC("RPC_PlayerNoUpgrades", RpcTarget.MasterClient, playerActorNumber);
+                }
             }
+        }
+    }
+    
+    [PunRPC]
+    private void RPC_PlayerNoUpgrades(int playerActorNumber)
+    {
+        // Master client handles a player with no upgrades
+        if (PhotonNetwork.IsMasterClient)
+        {
+            PlayerFinishedDraft(playerActorNumber, -1);
         }
     }
     
@@ -1030,6 +1288,12 @@ public class GameplayManager : MonoBehaviourPunCallbacks
                 // Not implemented in this version
                 break;
         }
+        
+        // Update battle UI if this is for the local player
+        if (player != null && player.photonView.IsMine && battleUI != null)
+        {
+            battleUI.UpdatePlayerStats(player);
+        }
     }
     
     private Card CreateCardFromId(string cardId)
@@ -1206,10 +1470,22 @@ public class GameplayManager : MonoBehaviourPunCallbacks
     
     private void ShowGameOver()
     {
-        // This would display game over UI
+        // Display game over UI
         if (gameOverPanel != null)
         {
             gameOverPanel.SetActive(true);
+        }
+        
+        // Hide battle UI
+        if (battleUI != null)
+        {
+            battleUI.Hide();
+        }
+        
+        // Hide battle overview
+        if (battleUIManager != null)
+        {
+            battleUIManager.HideBattleOverview();
         }
     }
     
@@ -1345,7 +1621,7 @@ public class GameplayManager : MonoBehaviourPunCallbacks
         RectTransform draftRect = draftPanel.AddComponent<RectTransform>();
         draftRect.anchorMin = new Vector2(0.5f, 0.5f);
         draftRect.anchorMax = new Vector2(0.5f, 0.5f);
-        draftRect.sizeDelta = new Vector2(800, 500); // Increased height for better UI
+        draftRect.sizeDelta = new Vector2(800, 500);
         
         Image draftBg = draftPanel.AddComponent<Image>();
         draftBg.color = new Color(0, 0, 0, 0.9f);
@@ -1371,7 +1647,10 @@ public class GameplayManager : MonoBehaviourPunCallbacks
     private IEnumerator HidePanelAfterDelay(GameObject panel, float delay)
     {
         yield return new WaitForSeconds(delay);
-        panel.SetActive(false);
+        if (panel != null)
+        {
+            panel.SetActive(false);
+        }
     }
     
     private void ShowDraftUI(List<Upgrade> upgrades)
@@ -1447,7 +1726,7 @@ public class GameplayManager : MonoBehaviourPunCallbacks
         RectTransform contentRect = contentObj.AddComponent<RectTransform>();
         contentRect.anchorMin = Vector2.zero;
         contentRect.anchorMax = new Vector2(1, 1);
-        contentRect.sizeDelta = Vector2.zero;
+        contentRect.sizeDelta = new Vector2(0, Mathf.Max(500, upgrades.Count * 80));
         
         // Add grid layout
         GridLayoutGroup gridLayout = contentObj.AddComponent<GridLayoutGroup>();
@@ -1455,10 +1734,6 @@ public class GameplayManager : MonoBehaviourPunCallbacks
         gridLayout.spacing = new Vector2(20, 20);
         gridLayout.padding = new RectOffset(10, 10, 10, 10);
         gridLayout.constraint = GridLayoutGroup.Constraint.Flexible;
-        
-        // Calculate columns based on upgrade count
-        int columns = Mathf.Min(3, upgrades.Count);
-        gridLayout.constraintCount = columns;
         
         // Add upgrade options
         for (int i = 0; i < upgrades.Count; i++)
@@ -1504,7 +1779,8 @@ public class GameplayManager : MonoBehaviourPunCallbacks
         optionButton.colors = colors;
         
         // Set button action
-        optionButton.onClick.AddListener(() => PlayerSelectedUpgrade(index));
+        int optionIndex = index; // Local copy for closure
+        optionButton.onClick.AddListener(() => PlayerSelectedUpgrade(optionIndex));
         
         // Create vertical layout
         VerticalLayoutGroup vertLayout = optionObj.AddComponent<VerticalLayoutGroup>();

@@ -11,6 +11,7 @@ public class NetworkManager : MonoBehaviourPunCallbacks
 
     private UIManager uiManager;
     private LobbyManager lobbyManager;
+    private PrefabSpawner prefabSpawner;
 
     private void Start()
     {
@@ -31,6 +32,12 @@ public class NetworkManager : MonoBehaviourPunCallbacks
             {
                 lobbyManager = GameManager.Instance.GetLobbyManager();
             }
+        }
+        
+        // Initialize prefab spawner
+        if (prefabSpawner == null)
+        {
+            prefabSpawner = gameObject.AddComponent<PrefabSpawner>();
         }
         
         Debug.Log("NetworkManager initialized");
@@ -211,6 +218,13 @@ public class NetworkManager : MonoBehaviourPunCallbacks
                 }
             }
         }
+        
+        // Spawn player and monster prefabs
+        if (prefabSpawner == null)
+        {
+            prefabSpawner = gameObject.AddComponent<PrefabSpawner>();
+        }
+        prefabSpawner.SpawnPlayerAndMonster();
         
         // IMPORTANT: Set the game state to Lobby which will trigger initialization
         if (GameManager.Instance != null)

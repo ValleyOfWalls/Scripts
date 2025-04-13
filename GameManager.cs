@@ -76,10 +76,8 @@ public class GameManager : MonoBehaviourPunCallbacks
             lobbyManager = CreateManager<LobbyManager>("LobbyManager");
         }
         
-        if (gameplayManager == null)
-        {
-            gameplayManager = CreateManager<GameplayManager>("GameplayManager");
-        }
+        // GameplayManager will be created when needed by NetworkManager
+        // We don't create it here because it needs a PhotonView which requires being in a room
         
         if (battleUIManager == null)
         {
@@ -238,6 +236,29 @@ public class GameManager : MonoBehaviourPunCallbacks
     private void RPC_StartGame()
     {
         Debug.Log("RPC_StartGame received - starting game");
+        
+        // Create GameplayManager via PhotonNetwork.Instantiate
+        if (gameplayManager == null)
+        {
+            if (PhotonNetwork.IsConnected && PhotonNetwork.InRoom)
+            {
+                // Use prefab from Resources folder
+                GameObject gameplayManagerObj = PhotonNetwork.Instantiate("GameplayManager", Vector3.zero, Quaternion.identity);
+                gameplayManager = gameplayManagerObj.GetComponent<GameplayManager>();
+                
+                // Parent to this object
+                gameplayManagerObj.transform.SetParent(transform);
+                
+                Debug.Log("GameplayManager instantiated with PhotonView ID: " + 
+                          gameplayManagerObj.GetComponent<PhotonView>().ViewID);
+            }
+            else
+            {
+                Debug.LogError("Cannot instantiate GameplayManager: Not in room!");
+                return;
+            }
+        }
+        
         SetState(GameState.Battle);
     }
     
@@ -267,6 +288,8 @@ public class GameManager : MonoBehaviourPunCallbacks
         return battleUIManager;
     }
 }
+
+// At the end of the GameManager.cs file, after the closing brace of the GameManager class
 
 // Class to store player information
 public class PlayerInfo
