@@ -1,9 +1,8 @@
 using UnityEngine;
 using UnityEditor;
 using System.IO;
-using System;
-using System.Collections;
 using System.Collections.Generic;
+using Photon.Pun; // Added missing namespace
 
 #if UNITY_EDITOR
 public class GameObjectPrefabGenerator : MonoBehaviour
@@ -11,19 +10,25 @@ public class GameObjectPrefabGenerator : MonoBehaviour
     [MenuItem("Tools/Generate Required Prefabs")]
     public static void GenerateRequiredPrefabs()
     {
-        // Create prefabs directory if it doesn't exist
+        Debug.Log("Starting to generate required prefabs...");
+        
+        // Create Resources directory if it doesn't exist
         string prefabPath = "Assets/Resources";
         if (!Directory.Exists(prefabPath))
         {
             Directory.CreateDirectory(prefabPath);
+            Debug.Log("Created Resources directory");
         }
         
         // Create Player prefab
         GameObject playerObj = new GameObject("Player");
         
         // Add necessary components for a networked player
-        playerObj.AddComponent<Photon.Pun.PhotonView>();
-        playerObj.AddComponent<PlayerController>();
+        PhotonView playerView = playerObj.AddComponent<PhotonView>();
+        playerView.Synchronization = ViewSynchronization.UnreliableOnChange;
+        playerView.ObservedComponents = new List<Component>();
+        PlayerController playerController = playerObj.AddComponent<PlayerController>();
+        playerView.ObservedComponents.Add(playerController);
         
         // Save as prefab
         PrefabUtility.SaveAsPrefabAsset(playerObj, prefabPath + "/Player.prefab");
@@ -36,8 +41,11 @@ public class GameObjectPrefabGenerator : MonoBehaviour
         GameObject monsterObj = new GameObject("Monster");
         
         // Add necessary components for a networked monster
-        monsterObj.AddComponent<Photon.Pun.PhotonView>();
-        monsterObj.AddComponent<MonsterController>();
+        PhotonView monsterView = monsterObj.AddComponent<PhotonView>();
+        monsterView.Synchronization = ViewSynchronization.UnreliableOnChange;
+        monsterView.ObservedComponents = new List<Component>();
+        MonsterController monsterController = monsterObj.AddComponent<MonsterController>();
+        monsterView.ObservedComponents.Add(monsterController);
         
         // Save as prefab
         PrefabUtility.SaveAsPrefabAsset(monsterObj, prefabPath + "/Monster.prefab");
@@ -50,11 +58,11 @@ public class GameObjectPrefabGenerator : MonoBehaviour
         GameObject gameplayManagerObj = new GameObject("GameplayManager");
         
         // Add necessary components
-        Photon.Pun.PhotonView photonView = gameplayManagerObj.AddComponent<Photon.Pun.PhotonView>();
-        photonView.Synchronization = Photon.Pun.ViewSynchronization.UnreliableOnChange;
-        photonView.ObservedComponents = new List<Component>();
-        
-        gameplayManagerObj.AddComponent<GameplayManager>();
+        PhotonView gameplayManagerView = gameplayManagerObj.AddComponent<PhotonView>();
+        gameplayManagerView.Synchronization = ViewSynchronization.UnreliableOnChange;
+        gameplayManagerView.ObservedComponents = new List<Component>();
+        GameplayManager gameplayManager = gameplayManagerObj.AddComponent<GameplayManager>();
+        gameplayManagerView.ObservedComponents.Add(gameplayManager);
         
         // Save as prefab
         PrefabUtility.SaveAsPrefabAsset(gameplayManagerObj, prefabPath + "/GameplayManager.prefab");
@@ -64,6 +72,8 @@ public class GameObjectPrefabGenerator : MonoBehaviour
         DestroyImmediate(gameplayManagerObj);
         
         AssetDatabase.Refresh();
+        
+        Debug.Log("All prefabs generated successfully!");
     }
 }
 #endif

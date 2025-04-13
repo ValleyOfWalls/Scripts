@@ -48,17 +48,17 @@ public class MonsterController : MonoBehaviourPunCallbacks, IPunObservable
     [SerializeField] private List<Card> monsterDeck = new List<Card>();
     
     // Properties
-public string MonsterName { get => monsterName; private set => monsterName = value; }
-public int MaxHealth { get => maxHealth; set => maxHealth = value; }
-public int CurrentHealth { get => currentHealth; set => currentHealth = value; }
-public int AttackPower { get => attackPower; set => attackPower = value; }
-public int DefensePower { get => defensePower; set => defensePower = value; }
-public int Block { get => block; set => block = value; }
-public int StrengthModifier { get => strengthModifier; set => strengthModifier = value; }
-public int DexterityModifier { get => dexterityModifier; set => dexterityModifier = value; }
-public bool IsInCombat { get => isInCombat; set => isInCombat = value; }
-public MonsterIntent CurrentIntent { get => currentIntent; private set => currentIntent = value; }
-public PlayerController OwningPlayer { get => owningPlayer; set => owningPlayer = value; }
+    public string MonsterName { get => monsterName; private set => monsterName = value; }
+    public int MaxHealth { get => maxHealth; set => maxHealth = value; }
+    public int CurrentHealth { get => currentHealth; set => currentHealth = value; }
+    public int AttackPower { get => attackPower; set => attackPower = value; }
+    public int DefensePower { get => defensePower; set => defensePower = value; }
+    public int Block { get => block; set => block = value; }
+    public int StrengthModifier { get => strengthModifier; set => strengthModifier = value; }
+    public int DexterityModifier { get => dexterityModifier; set => dexterityModifier = value; }
+    public bool IsInCombat { get => isInCombat; set => isInCombat = value; }
+    public MonsterIntent CurrentIntent { get => currentIntent; private set => currentIntent = value; }
+    public PlayerController OwningPlayer { get => owningPlayer; set => owningPlayer = value; }
     
     #endregion
     
@@ -75,8 +75,23 @@ public PlayerController OwningPlayer { get => owningPlayer; set => owningPlayer 
     
     private void Start()
     {
-        // Get references
-        gameplayManager = FindObjectOfType<GameplayManager>();
+        // Start delayed initialization
+        StartCoroutine(DelayedInitialization());
+    }
+    
+    private IEnumerator DelayedInitialization()
+    {
+        // Wait a short time to ensure all objects are initialized
+        yield return new WaitForSeconds(0.5f);
+        
+        // Try to find required objects with multiple fallbacks
+        TryGetGameplayManager();
+        
+        // Generate a unique name if not set
+        if (string.IsNullOrEmpty(monsterName) || monsterName == "Pet Monster")
+        {
+            monsterName = GenerateMonsterName();
+        }
         
         // Setup monster visuals and UI
         SetupMonsterUI();
@@ -88,7 +103,70 @@ public PlayerController OwningPlayer { get => owningPlayer; set => owningPlayer 
         DecideNextAction();
         
         // Register with gameplay manager
-        gameplayManager.RegisterMonster(this);
+        if (gameplayManager != null)
+        {
+            gameplayManager.RegisterMonster(this);
+            Debug.Log($"Monster {monsterName} registered with GameplayManager");
+        }
+        else
+        {
+            Debug.LogWarning($"Monster {monsterName} couldn't find GameplayManager to register with");
+        }
+    }
+    
+    private void TryGetGameplayManager()
+    {
+        // First try to find directly
+        gameplayManager = FindObjectOfType<GameplayManager>();
+        
+        // If not found, wait a bit and try again with fallbacks
+        if (gameplayManager == null)
+        {
+            StartCoroutine(RetryFindGameplayManager());
+        }
+    }
+    
+    private IEnumerator RetryFindGameplayManager()
+    {
+        int retryCount = 0;
+        while (gameplayManager == null && retryCount < 5)
+        {
+            yield return new WaitForSeconds(0.5f);
+            
+            // Try direct find again
+            gameplayManager = FindObjectOfType<GameplayManager>();
+            
+            // Try via GameManager as fallback
+            if (gameplayManager == null && GameManager.Instance != null)
+            {
+                gameplayManager = GameManager.Instance.GetGameplayManager();
+            }
+            
+            retryCount++;
+        }
+        
+        if (gameplayManager == null)
+        {
+            Debug.LogWarning($"Monster {monsterName}: Failed to find GameplayManager after retries");
+        }
+        else
+        {
+            Debug.Log($"Monster {monsterName}: Found GameplayManager after retries");
+            
+            // Register with gameplay manager if found
+            gameplayManager.RegisterMonster(this);
+        }
+    }
+    
+    private string GenerateMonsterName()
+    {
+        string[] prefixes = { "Mighty", "Shadow", "Mystic", "Fierce", "Crimson", "Dark", "Ancient", "Frozen", "Flaming", "Thunder" };
+        string[] types = { "Dragon", "Goblin", "Troll", "Gryphon", "Phoenix", "Beast", "Golem", "Wyrm", "Elemental", "Demon" };
+        
+        string prefix = prefixes[Random.Range(0, prefixes.Length)];
+        string type = types[Random.Range(0, types.Length)];
+        
+        return $"{prefix} {type}";
     }
     
     private void Update()
@@ -628,68 +706,68 @@ public PlayerController OwningPlayer { get => owningPlayer; set => owningPlayer 
     }
     
     private void ExecuteAction(MonsterAction action)
-{
-    if (!photonView.IsMine || opponentPlayer == null) return;
-    
-    switch (action.ActionType)
     {
-        case MonsterActionType.Attack:
-            // Deal damage to player
-            int damageAmount = action.BaseDamage + strengthModifier;
-            opponentPlayer.TakeDamage(damageAmount, photonView.Owner.ActorNumber.ToString());
-            break;
-            
-        case MonsterActionType.Block:
-            // Add block
-            AddBlock(action.BlockAmount);
-            break;
-            
-        case MonsterActionType.Buff:
-            // Apply buffs
-            if (action.StrengthModifier != 0)
-            {
-                ModifyStrength(action.StrengthModifier);
-            }
-            
-            if (action.DexterityModifier != 0)
-            {
-                ModifyDexterity(action.DexterityModifier);
-            }
-            
-            if (action.HealAmount > 0)
-            {
-                Heal(action.HealAmount);
-            }
-            break;
-            
-        case MonsterActionType.Debuff:
-            // Apply debuffs to player
-            if (action.StrengthModifier != 0)
-            {
-                opponentPlayer.ModifyStrength(-action.StrengthModifier);
-            }
-            
-            if (action.DexterityModifier != 0)
-            {
-                opponentPlayer.ModifyDexterity(-action.DexterityModifier);
-            }
-            break;
-            
-        case MonsterActionType.Mixed:
-            // Combined action
-            if (action.BaseDamage > 0)
-            {
-                int mixedDamage = action.BaseDamage + strengthModifier;
-                opponentPlayer.TakeDamage(mixedDamage, photonView.Owner.ActorNumber.ToString());
-            }
-            
-            if (action.BlockAmount > 0)
-            {
+        if (!photonView.IsMine || opponentPlayer == null) return;
+        
+        switch (action.ActionType)
+        {
+            case MonsterActionType.Attack:
+                // Deal damage to player
+                int damageAmount = action.BaseDamage + strengthModifier;
+                opponentPlayer.TakeDamage(damageAmount, photonView.Owner.ActorNumber.ToString());
+                break;
+                
+            case MonsterActionType.Block:
+                // Add block
                 AddBlock(action.BlockAmount);
-            }
-            break;
+                break;
+                
+            case MonsterActionType.Buff:
+                // Apply buffs
+                if (action.StrengthModifier != 0)
+                {
+                    ModifyStrength(action.StrengthModifier);
+                }
+                
+                if (action.DexterityModifier != 0)
+                {
+                    ModifyDexterity(action.DexterityModifier);
+                }
+                
+                if (action.HealAmount > 0)
+                {
+                    Heal(action.HealAmount);
+                }
+                break;
+                
+            case MonsterActionType.Debuff:
+                // Apply debuffs to player
+                if (action.StrengthModifier != 0)
+                {
+                    opponentPlayer.ModifyStrength(-action.StrengthModifier);
+                }
+                
+                if (action.DexterityModifier != 0)
+                {
+                    opponentPlayer.ModifyDexterity(-action.DexterityModifier);
+                }
+                break;
+                
+            case MonsterActionType.Mixed:
+                // Combined action
+                if (action.BaseDamage > 0)
+                {
+                    int mixedDamage = action.BaseDamage + strengthModifier;
+                    opponentPlayer.TakeDamage(mixedDamage, photonView.Owner.ActorNumber.ToString());
+                }
+                
+                if (action.BlockAmount > 0)
+                {
+                    AddBlock(action.BlockAmount);
+                }
+                break;
+        }
     }
-}
     
     private void InitializeMonsterDeck()
     {
@@ -841,9 +919,10 @@ public class MonsterAction
     public int DexterityModifier;
     public float Weight;
     
-    // Copy constructor
+    // Default constructor
     public MonsterAction() { }
     
+    // Copy constructor
     public MonsterAction(MonsterAction other)
     {
         ActionType = other.ActionType;

@@ -80,8 +80,20 @@ public class PlayerController : MonoBehaviourPunCallbacks, IPunObservable
     
     private void Start()
     {
+        // Try to find required objects with multiple fallbacks
+        StartCoroutine(DelayedInitialization());
+    }
+    
+    private IEnumerator DelayedInitialization()
+    {
+        // Wait a short time to ensure all objects are initialized
+        yield return new WaitForSeconds(0.5f);
+        
         // Get references
-        gameplayManager = FindObjectOfType<GameplayManager>();
+        TryGetGameplayManager();
+        
+        // Set player name from Photon nickname
+        playerName = photonView.Owner.NickName;
         
         // Setup player visuals and UI
         if (photonView.IsMine)
@@ -90,11 +102,60 @@ public class PlayerController : MonoBehaviourPunCallbacks, IPunObservable
             InitializeDeck();
         }
         
-        // Set player name from Photon nickname
-        playerName = photonView.Owner.NickName;
-        
         // Register with gameplay manager
-        gameplayManager.RegisterPlayer(this);
+        if (gameplayManager != null)
+        {
+            gameplayManager.RegisterPlayer(this);
+            Debug.Log($"Player {playerName} registered with GameplayManager");
+        }
+        else
+        {
+            Debug.LogWarning($"Player {playerName} couldn't find GameplayManager to register with");
+        }
+    }
+    
+    private void TryGetGameplayManager()
+    {
+        // First try to find directly
+        gameplayManager = FindObjectOfType<GameplayManager>();
+        
+        // If not found, wait a bit and try again with fallbacks
+        if (gameplayManager == null)
+        {
+            StartCoroutine(RetryFindGameplayManager());
+        }
+    }
+    
+    private IEnumerator RetryFindGameplayManager()
+    {
+        int retryCount = 0;
+        while (gameplayManager == null && retryCount < 5)
+        {
+            yield return new WaitForSeconds(0.5f);
+            
+            // Try direct find again
+            gameplayManager = FindObjectOfType<GameplayManager>();
+            
+            // Try via GameManager as fallback
+            if (gameplayManager == null && GameManager.Instance != null)
+            {
+                gameplayManager = GameManager.Instance.GetGameplayManager();
+            }
+            
+            retryCount++;
+        }
+        
+        if (gameplayManager == null)
+        {
+            Debug.LogWarning($"Player {playerName}: Failed to find GameplayManager after retries");
+        }
+        else
+        {
+            Debug.Log($"Player {playerName}: Found GameplayManager after retries");
+            
+            // Register with gameplay manager if found
+            gameplayManager.RegisterPlayer(this);
+        }
     }
     
     private void Update()
@@ -639,7 +700,9 @@ public class PlayerController : MonoBehaviourPunCallbacks, IPunObservable
         }
         
         // Update UI
-        cardUIManager?.RemoveCardFromHand(cardIndex);
+        if (cardUIManager != null)
+            cardUIManager.RemoveCardFromHand(cardIndex);
+            
         UpdateUI();
     }
     
@@ -711,6 +774,8 @@ public class PlayerController : MonoBehaviourPunCallbacks, IPunObservable
         
         // Shuffle the deck
         ShuffleDeck();
+        
+        Debug.Log($"Player {playerName} initialized deck with {deck.Count} cards");
     }
     
     public void ShuffleDeck()
@@ -747,7 +812,8 @@ public class PlayerController : MonoBehaviourPunCallbacks, IPunObservable
                 hand.Add(drawnCard);
                 
                 // Update UI for the drawn card
-                cardUIManager?.AddCardToHand(drawnCard);
+                if (cardUIManager != null)
+                    cardUIManager.AddCardToHand(drawnCard);
             }
         }
     }
@@ -760,7 +826,8 @@ public class PlayerController : MonoBehaviourPunCallbacks, IPunObservable
         discardPile.AddRange(hand);
         
         // Clear UI
-        cardUIManager?.ClearHand();
+        if (cardUIManager != null)
+            cardUIManager.ClearHand();
         
         // Clear hand list
         hand.Clear();
@@ -841,7 +908,9 @@ public class PlayerController : MonoBehaviourPunCallbacks, IPunObservable
         }
         
         // Update UI
-        cardUIManager?.RemoveCardFromHand(cardIndex);
+        if (cardUIManager != null)
+            cardUIManager.RemoveCardFromHand(cardIndex);
+            
         UpdateUI();
     }
     

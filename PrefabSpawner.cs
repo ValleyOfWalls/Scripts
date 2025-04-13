@@ -7,8 +7,14 @@ using Photon.Realtime;
 public class PrefabSpawner : MonoBehaviourPunCallbacks
 {
     private GameplayManager gameplayManager;
+    private bool hasSpawnedPrefabs = false;
     
     private void Awake()
+    {
+        TryGetGameplayManager();
+    }
+    
+    private void TryGetGameplayManager()
     {
         gameplayManager = FindObjectOfType<GameplayManager>();
     }
@@ -18,6 +24,12 @@ public class PrefabSpawner : MonoBehaviourPunCallbacks
         if (!PhotonNetwork.IsConnected || !PhotonNetwork.InRoom)
         {
             Debug.LogError("Cannot spawn: Not connected to Photon or not in a room");
+            return;
+        }
+        
+        if (hasSpawnedPrefabs)
+        {
+            Debug.Log("Prefabs already spawned, not spawning again");
             return;
         }
         
@@ -34,25 +46,56 @@ public class PrefabSpawner : MonoBehaviourPunCallbacks
         GameObject monsterObj = PhotonNetwork.Instantiate("Monster", monsterPosition, Quaternion.identity);
         Debug.Log("Monster instantiated: " + monsterObj.name);
         
+        // Set flag
+        hasSpawnedPrefabs = true;
+        
         // Notify GameplayManager that prefabs have been spawned
         StartCoroutine(NotifyGameplayManager());
     }
     
     private IEnumerator NotifyGameplayManager()
     {
-        // Wait a frame to ensure components are initialized
-        yield return null;
+        // Wait to ensure components are initialized
+        yield return new WaitForSeconds(1.0f);
         
-        // Find GameplayManager if not already set
-        gameplayManager = FindObjectOfType<GameplayManager>();
+        // Try to find GameplayManager for several attempts
+        int attempts = 0;
+        while (gameplayManager == null && attempts < 5)
+        {
+            gameplayManager = FindObjectOfType<GameplayManager>();
+            
+            if (gameplayManager == null)
+            {
+                Debug.LogWarning($"GameplayManager not found, attempt {attempts+1}/5 - waiting...");
+                yield return new WaitForSeconds(0.5f);
+                attempts++;
+            }
+        }
         
         if (gameplayManager != null)
         {
             gameplayManager.OnPlayerAndMonsterSpawned();
+            Debug.Log("Successfully notified GameplayManager that prefabs have been spawned");
         }
         else
         {
-            Debug.LogWarning("GameplayManager not found after spawning - will try again when it's created");
+            Debug.LogWarning("GameplayManager not found after multiple attempts");
+            
+            // As a fallback, try to get it via GameManager
+            if (GameManager.Instance != null)
+            {
+                gameplayManager = GameManager.Instance.GetGameplayManager();
+                
+                if (gameplayManager != null)
+                {
+                    gameplayManager.OnPlayerAndMonsterSpawned();
+                    Debug.Log("Successfully notified GameplayManager via GameManager instance");
+                }
+                else
+                {
+                    Debug.LogError("Failed to find GameplayManager - this may cause issues in gameplay");
+                }
+            }
         }
     }
 }

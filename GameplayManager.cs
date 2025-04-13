@@ -87,6 +87,16 @@ public class GameplayManager : MonoBehaviourPunCallbacks, IPunObservable
     
     Debug.Log("GameplayManager initialized with PhotonView ID: " + photonView.ViewID);
     
+    // Register this GameplayManager with the GameManager
+    if (GameManager.Instance != null)
+    {
+        GameManager.Instance.RegisterNetworkedGameplayManager(this);
+    }
+    else
+    {
+        Debug.LogError("GameManager.Instance is null in GameplayManager.Awake");
+    }
+    
     // Get references to other managers
     uiManager = FindObjectOfType<UIManager>();
     networkManager = FindObjectOfType<NetworkManager>();

@@ -23,8 +23,8 @@ public class GameManager : MonoBehaviourPunCallbacks
     // Player information
     private List<PlayerInfo> players = new List<PlayerInfo>();
     
-    // PhotonView for this GameObject
-    private PhotonView gameManagerPhotonView;
+    // Flag to track if GameplayManager has been spawned
+    private bool gameplayManagerSpawned = false;
 
     private void Awake()
     {
@@ -38,24 +38,8 @@ public class GameManager : MonoBehaviourPunCallbacks
         Instance = this;
         DontDestroyOnLoad(gameObject);
         
-        // Get or add PhotonView component
-        gameManagerPhotonView = GetComponent<PhotonView>();
-        if (gameManagerPhotonView == null)
-        {
-            gameManagerPhotonView = gameObject.AddComponent<PhotonView>();
-            gameManagerPhotonView.ViewID = 999; // Set a static view ID for simplicity
-            PhotonNetwork.RegisterPhotonView(gameManagerPhotonView);
-        }
-        
         // Initialize managers in the correct order
-        try
-        {
-            InitializeManagers();
-        }
-        catch (System.Exception e)
-        {
-            Debug.LogError("Error initializing managers: " + e.Message);
-        }
+        InitializeManagers();
     }
 
     private void InitializeManagers()
@@ -63,28 +47,33 @@ public class GameManager : MonoBehaviourPunCallbacks
         // Create all manager GameObjects as children of GameManager
         if (networkManager == null)
         {
-            networkManager = CreateManager<NetworkManager>("NetworkManager");
+            GameObject networkObj = new GameObject("NetworkManager");
+            networkObj.transform.SetParent(transform);
+            networkManager = networkObj.AddComponent<NetworkManager>();
         }
         
         if (uiManager == null)
         {
-            uiManager = CreateManager<UIManager>("UIManager");
+            GameObject uiObj = new GameObject("UIManager");
+            uiObj.transform.SetParent(transform);
+            uiManager = uiObj.AddComponent<UIManager>();
         }
         
         if (lobbyManager == null)
         {
-            lobbyManager = CreateManager<LobbyManager>("LobbyManager");
-        }
-        
-        // GameplayManager will be created when needed by NetworkManager
-        // We don't create it here because it needs a PhotonView which requires being in a room
-        
-        if (battleUIManager == null)
-        {
-            battleUIManager = CreateManager<BattleUIManager>("BattleUIManager");
+            GameObject lobbyObj = new GameObject("LobbyManager");
+            lobbyObj.transform.SetParent(transform);
+            lobbyManager = lobbyObj.AddComponent<LobbyManager>();
         }
 
-        // Allow UI Manager to initialize before setting state
+        if (battleUIManager == null)
+        {
+            GameObject battleUIMgrObj = new GameObject("BattleUIManager");
+            battleUIMgrObj.transform.SetParent(transform);
+            battleUIManager = battleUIMgrObj.AddComponent<BattleUIManager>();
+        }
+
+        // Set initial game state
         StartCoroutine(DelayedStateChange());
     }
 
@@ -97,16 +86,10 @@ public class GameManager : MonoBehaviourPunCallbacks
         SetState(GameState.Connecting);
     }
 
-    private T CreateManager<T>(string name) where T : Component
-    {
-        GameObject managerObj = new GameObject(name);
-        managerObj.transform.SetParent(transform);
-        return managerObj.AddComponent<T>();
-    }
-
     public void SetState(GameState newState)
     {
         currentState = newState;
+        Debug.Log($"Game state changed to: {currentState}");
         
         switch (currentState)
         {
@@ -115,20 +98,12 @@ public class GameManager : MonoBehaviourPunCallbacks
                 {
                     networkManager.Connect();
                 }
-                else
-                {
-                    Debug.LogError("NetworkManager is null in SetState");
-                }
                 break;
                 
             case GameState.Lobby:
                 if (lobbyManager != null)
                 {
                     lobbyManager.InitializeLobby();
-                }
-                else
-                {
-                    Debug.LogError("LobbyManager is null in SetState");
                 }
                 break;
                 
@@ -137,10 +112,6 @@ public class GameManager : MonoBehaviourPunCallbacks
                 {
                     gameplayManager.InitializeDraftPhase();
                 }
-                else
-                {
-                    Debug.LogError("GameplayManager is null in SetState");
-                }
                 break;
                 
             case GameState.Battle:
@@ -148,16 +119,37 @@ public class GameManager : MonoBehaviourPunCallbacks
                 {
                     gameplayManager.InitializeBattlePhase();
                 }
-                else
-                {
-                    Debug.LogError("GameplayManager is null in SetState");
-                }
+                
                 // Show gameplay UI
                 if (uiManager != null)
                 {
                     uiManager.ShowGameplayUI();
                 }
                 break;
+        }
+    }
+
+    // Method for the master client to instantiate the networked GameplayManager
+    public void InstantiateNetworkedGameplayManager()
+    {
+        if (!PhotonNetwork.IsMasterClient || !PhotonNetwork.InRoom) return;
+        if (gameplayManagerSpawned) return;
+        
+        Debug.Log("Master client instantiating networked GameplayManager");
+        
+        // Instantiate the GameplayManager prefab through PhotonNetwork
+        GameObject gameplayManagerObj = PhotonNetwork.Instantiate("GameplayManager", Vector3.zero, Quaternion.identity);
+        
+        if (gameplayManagerObj != null)
+        {
+            gameplayManager = gameplayManagerObj.GetComponent<GameplayManager>();
+            gameplayManagerSpawned = true;
+            Debug.Log("GameplayManager instantiated successfully with PhotonView ID: " + 
+                      gameplayManagerObj.GetComponent<PhotonView>().ViewID);
+        }
+        else
+        {
+            Debug.LogError("Failed to instantiate GameplayManager prefab!");
         }
     }
 
@@ -212,11 +204,6 @@ public class GameManager : MonoBehaviourPunCallbacks
 
     public List<PlayerInfo> GetAllPlayers()
     {
-        Debug.Log($"Getting all players, count: {players.Count}");
-        foreach (PlayerInfo player in players)
-        {
-            Debug.Log($"Player: {player.PlayerName}, ID: {player.PlayerId}, Ready: {player.IsReady}");
-        }
         return new List<PlayerInfo>(players);
     }
 
@@ -227,39 +214,57 @@ public class GameManager : MonoBehaviourPunCallbacks
         
         if (PhotonNetwork.IsMasterClient && AreAllPlayersReady())
         {
-            Debug.Log("Sending RPC_StartGame to all clients");
-            gameManagerPhotonView.RPC("RPC_StartGame", RpcTarget.All);
-        }
-    }
-
-    [PunRPC]
-    private void RPC_StartGame()
-    {
-        Debug.Log("RPC_StartGame received - starting game");
-        
-        // Create GameplayManager via PhotonNetwork.Instantiate
-        if (gameplayManager == null)
-        {
-            if (PhotonNetwork.IsConnected && PhotonNetwork.InRoom)
+            // Make sure we have a GameplayManager
+            if (gameplayManager == null && !gameplayManagerSpawned)
             {
-                // Use prefab from Resources folder
-                GameObject gameplayManagerObj = PhotonNetwork.Instantiate("GameplayManager", Vector3.zero, Quaternion.identity);
-                gameplayManager = gameplayManagerObj.GetComponent<GameplayManager>();
+                Debug.Log("Creating GameplayManager before starting game");
+                InstantiateNetworkedGameplayManager();
                 
-                // Parent to this object
-                gameplayManagerObj.transform.SetParent(transform);
-                
-                Debug.Log("GameplayManager instantiated with PhotonView ID: " + 
-                          gameplayManagerObj.GetComponent<PhotonView>().ViewID);
+                // Give a moment for network synchronization
+                StartCoroutine(DelayedGameStart());
             }
             else
             {
-                Debug.LogError("Cannot instantiate GameplayManager: Not in room!");
-                return;
+                // GameplayManager already exists, go straight to battle
+                SetState(GameState.Battle);
             }
         }
+    }
+    
+    private IEnumerator DelayedGameStart()
+    {
+        // Wait for GameplayManager to be synchronized across clients
+        yield return new WaitForSeconds(1.0f);
         
+        // Set game state to battle
         SetState(GameState.Battle);
+    }
+    
+    // Called when a new networked object is created
+    public void RegisterNetworkedGameplayManager(GameplayManager manager)
+    {
+        Debug.Log("RegisterNetworkedGameplayManager called with manager: " + (manager != null ? manager.name : "null"));
+        
+        // Only set if we don't already have one
+        if (gameplayManager == null)
+        {
+            gameplayManager = manager;
+            Debug.Log("GameplayManager reference updated");
+        }
+    }
+    
+    // Override OnJoinedRoom to handle room joining logic
+    public override void OnJoinedRoom()
+    {
+        Debug.Log("GameManager.OnJoinedRoom called");
+        
+        // If we're the master client (room creator), we'll create GameplayManager when all players are ready
+        if (PhotonNetwork.IsMasterClient)
+        {
+            Debug.Log("I am master client, will create GameplayManager when game starts");
+        }
+        
+        base.OnJoinedRoom();
     }
     
     // Helper methods to access managers
@@ -282,14 +287,7 @@ public class GameManager : MonoBehaviourPunCallbacks
     {
         return gameplayManager;
     }
-    
-    public BattleUIManager GetBattleUIManager()
-    {
-        return battleUIManager;
-    }
 }
-
-// At the end of the GameManager.cs file, after the closing brace of the GameManager class
 
 // Class to store player information
 public class PlayerInfo
