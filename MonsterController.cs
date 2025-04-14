@@ -464,22 +464,25 @@ public class MonsterController : MonoBehaviourPunCallbacks, IPunObservable
     }
     
     public void TakeTurn()
-    {
-        if (!photonView.IsMine || !isInCombat || opponentPlayer == null) return;
-        
-        // Execute the next action
-        ExecuteAction(nextAction);
-        
-        // Decide on the next action for the next turn
-        DecideNextAction();
-        
-        // Reset block at end of turn
-        block = 0;
-        
-        // Notify game manager that our turn is over
-        if (gameplayManager != null)
-            gameplayManager.MonsterEndedTurn();
-    }
+{
+    if (!photonView.IsMine || !isInCombat || opponentPlayer == null) return;
+    
+    Debug.Log($"Monster {MonsterName} taking turn against player {opponentPlayer.PlayerName}");
+    
+    // Execute the next action
+    ExecuteAction(nextAction);
+    
+    // Decide on the next action for the next turn
+    DecideNextAction();
+    
+    // Reset block at end of turn
+    block = 0;
+    
+    // Notify game manager that our turn is over
+    if (gameplayManager != null)
+        gameplayManager.MonsterEndedTurn();
+}
+
     
     #endregion
     

@@ -496,41 +496,44 @@ public class GameplayManager : MonoBehaviourPunCallbacks, IPunObservable
         SetGamePhase(GamePhase.Battle);
     }
     
+// This is a method to replace in the GameplayManager class
 private void AssignMonstersToPlayers()
+{
+    if (!PhotonNetwork.IsMasterClient) return;
+    
+    // Clear previous assignments
+    playerMonsterPairs.Clear();
+    
+    // Get list of player actor numbers
+    List<int> playerActors = new List<int>(players.Keys);
+    
+    if (playerActors.Count < 2)
     {
-        if (!PhotonNetwork.IsMasterClient) return;
-        
-        // Clear previous assignments
-        playerMonsterPairs.Clear();
-        
-        // Get list of player actor numbers
-        List<int> playerActors = new List<int>(players.Keys);
-        
-        if (playerActors.Count < 2)
-        {
-            Debug.LogError("Not enough players to assign monsters!");
-            return;
-        }
-        
-        // Sort the players to ensure consistent order
-        playerActors.Sort();
-        
-        // Assign monsters in a round-robin fashion
-        for (int i = 0; i < playerActors.Count; i++)
-        {
-            int playerActor = playerActors[i];
-            int nextPlayerIndex = (i + 1) % playerActors.Count;
-            int monsterOwner = playerActors[nextPlayerIndex];
-            
-            // Store the pairing
-            playerMonsterPairs.Add(playerActor, monsterOwner);
-            
-            // Send RPC to set up the pairing
-            photonView.RPC("RPC_SetOpponent", RpcTarget.All, playerActor, monsterOwner);
-            
-            Debug.Log($"Assigned player {playerActor} to fight monster owned by {monsterOwner}");
-        }
+        Debug.LogError("Not enough players to assign monsters!");
+        return;
     }
+    
+    // Sort the players to ensure consistent order
+    playerActors.Sort();
+    
+    // Assign each player to fight another player's pet
+    // Player 1 fights Player 2's pet, Player 2 fights Player 3's pet, etc.
+    // Last player fights Player 1's pet (round-robin)
+    for (int i = 0; i < playerActors.Count; i++)
+    {
+        int playerActor = playerActors[i];
+        int nextPlayerIndex = (i + 1) % playerActors.Count;
+        int opponentPetOwner = playerActors[nextPlayerIndex];
+        
+        // Store the pairing: player -> opponent's pet owner
+        playerMonsterPairs.Add(playerActor, opponentPetOwner);
+        
+        // Send RPC to set up the pairing
+        photonView.RPC("RPC_SetOpponent", RpcTarget.All, playerActor, opponentPetOwner);
+        
+        Debug.Log($"Assigned player {playerActor} to fight pet owned by {opponentPetOwner}");
+    }
+}
 
 
     

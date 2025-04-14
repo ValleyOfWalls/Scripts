@@ -65,43 +65,44 @@ public class CardUIManager : MonoBehaviourPunCallbacks
         bgImage.color = new Color(0, 0, 0, 0.5f);
     }
     
-    private void CreateDropZones()
-    {
-        Canvas mainCanvas = FindObjectOfType<Canvas>();
-        if (mainCanvas == null) return;
-        
-        // Create enemy drop zone (upper right)
-        GameObject enemyZone = new GameObject("EnemyDropZone");
-        enemyZone.transform.SetParent(mainCanvas.transform, false);
-        
-        enemyDropZone = enemyZone.AddComponent<RectTransform>();
-        enemyDropZone.anchorMin = new Vector2(0.7f, 0.5f);
-        enemyDropZone.anchorMax = new Vector2(0.9f, 0.7f);
-        enemyDropZone.sizeDelta = Vector2.zero;
-        
-        Image enemyZoneImage = enemyZone.AddComponent<Image>();
-        enemyZoneImage.color = new Color(0.8f, 0.2f, 0.2f, 0.3f);
-        
-        TextMeshProUGUI enemyZoneText = CreateDropZoneText(enemyZone, "Drop to Attack Enemy");
-        
-        // Create pet drop zone (upper middle)
-        GameObject petZone = new GameObject("PetDropZone");
-        petZone.transform.SetParent(mainCanvas.transform, false);
-        
-        petDropZone = petZone.AddComponent<RectTransform>();
-        petDropZone.anchorMin = new Vector2(0.4f, 0.5f);
-        petDropZone.anchorMax = new Vector2(0.6f, 0.7f);
-        petDropZone.sizeDelta = Vector2.zero;
-        
-        Image petZoneImage = petZone.AddComponent<Image>();
-        petZoneImage.color = new Color(0.2f, 0.6f, 0.8f, 0.3f);
-        
-        TextMeshProUGUI petZoneText = CreateDropZoneText(petZone, "Drop to Support Pet");
-        
-        // Initially hide drop zones
-        enemyZone.SetActive(false);
-        petZone.SetActive(false);
-    }
+    // In the CardUIManager class, update the CreateDropZones method
+private void CreateDropZones()
+{
+    Canvas mainCanvas = FindObjectOfType<Canvas>();
+    if (mainCanvas == null) return;
+    
+    // Create enemy pet drop zone (upper right quadrant)
+    GameObject enemyZone = new GameObject("EnemyDropZone");
+    enemyZone.transform.SetParent(mainCanvas.transform, false);
+    
+    enemyDropZone = enemyZone.AddComponent<RectTransform>();
+    enemyDropZone.anchorMin = new Vector2(0.75f, 0.75f);
+    enemyDropZone.anchorMax = new Vector2(0.99f, 0.99f);
+    enemyDropZone.sizeDelta = Vector2.zero;
+    
+    Image enemyZoneImage = enemyZone.AddComponent<Image>();
+    enemyZoneImage.color = new Color(0.8f, 0.2f, 0.2f, 0.3f);
+    
+    TextMeshProUGUI enemyZoneText = CreateDropZoneText(enemyZone, "Drop to Attack Enemy Pet");
+    
+    // Create pet drop zone (upper middle quadrant)
+    GameObject petZone = new GameObject("PetDropZone");
+    petZone.transform.SetParent(mainCanvas.transform, false);
+    
+    petDropZone = petZone.AddComponent<RectTransform>();
+    petDropZone.anchorMin = new Vector2(0.38f, 0.75f);
+    petDropZone.anchorMax = new Vector2(0.62f, 0.99f);
+    petDropZone.sizeDelta = Vector2.zero;
+    
+    Image petZoneImage = petZone.AddComponent<Image>();
+    petZoneImage.color = new Color(0.2f, 0.6f, 0.8f, 0.3f);
+    
+    TextMeshProUGUI petZoneText = CreateDropZoneText(petZone, "Drop to Support Your Pet");
+    
+    // Initially hide drop zones
+    enemyZone.SetActive(false);
+    petZone.SetActive(false);
+}
     
     private TextMeshProUGUI CreateDropZoneText(GameObject parent, string text)
     {

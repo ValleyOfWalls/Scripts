@@ -633,83 +633,96 @@ public class PlayerController : MonoBehaviourPunCallbacks, IPunObservable
     }
     
     public void PlayCardOnPet(int cardIndex)
+{
+    if (!photonView.IsMine || !isMyTurn || cardIndex >= hand.Count) return;
+    
+    Card cardToPlay = hand[cardIndex];
+    
+    // Check if we have enough energy
+    if (currentEnergy < cardToPlay.EnergyCost)
     {
-        if (!photonView.IsMine || !isMyTurn || cardIndex >= hand.Count) return;
-        
-        Card cardToPlay = hand[cardIndex];
-        
-        // Check if we have enough energy
-        if (currentEnergy < cardToPlay.EnergyCost)
-        {
-            Debug.Log("Not enough energy to play this card!");
-            return;
-        }
-        
-        // Make sure we have a pet to support
-        if (petMonster == null)
-        {
-            Debug.Log("No pet monster to support!");
-            return;
-        }
-        
-        // Spend energy
-        currentEnergy -= cardToPlay.EnergyCost;
-        
-        // Apply card effects to pet based on type
-        switch (cardToPlay.CardType)
-        {
-            case CardType.Attack:
-                // For attack cards, add temporary strength to pet
-                petMonster.ModifyStrength(cardToPlay.DamageAmount / 2);
-                break;
-                
-            case CardType.Skill:
-                // Apply block to pet
-                if (cardToPlay.BlockAmount > 0)
-                {
-                    petMonster.AddBlock(cardToPlay.BlockAmount);
-                }
-                
-                // Apply other effects
-                if (cardToPlay.HealAmount > 0)
-                {
-                    petMonster.Heal(cardToPlay.HealAmount);
-                }
-                
-                if (cardToPlay.StrengthModifier != 0)
-                {
-                    petMonster.ModifyStrength(cardToPlay.StrengthModifier);
-                }
-                
-                if (cardToPlay.DexterityModifier != 0)
-                {
-                    petMonster.ModifyDexterity(cardToPlay.DexterityModifier);
-                }
-                break;
-                
-            case CardType.Power:
-                // Handle persistent effects for pet
-                break;
-        }
-        
-        // Remove card from hand and add to discard
-        hand.RemoveAt(cardIndex);
-        
-        if (cardToPlay.Exhaust)
-        {
-            // Exhausted cards don't go to discard
-        }
-        else if (cardToPlay.CardType != CardType.Power)
-        {
-            discardPile.Add(cardToPlay);
-        }
-        
-        // Update UI
-        if (cardUIManager != null)
-            cardUIManager.RemoveCardFromHand(cardIndex);
-            
-        UpdateUI();
+        Debug.Log("Not enough energy to play this card!");
+        return;
     }
+    
+    // Make sure we have a pet to support
+    if (petMonster == null)
+    {
+        Debug.Log("No pet monster to support!");
+        return;
+    }
+    
+    // Spend energy
+    currentEnergy -= cardToPlay.EnergyCost;
+    
+    Debug.Log($"Playing card {cardToPlay.CardName} on pet {petMonster.MonsterName}");
+    
+    // Apply card effects to pet based on type
+    switch (cardToPlay.CardType)
+    {
+        case CardType.Attack:
+            // For attack cards targeting your pet, add temporary strength
+            petMonster.ModifyStrength(cardToPlay.DamageAmount / 2);
+            break;
+            
+        case CardType.Skill:
+            // Apply block to pet
+            if (cardToPlay.BlockAmount > 0)
+            {
+                petMonster.AddBlock(cardToPlay.BlockAmount);
+            }
+            
+            // Apply other effects
+            if (cardToPlay.HealAmount > 0)
+            {
+                petMonster.Heal(cardToPlay.HealAmount);
+            }
+            
+            if (cardToPlay.StrengthModifier != 0)
+            {
+                petMonster.ModifyStrength(cardToPlay.StrengthModifier);
+            }
+            
+            if (cardToPlay.DexterityModifier != 0)
+            {
+                petMonster.ModifyDexterity(cardToPlay.DexterityModifier);
+            }
+            break;
+            
+        case CardType.Power:
+            // Handle persistent effects for pet
+            if (cardToPlay.StrengthModifier != 0)
+            {
+                petMonster.ModifyStrength(cardToPlay.StrengthModifier);
+            }
+            
+            if (cardToPlay.DexterityModifier != 0)
+            {
+                petMonster.ModifyDexterity(cardToPlay.DexterityModifier);
+            }
+            break;
+    }
+    
+    // Remove card from hand and add to discard
+    hand.RemoveAt(cardIndex);
+    
+    if (cardToPlay.Exhaust)
+    {
+        // Exhausted cards don't go to discard
+        Debug.Log("Card exhausted: " + cardToPlay.CardName);
+    }
+    else if (cardToPlay.CardType != CardType.Power)
+    {
+        discardPile.Add(cardToPlay);
+    }
+    
+    // Update UI
+    if (cardUIManager != null)
+        cardUIManager.RemoveCardFromHand(cardIndex);
+        
+    UpdateUI();
+}
+
     
     #endregion
     

@@ -220,44 +220,36 @@ public class UIManager : MonoBehaviour
     }
     
     private void CreateGameplayUI(GameObject panel)
-    {
-        // Create a simple "Game Started" message for now
-        TextMeshProUGUI gameStartedText = CreateText(panel, "GameStartedText", "Game Started!");
-        RectTransform gameStartedRect = gameStartedText.GetComponent<RectTransform>();
-        gameStartedRect.anchorMin = new Vector2(0.5f, 0.8f);
-        gameStartedRect.anchorMax = new Vector2(0.5f, 0.9f);
-        gameStartedRect.sizeDelta = new Vector2(600, 100);
-        gameStartedText.fontSize = 60;
-        
-        // Add a placeholder for player and monster areas
-        GameObject playerArea = new GameObject("PlayerArea");
-        playerArea.transform.SetParent(panel.transform, false);
-        
-        RectTransform playerAreaRect = playerArea.AddComponent<RectTransform>();
-        playerAreaRect.anchorMin = new Vector2(0.2f, 0.4f);
-        playerAreaRect.anchorMax = new Vector2(0.8f, 0.7f);
-        playerAreaRect.sizeDelta = Vector2.zero;
-        
-        Image playerAreaImage = playerArea.AddComponent<Image>();
-        playerAreaImage.color = new Color(0.2f, 0.2f, 0.4f, 0.5f);
-        
-        TextMeshProUGUI playerAreaText = CreateText(playerArea, "PlayerAreaText", "Player Area");
-        playerAreaText.fontSize = 36;
-        
-        GameObject monsterArea = new GameObject("MonsterArea");
-        monsterArea.transform.SetParent(panel.transform, false);
-        
-        RectTransform monsterAreaRect = monsterArea.AddComponent<RectTransform>();
-        monsterAreaRect.anchorMin = new Vector2(0.2f, 0.1f);
-        monsterAreaRect.anchorMax = new Vector2(0.8f, 0.35f);
-        monsterAreaRect.sizeDelta = Vector2.zero;
-        
-        Image monsterAreaImage = monsterArea.AddComponent<Image>();
-        monsterAreaImage.color = new Color(0.4f, 0.2f, 0.2f, 0.5f);
-        
-        TextMeshProUGUI monsterAreaText = CreateText(monsterArea, "MonsterAreaText", "Monster Area");
-        monsterAreaText.fontSize = 36;
-    }
+{
+    // Create a title with game information
+    TextMeshProUGUI titleText = CreateText(panel, "TitleText", "Card Battle Game");
+    RectTransform titleRect = titleText.GetComponent<RectTransform>();
+    titleRect.anchorMin = new Vector2(0.5f, 0.93f);
+    titleRect.anchorMax = new Vector2(0.5f, 0.98f);
+    titleRect.sizeDelta = new Vector2(600, 40);
+    titleText.fontSize = 32;
+    
+    // Create a round indicator
+    TextMeshProUGUI roundText = CreateText(panel, "RoundText", "Round 1");
+    RectTransform roundRect = roundText.GetComponent<RectTransform>();
+    roundRect.anchorMin = new Vector2(0.5f, 0.9f);
+    roundRect.anchorMax = new Vector2(0.5f, 0.93f);
+    roundRect.sizeDelta = new Vector2(200, 30);
+    roundText.fontSize = 24;
+    
+    // The remaining UI will be handled by specific UI managers:
+    // - BattleUI for the main combat interface
+    // - CardUIManager for the player's hand
+    // - BattleUIManager for the overview of all battles
+    
+    // Add a note that this panel is just a container
+    TextMeshProUGUI noteText = CreateText(panel, "NoteText", "Game UI is loading...");
+    RectTransform noteRect = noteText.GetComponent<RectTransform>();
+    noteRect.anchorMin = new Vector2(0.5f, 0.5f);
+    noteRect.anchorMax = new Vector2(0.5f, 0.5f);
+    noteRect.sizeDelta = new Vector2(400, 60);
+    noteText.fontSize = 20;
+}
 
     private string GenerateRandomName()
     {
