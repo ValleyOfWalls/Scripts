@@ -496,47 +496,40 @@ public class GameplayManager : MonoBehaviourPunCallbacks, IPunObservable
         SetGamePhase(GamePhase.Battle);
     }
     
-    private void AssignMonstersToPlayers()
+private void AssignMonstersToPlayers()
     {
+        if (!PhotonNetwork.IsMasterClient) return;
+        
         // Clear previous assignments
         playerMonsterPairs.Clear();
         
         // Get list of player actor numbers
         List<int> playerActors = new List<int>(players.Keys);
         
-        // Shuffle the player list
-        for (int i = 0; i < playerActors.Count; i++)
+        if (playerActors.Count < 2)
         {
-            int temp = playerActors[i];
-            int randomIndex = Random.Range(i, playerActors.Count);
-            playerActors[i] = playerActors[randomIndex];
-            playerActors[randomIndex] = temp;
+            Debug.LogError("Not enough players to assign monsters!");
+            return;
         }
         
-        // Assign monsters - each player faces the next player's monster
+        // Implement a proper round-robin pairing
+        // Each player's character fights the next player's monster
         for (int i = 0; i < playerActors.Count; i++)
         {
             int playerActor = playerActors[i];
-            int monsterOwner;
-            
-            if (i < playerActors.Count - 1)
-            {
-                // Player faces the next player's monster
-                monsterOwner = playerActors[i + 1];
-            }
-            else
-            {
-                // Last player faces the first player's monster
-                monsterOwner = playerActors[0];
-            }
+            int nextPlayerIndex = (i + 1) % playerActors.Count;
+            int monsterOwner = playerActors[nextPlayerIndex];
             
             // Store the pairing
             playerMonsterPairs.Add(playerActor, monsterOwner);
             
             // Send RPC to set up the pairing
             photonView.RPC("RPC_SetOpponent", RpcTarget.All, playerActor, monsterOwner);
+            
+            Debug.Log($"Assigned player {playerActor} to fight monster owned by {monsterOwner}");
         }
     }
+
     
     [PunRPC]
     private void RPC_SetOpponent(int playerActorNumber, int monsterOwnerActorNumber)
@@ -591,7 +584,14 @@ public class GameplayManager : MonoBehaviourPunCallbacks, IPunObservable
         // Establish player-pet relationships
         EstablishPlayerPetRelationships();
         
-        // Show battle UI
+        // Must be done by the MasterClient
+        if (PhotonNetwork.IsMasterClient)
+        {
+            // Assign monsters to players for this round
+            AssignMonstersToPlayers();
+        }
+        
+        // Show battle UI for all players
         if (battleUI != null)
         {
             battleUI.Show();
@@ -605,7 +605,7 @@ public class GameplayManager : MonoBehaviourPunCallbacks, IPunObservable
         }
         
         // Show battle overview UI
-        if (battleUIManager != null)
+        if (battleUIManager != null && playerMonsterPairs.Count > 0)
         {
             battleUIManager.ShowBattleOverview(playerMonsterPairs);
         }
@@ -613,12 +613,13 @@ public class GameplayManager : MonoBehaviourPunCallbacks, IPunObservable
         // Show phase announcement
         ShowPhaseAnnouncement($"Battle Phase - Round {currentRound}");
         
-        // Start combat for each player
+        // Start combat for each player - must be done by MasterClient
         if (PhotonNetwork.IsMasterClient)
         {
             StartCoroutine(StartCombatTurns());
         }
     }
+
     
     public void EstablishPlayerPetRelationships()
     {
@@ -655,37 +656,37 @@ public class GameplayManager : MonoBehaviourPunCallbacks, IPunObservable
         {
             isBattlePhaseActive = true;
             
+            // Sort active players to ensure consistent order on all clients
+            activePlayers.Sort();
+            
             // Set first player's turn
             currentPlayerTurn = 0;
-            StartPlayerTurn(activePlayers[currentPlayerTurn]);
+            
+            // Notify all players about whose turn it is
+            if (PhotonNetwork.IsMasterClient)
+            {
+                StartPlayerTurn(activePlayers[currentPlayerTurn]);
+            }
         }
     }
+
     
     private void StartPlayerTurn(int playerActorNumber)
-{
-    if (players.ContainsKey(playerActorNumber))
     {
-        // Make sure we have a valid PhotonView before sending RPC
-        PhotonView photonView = GetComponent<PhotonView>();
-        if (photonView != null && photonView.ViewID != 0)
+        if (players.ContainsKey(playerActorNumber))
         {
-            // Notify all clients of turn change
+            // Ensure the RPC is sent to all clients
             photonView.RPC("RPC_StartPlayerTurn", RpcTarget.All, playerActorNumber);
+            
+            Debug.Log($"Starting turn for player {playerActorNumber}");
         }
         else
         {
-            Debug.LogError($"Cannot send RPC: PhotonView is invalid (ViewID: {(photonView != null ? photonView.ViewID : 0)})");
-            
-            // Fallback: Call the method directly for local player
-            RPC_StartPlayerTurn(playerActorNumber);
+            // Player not found, move to next
+            AdvanceToNextPlayer();
         }
     }
-    else
-    {
-        // Player not found, move to next
-        AdvanceToNextPlayer();
-    }
-}
+
     
     [PunRPC]
     private void RPC_StartPlayerTurn(int playerActorNumber)
@@ -696,47 +697,56 @@ public class GameplayManager : MonoBehaviourPunCallbacks, IPunObservable
             PlayerController player = players[playerActorNumber];
             player.StartTurn();
             
-            Debug.Log($"Started turn for player {player.photonView.Owner.NickName}");
+            Debug.Log($"Started turn for player {player.PlayerName}");
             
-            // Update UI to show whose turn it is
-            if (battleUI != null && player.photonView.IsMine)
+            // Update UI to show whose turn it is for all players
+            if (player.photonView.IsMine)
             {
-                battleUI.ShowPlayerTurn(true);
+                if (battleUI != null)
+                {
+                    battleUI.ShowPlayerTurn(true);
+                }
+            }
+            else
+            {
+                if (battleUI != null)
+                {
+                    battleUI.ShowPlayerTurn(false);
+                }
             }
         }
     }
+
     
     public void PlayerEndedTurn()
     {
-        // This is called by the PlayerController when they end their turn
-        PlayerController localPlayer = GetLocalPlayer();
-        if (localPlayer != null && battleUI != null)
-        {
-            battleUI.ShowPlayerTurn(false);
-        }
+        if (!PhotonNetwork.IsMasterClient || !isBattlePhaseActive) return;
         
-        if (PhotonNetwork.IsMasterClient && isBattlePhaseActive)
+        // After player's turn, the monster gets a turn
+        int currentPlayerActor = activePlayers[currentPlayerTurn];
+        
+        if (playerMonsterPairs.ContainsKey(currentPlayerActor))
         {
-            // After player's turn, the monster gets a turn
-            int currentPlayerActor = activePlayers[currentPlayerTurn];
+            int monsterOwnerActor = playerMonsterPairs[currentPlayerActor];
             
-            if (playerMonsterPairs.ContainsKey(currentPlayerActor))
+            if (monsters.ContainsKey(monsterOwnerActor))
             {
-                int monsterOwnerActor = playerMonsterPairs[currentPlayerActor];
-                
-                if (monsters.ContainsKey(monsterOwnerActor))
-                {
-                    // Start monster turn
-                    StartMonsterTurn(monsterOwnerActor, currentPlayerActor);
-                }
-                else
-                {
-                    // Monster not found, advance to next player
-                    AdvanceToNextPlayer();
-                }
+                // Start monster turn
+                StartMonsterTurn(monsterOwnerActor, currentPlayerActor);
+            }
+            else
+            {
+                // Monster not found, advance to next player
+                AdvanceToNextPlayer();
             }
         }
+        else
+        {
+            // No monster paired, advance to next player
+            AdvanceToNextPlayer();
+        }
     }
+
     
     private void StartMonsterTurn(int monsterOwnerActor, int targetPlayerActor)
     {
@@ -770,21 +780,12 @@ public class GameplayManager : MonoBehaviourPunCallbacks, IPunObservable
     {
         currentPlayerTurn = (currentPlayerTurn + 1) % activePlayers.Count;
         
-        // If we've gone through all players, start a new round of turns
-        if (currentPlayerTurn == 0)
+        // If we've gone through all players, check if we should end the round
+        if (currentPlayerTurn == 0 && playersFinishedCombat.Count == activePlayers.Count)
         {
-            // Check if all players have finished combat
-            if (playersFinishedCombat.Count == activePlayers.Count)
-            {
-                // All players have finished combat, move to draft phase
-                isBattlePhaseActive = false;
-                SetGamePhase(GamePhase.Draft);
-            }
-            else
-            {
-                // Start a new round of turns
-                StartPlayerTurn(activePlayers[currentPlayerTurn]);
-            }
+            // All players have finished combat, move to draft phase
+            isBattlePhaseActive = false;
+            SetGamePhase(GamePhase.Draft);
         }
         else
         {
@@ -792,6 +793,7 @@ public class GameplayManager : MonoBehaviourPunCallbacks, IPunObservable
             StartPlayerTurn(activePlayers[currentPlayerTurn]);
         }
     }
+
     
     public void PlayerDefeated(int playerActorNumber)
     {
