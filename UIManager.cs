@@ -398,12 +398,16 @@ public class UIManager : MonoBehaviour
 
     public void HideAllPanels()
     {
+        Debug.Log("Hiding all UI panels");
+        
         if (connectingPanel != null) connectingPanel.SetActive(false);
         if (mainMenuPanel != null) mainMenuPanel.SetActive(false);
         if (lobbyPanel != null) lobbyPanel.SetActive(false);
         if (errorPanel != null) errorPanel.SetActive(false);
         if (gameplayPanel != null) gameplayPanel.SetActive(false);
     }
+
+
 
     public void ShowConnectingUI(string message)
     {
@@ -453,6 +457,8 @@ public class UIManager : MonoBehaviour
     public void ShowGameplayUI()
     {
         Debug.Log("Showing Gameplay UI");
+        
+        // Make sure to hide all other panels first
         HideAllPanels();
         
         if (gameplayPanel != null)
@@ -464,6 +470,7 @@ public class UIManager : MonoBehaviour
             Debug.LogError("Gameplay panel is null in ShowGameplayUI");
         }
     }
+
 
     public void ShowErrorUI(string message)
     {
@@ -504,19 +511,18 @@ public class UIManager : MonoBehaviour
 
     public GameObject GetLobbyPanel()
     {
-        if (lobbyPanel == null)
-        {
-            Debug.LogError("Lobby panel is null when requested by GetLobbyPanel");
-            // Try to recreate it if it's missing
-            lobbyPanel = CreatePanel("LobbyPanel");
-        }
-        
-        Debug.Log("Returning lobby panel: " + (lobbyPanel != null));
         return lobbyPanel;
     }
+
 
     public GameObject GetMainCanvas()
     {
         return mainCanvas != null ? mainCanvas.gameObject : null;
     }
+
+    public GameObject GetGameplayPanel()
+    {
+        return gameplayPanel;
+    }
+
 }

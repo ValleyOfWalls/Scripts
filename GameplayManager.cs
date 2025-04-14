@@ -512,8 +512,10 @@ private void AssignMonstersToPlayers()
             return;
         }
         
-        // Implement a proper round-robin pairing
-        // Each player's character fights the next player's monster
+        // Sort the players to ensure consistent order
+        playerActors.Sort();
+        
+        // Assign monsters in a round-robin fashion
         for (int i = 0; i < playerActors.Count; i++)
         {
             int playerActor = playerActors[i];
@@ -529,6 +531,7 @@ private void AssignMonstersToPlayers()
             Debug.Log($"Assigned player {playerActor} to fight monster owned by {monsterOwner}");
         }
     }
+
 
     
     [PunRPC]
@@ -584,11 +587,16 @@ private void AssignMonstersToPlayers()
         // Establish player-pet relationships
         EstablishPlayerPetRelationships();
         
-        // Must be done by the MasterClient
-        if (PhotonNetwork.IsMasterClient)
+        // IMPORTANT: Force UIManager to hide lobby and show battle UI
+        if (uiManager != null)
         {
-            // Assign monsters to players for this round
-            AssignMonstersToPlayers();
+            // Ensure all panels are hidden first
+            uiManager.HideAllPanels();
+            
+            // Show gameplay UI panel
+            uiManager.ShowGameplayUI();
+            
+            Debug.Log("Forced UI transition to battle UI");
         }
         
         // Show battle UI for all players
@@ -613,13 +621,50 @@ private void AssignMonstersToPlayers()
         // Show phase announcement
         ShowPhaseAnnouncement($"Battle Phase - Round {currentRound}");
         
-        // Start combat for each player - must be done by MasterClient
+        // Assign monsters to players and start combat turns (master client only)
         if (PhotonNetwork.IsMasterClient)
         {
+            // Assign monsters to players for this round
+            AssignMonstersToPlayers();
+            
+            // Start the first player's turn after a delay
             StartCoroutine(StartCombatTurns());
         }
     }
 
+
+ [PunRPC]
+    private void RPC_ShowBattleUI()
+    {
+        // This ensures all clients hide lobby UI and show battle UI
+        Debug.Log("RPC: Showing Battle UI for all players");
+        
+        // First make sure lobby UI is hidden - using UIManager to hide all panels
+        if (uiManager != null)
+        {
+            uiManager.HideAllPanels(); // Explicitly hide all panels including lobby
+            uiManager.ShowGameplayUI();
+        }
+        
+        // Show battle UI for the local player
+        if (battleUI != null)
+        {
+            battleUI.Show();
+            
+            // Update player turn status
+            PlayerController localPlayer = GetLocalPlayer();
+            if (localPlayer != null)
+            {
+                battleUI.ShowPlayerTurn(localPlayer.IsMyTurn);
+            }
+        }
+        
+        // Show battle overview UI
+        if (battleUIManager != null && playerMonsterPairs.Count > 0)
+        {
+            battleUIManager.ShowBattleOverview(playerMonsterPairs);
+        }
+    }
     
     public void EstablishPlayerPetRelationships()
     {
@@ -662,30 +707,64 @@ private void AssignMonstersToPlayers()
             // Set first player's turn
             currentPlayerTurn = 0;
             
-            // Notify all players about whose turn it is
-            if (PhotonNetwork.IsMasterClient)
-            {
-                StartPlayerTurn(activePlayers[currentPlayerTurn]);
-            }
+            // Force UI update for all players
+            photonView.RPC("RPC_UpdateBattleUIState", RpcTarget.All);
+            
+            // Start the first player's turn
+            StartPlayerTurn(activePlayers[currentPlayerTurn]);
         }
     }
 
+
+ [PunRPC]
+    private void RPC_UpdateBattleUIState()
+    {
+        Debug.Log("RPC: Updating Battle UI state");
+        
+        // Make sure lobby UI is hidden
+        if (uiManager != null)
+        {
+            // Hide lobby panel explicitly
+            if (uiManager.GetLobbyPanel() != null)
+            {
+                uiManager.GetLobbyPanel().SetActive(false);
+            }
+            
+            // Show gameplay panel
+            if (uiManager.GetGameplayPanel() != null)
+            {
+                uiManager.GetGameplayPanel().SetActive(true);
+            }
+        }
+        
+        // Make sure battle UI is shown
+        if (battleUI != null)
+        {
+            battleUI.Show();
+        }
+    }
     
     private void StartPlayerTurn(int playerActorNumber)
     {
+        Debug.Log($"Starting turn for player {playerActorNumber}");
+        
         if (players.ContainsKey(playerActorNumber))
         {
-            // Ensure the RPC is sent to all clients
+            // Make sure all clients know whose turn it is
             photonView.RPC("RPC_StartPlayerTurn", RpcTarget.All, playerActorNumber);
             
-            Debug.Log($"Starting turn for player {playerActorNumber}");
+            // Ensure UI is in proper state for all players
+            photonView.RPC("RPC_UpdateBattleUIState", RpcTarget.All);
         }
         else
         {
             // Player not found, move to next
+            Debug.LogWarning($"Player {playerActorNumber} not found, skipping turn");
             AdvanceToNextPlayer();
         }
     }
+
+
 
     
     [PunRPC]
@@ -700,22 +779,18 @@ private void AssignMonstersToPlayers()
             Debug.Log($"Started turn for player {player.PlayerName}");
             
             // Update UI to show whose turn it is for all players
-            if (player.photonView.IsMine)
+            if (battleUI != null)
             {
-                if (battleUI != null)
-                {
-                    battleUI.ShowPlayerTurn(true);
-                }
-            }
-            else
-            {
-                if (battleUI != null)
-                {
-                    battleUI.ShowPlayerTurn(false);
-                }
+                // For each client, check if it's their turn
+                bool isMyTurn = player.photonView.IsMine;
+                battleUI.ShowPlayerTurn(isMyTurn);
+                
+                // Debug log to track turn status
+                Debug.Log($"Battle UI updated: isMyTurn={isMyTurn} for player {PhotonNetwork.LocalPlayer.NickName}");
             }
         }
     }
+
 
     
     public void PlayerEndedTurn()

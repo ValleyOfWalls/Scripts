@@ -182,11 +182,16 @@ public class BattleUI : MonoBehaviourPunCallbacks
     
     public void Show()
     {
+        Debug.Log("Showing Battle UI");
         if (battlePanel != null)
         {
             battlePanel.SetActive(true);
+            
+            // Make sure all content is updated when showing
+            UpdateAllStats();
         }
     }
+
     
     public void Hide()
     {
@@ -239,6 +244,8 @@ public class BattleUI : MonoBehaviourPunCallbacks
     
     public void ShowPlayerTurn(bool isPlayerTurn)
     {
+        Debug.Log($"Setting player turn state: isPlayerTurn={isPlayerTurn}");
+        
         if (turnText != null)
         {
             turnText.text = isPlayerTurn ? "Your Turn" : "Opponent's Turn";
@@ -250,6 +257,7 @@ public class BattleUI : MonoBehaviourPunCallbacks
             endTurnButton.SetActive(isPlayerTurn);
         }
     }
+
     
     private void EndTurnClicked()
     {

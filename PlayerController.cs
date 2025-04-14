@@ -186,7 +186,7 @@ public class PlayerController : MonoBehaviourPunCallbacks, IPunObservable
             stream.SendNext(strengthModifier);
             stream.SendNext(dexterityModifier);
             stream.SendNext(roundsWon);
-            stream.SendNext(isMyTurn);
+            stream.SendNext(isMyTurn); // Make sure this syncs
             stream.SendNext(isInCombat);
         }
         else
@@ -201,10 +201,11 @@ public class PlayerController : MonoBehaviourPunCallbacks, IPunObservable
             strengthModifier = (int)stream.ReceiveNext();
             dexterityModifier = (int)stream.ReceiveNext();
             roundsWon = (int)stream.ReceiveNext();
-            isMyTurn = (bool)stream.ReceiveNext();
+            isMyTurn = (bool)stream.ReceiveNext(); // Make sure this syncs
             isInCombat = (bool)stream.ReceiveNext();
         }
     }
+
     
     #endregion
     
@@ -489,7 +490,13 @@ public class PlayerController : MonoBehaviourPunCallbacks, IPunObservable
     
     public void StartTurn()
     {
+        // Set turn state first to ensure it's correctly synced
+        isMyTurn = photonView.IsMine;
+        
+        // Only the owner should perform these operations
         if (!photonView.IsMine) return;
+        
+        Debug.Log($"Player {PlayerName} starting turn");
         
         // Reset energy at start of turn
         currentEnergy = maxEnergy;
@@ -497,12 +504,10 @@ public class PlayerController : MonoBehaviourPunCallbacks, IPunObservable
         // Draw cards
         DrawCards(handSize - hand.Count);
         
-        // Set turn state
-        isMyTurn = true;
-        
         // Update UI
         UpdateUI();
     }
+
     
     public void EndTurn()
     {
