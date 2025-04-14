@@ -11,6 +11,7 @@ public class CardUIManager : MonoBehaviourPunCallbacks
     // References
     private GameplayManager gameplayManager;
     private DeckManager deckManager;
+    private PlayerController localPlayer;
     
     // UI References
     private GameObject handPanel;
@@ -28,8 +29,14 @@ public class CardUIManager : MonoBehaviourPunCallbacks
     // Container for all battle UI elements
     private GameObject battleUIContainer;
     
+    // Visual feedback
+    private GameObject feedbackTextPrefab;
+    
+    [SerializeField] private bool debugMode = true;
+    
     private void Start()
     {
+        Debug.Log("CardUIManager starting");
         gameplayManager = FindObjectOfType<GameplayManager>();
         deckManager = FindObjectOfType<DeckManager>();
         
@@ -51,15 +58,76 @@ public class CardUIManager : MonoBehaviourPunCallbacks
         // Create drop zones for targeting
         CreateDropZones();
         
+        // Create feedback text prefab
+        CreateFeedbackTextPrefab();
+        
+        // Try to find local player
+        localPlayer = FindLocalPlayer();
+        
         // Hide battle UI until needed
         HideBattleUI();
+        
+        Debug.Log("CardUIManager delayed initialization complete");
+        
+        // Explicitly check game state to ensure proper UI visibility
+        if (GameManager.Instance != null)
+        {
+            GameManager.GameState currentState = GameManager.Instance.GetCurrentState();
+            Debug.Log("Current game state: " + currentState);
+            UpdateUIBasedOnGameState(currentState);
+        }
+    }
+    
+    private PlayerController FindLocalPlayer()
+    {
+        PlayerController[] allPlayers = FindObjectsOfType<PlayerController>();
+        foreach (PlayerController player in allPlayers)
+        {
+            if (player.photonView.IsMine)
+            {
+                Debug.Log("Found local player: " + player.PlayerName);
+                return player;
+            }
+        }
+        Debug.LogWarning("Could not find local player!");
+        return null;
+    }
+    
+    private void CreateFeedbackTextPrefab()
+    {
+        // Create a simple text object that can be instantiated for feedback
+        GameObject textObj = new GameObject("FeedbackTextPrefab");
+        
+        RectTransform rectTransform = textObj.AddComponent<RectTransform>();
+        rectTransform.sizeDelta = new Vector2(200, 50);
+        
+        TextMeshProUGUI text = textObj.AddComponent<TextMeshProUGUI>();
+        text.fontSize = 24;
+        text.alignment = TextAlignmentOptions.Center;
+        text.color = Color.white;
+        text.fontStyle = FontStyles.Bold;
+        text.outlineWidth = 0.2f;
+        text.outlineColor = Color.black;
+        
+        // Add animation component
+        FeedbackTextAnimation animation = textObj.AddComponent<FeedbackTextAnimation>();
+        
+        // Save as prefab
+        feedbackTextPrefab = textObj;
+        textObj.SetActive(false);
     }
     
     private void CreateBattleUIContainer()
     {
         // Find main canvas
         Canvas mainCanvas = FindObjectOfType<Canvas>();
-        if (mainCanvas == null) return;
+        if (mainCanvas == null)
+        {
+            Debug.LogError("Main Canvas not found!");
+            return;
+        }
+        
+        Debug.Log("Creating BattleUIContainer inside " + mainCanvas.name);
         
         // Create a container for all battle UI elements
         battleUIContainer = new GameObject("BattleUIContainer");
@@ -77,11 +145,21 @@ public class CardUIManager : MonoBehaviourPunCallbacks
         
         // Add a raycaster for UI interactions
         battleUIContainer.AddComponent<GraphicRaycaster>();
+        
+        // Add a CanvasGroup to control visibility easily
+        CanvasGroup canvasGroup = battleUIContainer.AddComponent<CanvasGroup>();
+        canvasGroup.alpha = 1;
+        canvasGroup.interactable = true;
+        canvasGroup.blocksRaycasts = true;
     }
     
     private void CreateHandPanel()
     {
-        if (battleUIContainer == null) return;
+        if (battleUIContainer == null)
+        {
+            Debug.LogError("BattleUIContainer is null when creating hand panel!");
+            return;
+        }
         
         // Create hand panel
         handPanel = new GameObject("HandPanel");
@@ -119,11 +197,17 @@ public class CardUIManager : MonoBehaviourPunCallbacks
         // Add content size fitter to make container adjust to content
         ContentSizeFitter contentFitter = cardsContainer.AddComponent<ContentSizeFitter>();
         contentFitter.horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
+        
+        Debug.Log("Hand panel created successfully");
     }
     
     private void CreateDropZones()
     {
-        if (battleUIContainer == null) return;
+        if (battleUIContainer == null)
+        {
+            Debug.LogError("BattleUIContainer is null when creating drop zones!");
+            return;
+        }
         
         // Create enemy pet drop zone (upper right quadrant)
         enemyDropZone = new GameObject("EnemyDropZone");
@@ -136,11 +220,17 @@ public class CardUIManager : MonoBehaviourPunCallbacks
         
         Image enemyZoneImage = enemyDropZone.AddComponent<Image>();
         enemyZoneImage.color = new Color(0.8f, 0.2f, 0.2f, 0.3f);
+        // Make it raycast target to detect drops
+        enemyZoneImage.raycastTarget = true;
         
         // Add outline to make it more visible
         Outline enemyOutline = enemyDropZone.AddComponent<Outline>();
         enemyOutline.effectColor = new Color(1f, 0.3f, 0.3f, 0.8f);
         enemyOutline.effectDistance = new Vector2(3, 3);
+        
+        // Add drop handler
+        DropZoneHandler enemyDropHandler = enemyDropZone.AddComponent<DropZoneHandler>();
+        enemyDropHandler.zoneType = DropZoneType.Enemy;
         
         // Add text that's more visible
         GameObject enemyTextObj = new GameObject("DropText");
@@ -169,11 +259,17 @@ public class CardUIManager : MonoBehaviourPunCallbacks
         
         Image petZoneImage = petDropZone.AddComponent<Image>();
         petZoneImage.color = new Color(0.2f, 0.6f, 0.8f, 0.3f);
+        // Make it raycast target to detect drops
+        petZoneImage.raycastTarget = true;
         
         // Add outline to make it more visible
         Outline petOutline = petDropZone.AddComponent<Outline>();
         petOutline.effectColor = new Color(0.3f, 0.7f, 1f, 0.8f);
         petOutline.effectDistance = new Vector2(3, 3);
+        
+        // Add drop handler
+        DropZoneHandler petDropHandler = petDropZone.AddComponent<DropZoneHandler>();
+        petDropHandler.zoneType = DropZoneType.Pet;
         
         // Add text that's more visible
         GameObject petTextObj = new GameObject("DropText");
@@ -194,27 +290,50 @@ public class CardUIManager : MonoBehaviourPunCallbacks
         // Initially hide drop zones
         enemyDropZone.SetActive(false);
         petDropZone.SetActive(false);
+        
+        Debug.Log("Drop zones created successfully");
     }
     
     public void ShowBattleUI()
     {
         if (battleUIContainer != null)
+        {
             battleUIContainer.SetActive(true);
+            Debug.Log("BattleUIContainer is now active");
+            
+            // Update local player reference
+            if (localPlayer == null)
+            {
+                localPlayer = FindLocalPlayer();
+            }
+        }
+        else
+        {
+            Debug.LogError("BattleUIContainer is null when trying to show it!");
+            
+            // Try to reinitialize
+            StartCoroutine(DelayedInitialization());
+        }
     }
     
     public void HideBattleUI()
     {
         if (battleUIContainer != null)
+        {
             battleUIContainer.SetActive(false);
+            Debug.Log("BattleUIContainer is now inactive");
+        }
     }
     
     // Subscribe to game state changes
     public void OnEnable()
     {
+        Debug.Log("CardUIManager OnEnable called");
         if (GameManager.Instance != null)
         {
             // Listen for game state changes
             GameManager.GameState currentState = GameManager.Instance.GetCurrentState();
+            Debug.Log("Current game state in OnEnable: " + currentState);
             UpdateUIBasedOnGameState(currentState);
         }
     }
@@ -222,10 +341,14 @@ public class CardUIManager : MonoBehaviourPunCallbacks
     // Update UI visibility based on game state
     private void UpdateUIBasedOnGameState(GameManager.GameState state)
     {
+        Debug.Log("Updating UI based on game state: " + state);
         switch (state)
         {
             case GameManager.GameState.Battle:
                 ShowBattleUI();
+                break;
+            case GameManager.GameState.Draft:
+                ShowBattleUI(); // Keep UI visible during draft phase
                 break;
             default:
                 HideBattleUI();
@@ -238,10 +361,35 @@ public class CardUIManager : MonoBehaviourPunCallbacks
     {
         base.OnRoomPropertiesUpdate(propertiesThatChanged);
         
+        Debug.Log("Room properties updated");
+        
         if (GameManager.Instance != null)
         {
             GameManager.GameState currentState = GameManager.Instance.GetCurrentState();
+            Debug.Log("Current game state after room update: " + currentState);
             UpdateUIBasedOnGameState(currentState);
+        }
+    }
+    
+    private void Update()
+    {
+        // Debug check to ensure local player reference is valid
+        if (debugMode && localPlayer == null)
+        {
+            localPlayer = FindLocalPlayer();
+        }
+        
+        // Debug check to force UI visibility if it should be visible
+        if (debugMode && GameManager.Instance != null)
+        {
+            GameManager.GameState currentState = GameManager.Instance.GetCurrentState();
+            if ((currentState == GameManager.GameState.Battle || 
+                 currentState == GameManager.GameState.Draft) && 
+                (battleUIContainer == null || !battleUIContainer.activeSelf))
+            {
+                Debug.LogWarning("BattleUIContainer should be visible but isn't! Forcing visibility...");
+                ShowBattleUI();
+            }
         }
     }
     
@@ -249,7 +397,11 @@ public class CardUIManager : MonoBehaviourPunCallbacks
     {
         // Find the cards container
         Transform cardsContainer = handPanel?.transform.Find("CardsContainer");
-        if (cardsContainer == null) return;
+        if (cardsContainer == null)
+        {
+            Debug.LogError("Cards container not found in hand panel!");
+            return;
+        }
         
         // Create card object
         GameObject cardObj = CreateCardObject(card);
@@ -260,12 +412,18 @@ public class CardUIManager : MonoBehaviourPunCallbacks
         
         // Add drag component
         CardDragHandler dragHandler = cardObj.AddComponent<CardDragHandler>();
-        dragHandler.Initialize(this, cardObjects.Count - 1);
+        dragHandler.Initialize(this, cardObjects.Count - 1, card);
+        
+        Debug.Log("Added card to hand: " + card.CardName);
     }
     
     public void RemoveCardFromHand(int index)
     {
-        if (index < 0 || index >= cardObjects.Count) return;
+        if (index < 0 || index >= cardObjects.Count)
+        {
+            Debug.LogError("Invalid card index: " + index);
+            return;
+        }
         
         // Destroy card object
         Destroy(cardObjects[index]);
@@ -280,6 +438,8 @@ public class CardUIManager : MonoBehaviourPunCallbacks
                 dragHandler.CardIndex = i;
             }
         }
+        
+        Debug.Log("Removed card from hand at index: " + index);
     }
     
     public void ClearHand()
@@ -289,6 +449,8 @@ public class CardUIManager : MonoBehaviourPunCallbacks
             Destroy(cardObj);
         }
         cardObjects.Clear();
+        
+        Debug.Log("Cleared all cards from hand");
     }
     
     private GameObject CreateCardObject(Card card)
@@ -309,6 +471,8 @@ public class CardUIManager : MonoBehaviourPunCallbacks
         // Add background with rounded corners if possible
         Image cardImage = cardObj.AddComponent<Image>();
         cardImage.color = GetCardTypeColor(card.CardType);
+        // Enable raycasting on the card
+        cardImage.raycastTarget = true;
         
         // Try to create a rounded rectangle sprite
         cardImage.sprite = CreateRoundedRectSprite(10);
@@ -407,6 +571,9 @@ public class CardUIManager : MonoBehaviourPunCallbacks
             
             // Bring to front by setting as last child
             cardObjects[cardIndex].transform.SetAsLastSibling();
+            
+            // Log drag begin
+            Debug.Log("Started dragging card #" + cardIndex);
         }
     }
     
@@ -430,6 +597,8 @@ public class CardUIManager : MonoBehaviourPunCallbacks
     {
         if (cardIndex != draggedCardIndex) return;
         
+        Debug.Log("Card drag ended at position: " + position);
+        
         // Hide drop zones
         ShowDropZones(false);
         
@@ -439,37 +608,214 @@ public class CardUIManager : MonoBehaviourPunCallbacks
             cardObjects[cardIndex].transform.localScale = Vector3.one;
         }
         
-        // Check if dropped on a valid zone
+        // Check if a drop zone was hit using the drop zone handlers
         bool cardPlayed = false;
+        DropZoneHandler hitHandler = null;
         
-        if (IsPositionOverDropZone(position, enemyDropZone.GetComponent<RectTransform>()))
+        // Check all active drop zones for hits
+        if (enemyDropZone != null && enemyDropZone.activeInHierarchy)
         {
-            // Play card on enemy
-            PlayerController localPlayer = FindObjectOfType<PlayerController>();
-            if (localPlayer != null && localPlayer.photonView.IsMine)
+            DropZoneHandler enemyHandler = enemyDropZone.GetComponent<DropZoneHandler>();
+            if (enemyHandler != null && enemyHandler.IsBeingHovered)
             {
-                localPlayer.PlayCard(cardIndex, -1);
-                cardPlayed = true;
+                hitHandler = enemyHandler;
+                Debug.Log("Enemy drop zone hit detected via handler!");
             }
         }
-        else if (IsPositionOverDropZone(position, petDropZone.GetComponent<RectTransform>()))
+        
+        if (hitHandler == null && petDropZone != null && petDropZone.activeInHierarchy)
         {
-            // Play card on pet
-            PlayerController localPlayer = FindObjectOfType<PlayerController>();
-            if (localPlayer != null && localPlayer.photonView.IsMine)
+            DropZoneHandler petHandler = petDropZone.GetComponent<DropZoneHandler>();
+            if (petHandler != null && petHandler.IsBeingHovered)
             {
-                localPlayer.PlayCardOnPet(cardIndex);
+                hitHandler = petHandler;
+                Debug.Log("Pet drop zone hit detected via handler!");
+            }
+        }
+        
+        Debug.Log("Drop check - Over enemy: " + (hitHandler != null && hitHandler.zoneType == DropZoneType.Enemy) + 
+                 ", Over pet: " + (hitHandler != null && hitHandler.zoneType == DropZoneType.Pet));
+        
+        // Make sure we have a local player to play cards with
+        if (localPlayer == null)
+        {
+            localPlayer = FindLocalPlayer();
+            if (localPlayer == null)
+            {
+                Debug.LogError("Cannot find local player to play card!");
+                // Return card to hand
+                StartCoroutine(AnimateCardReturn(cardIndex));
+                draggedCardIndex = -1;
+                return;
+            }
+        }
+        
+        // Debug the turn status
+        Debug.Log("Turn status check - Player: " + localPlayer.PlayerName + 
+                 ", IsMyTurn: " + localPlayer.IsMyTurn + 
+                 ", IsInCombat: " + localPlayer.IsInCombat);
+        
+        // Process the drop if a handler was hit
+        if (hitHandler != null)
+        {
+            // Get the card data for better feedback
+            Card cardData = null;
+            CardDragHandler dragHandler = cardObjects[cardIndex].GetComponent<CardDragHandler>();
+            if (dragHandler != null)
+            {
+                cardData = dragHandler.CardData;
+            }
+            string cardName = cardData != null ? cardData.CardName : "Card";
+            
+            // Check if it's our turn
+            if (!localPlayer.IsMyTurn)
+            {
+                Debug.LogWarning("Cannot play card - not your turn!");
+                ShowFeedbackText("Not your turn!", position, Color.red);
+                StartCoroutine(AnimateCardReturn(cardIndex));
+                draggedCardIndex = -1;
+                return;
+            }
+            
+            // Check energy cost
+            if (cardData != null && localPlayer.CurrentEnergy < cardData.EnergyCost)
+            {
+                Debug.LogWarning("Not enough energy to play card!");
+                ShowFeedbackText("Not enough energy!", position, Color.red);
+                StartCoroutine(AnimateCardReturn(cardIndex));
+                draggedCardIndex = -1;
+                return;
+            }
+            
+            // Process based on zone type
+            if (hitHandler.zoneType == DropZoneType.Enemy)
+            {
+                // Play card on enemy
+                localPlayer.PlayCard(cardIndex, -1);
+                ShowFeedbackText(cardName + " ➜ Enemy", position, Color.red);
                 cardPlayed = true;
+                Debug.Log("Card played on enemy successfully!");
+            }
+            else if (hitHandler.zoneType == DropZoneType.Pet)
+            {
+                // Make sure player has a pet
+                if (localPlayer.PetMonster == null)
+                {
+                    Debug.LogWarning("Cannot play card on pet - No pet assigned!");
+                    ShowFeedbackText("No pet available!", position, Color.red);
+                    StartCoroutine(AnimateCardReturn(cardIndex));
+                    draggedCardIndex = -1;
+                    return;
+                }
+                
+                // Play card on pet
+                localPlayer.PlayCardOnPet(cardIndex);
+                ShowFeedbackText(cardName + " ➜ Pet", position, Color.green);
+                cardPlayed = true;
+                Debug.Log("Card played on pet successfully!");
             }
         }
         
         // If card wasn't played, return to original position
         if (!cardPlayed && cardIndex >= 0 && cardIndex < cardObjects.Count)
         {
+            Debug.Log("Card not played, returning to hand");
             StartCoroutine(AnimateCardReturn(cardIndex));
         }
         
         draggedCardIndex = -1;
+    }
+    
+    // Handle zone hit directly from drop zone
+    public void OnZoneHit(DropZoneType zoneType, int cardIndex, Vector3 position)
+    {
+        Debug.Log("Zone hit received: " + zoneType + " for card " + cardIndex);
+        
+        if (cardIndex < 0 || cardIndex >= cardObjects.Count) return;
+        
+        // Get the card data for better feedback
+        Card cardData = null;
+        CardDragHandler dragHandler = cardObjects[cardIndex].GetComponent<CardDragHandler>();
+        if (dragHandler != null)
+        {
+            cardData = dragHandler.CardData;
+        }
+        string cardName = cardData != null ? cardData.CardName : "Card";
+        
+        // Make sure we have a local player to play cards with
+        if (localPlayer == null)
+        {
+            localPlayer = FindLocalPlayer();
+            if (localPlayer == null)
+            {
+                Debug.LogError("Cannot find local player to play card!");
+                return;
+            }
+        }
+        
+        // Check if it's our turn
+        if (!localPlayer.IsMyTurn)
+        {
+            Debug.LogWarning("Cannot play card - not your turn!");
+            ShowFeedbackText("Not your turn!", position, Color.red);
+            return;
+        }
+        
+        // Check energy cost
+        if (cardData != null && localPlayer.CurrentEnergy < cardData.EnergyCost)
+        {
+            Debug.LogWarning("Not enough energy to play card!");
+            ShowFeedbackText("Not enough energy!", position, Color.red);
+            return;
+        }
+        
+        // Process based on zone type
+        if (zoneType == DropZoneType.Enemy)
+        {
+            // Play card on enemy
+            localPlayer.PlayCard(cardIndex, -1);
+            ShowFeedbackText(cardName + " ➜ Enemy", position, Color.red);
+            Debug.Log("Card played on enemy successfully!");
+        }
+        else if (zoneType == DropZoneType.Pet)
+        {
+            // Make sure player has a pet
+            if (localPlayer.PetMonster == null)
+            {
+                Debug.LogWarning("Cannot play card on pet - No pet assigned!");
+                ShowFeedbackText("No pet available!", position, Color.red);
+                return;
+            }
+            
+            // Play card on pet
+            localPlayer.PlayCardOnPet(cardIndex);
+            ShowFeedbackText(cardName + " ➜ Pet", position, Color.green);
+            Debug.Log("Card played on pet successfully!");
+        }
+    }
+    
+    private void ShowFeedbackText(string message, Vector3 position, Color color)
+    {
+        if (feedbackTextPrefab == null || battleUIContainer == null)
+            return;
+        
+        // Instantiate feedback text
+        GameObject feedbackObj = Instantiate(feedbackTextPrefab, battleUIContainer.transform);
+        feedbackObj.SetActive(true);
+        
+        // Set position
+        feedbackObj.transform.position = position;
+        
+        // Set text
+        TextMeshProUGUI text = feedbackObj.GetComponent<TextMeshProUGUI>();
+        text.text = message;
+        text.color = color;
+        
+        // Configure animation
+        FeedbackTextAnimation anim = feedbackObj.GetComponent<FeedbackTextAnimation>();
+        anim.Initialize();
+        
+        Debug.Log("Showing feedback: " + message);
     }
     
     private IEnumerator AnimateCardReturn(int cardIndex)
@@ -503,6 +849,13 @@ public class CardUIManager : MonoBehaviourPunCallbacks
             {
                 enemyDropZone.GetComponent<Image>().color = new Color(0.8f, 0.2f, 0.2f, 0.3f);
                 petDropZone.GetComponent<Image>().color = new Color(0.2f, 0.6f, 0.8f, 0.3f);
+                
+                // Reset hover flags
+                if (enemyDropZone.GetComponent<DropZoneHandler>() != null)
+                    enemyDropZone.GetComponent<DropZoneHandler>().IsBeingHovered = false;
+                
+                if (petDropZone.GetComponent<DropZoneHandler>() != null)
+                    petDropZone.GetComponent<DropZoneHandler>().IsBeingHovered = false;
             }
         }
     }
@@ -512,32 +865,30 @@ public class CardUIManager : MonoBehaviourPunCallbacks
         // Highlight enemy drop zone if hovering over it
         if (enemyDropZone != null)
         {
-            bool overEnemy = IsPositionOverDropZone(position, enemyDropZone.GetComponent<RectTransform>());
-            enemyDropZone.GetComponent<Image>().color = overEnemy 
-                ? new Color(1f, 0.3f, 0.3f, 0.5f) 
-                : new Color(0.8f, 0.2f, 0.2f, 0.3f);
+            DropZoneHandler enemyHandler = enemyDropZone.GetComponent<DropZoneHandler>();
+            if (enemyHandler != null && enemyHandler.IsBeingHovered)
+            {
+                enemyDropZone.GetComponent<Image>().color = new Color(1f, 0.3f, 0.3f, 0.5f);
+            }
+            else
+            {
+                enemyDropZone.GetComponent<Image>().color = new Color(0.8f, 0.2f, 0.2f, 0.3f);
+            }
         }
         
         // Highlight pet drop zone if hovering over it
         if (petDropZone != null)
         {
-            bool overPet = IsPositionOverDropZone(position, petDropZone.GetComponent<RectTransform>());
-            petDropZone.GetComponent<Image>().color = overPet 
-                ? new Color(0.3f, 0.8f, 1f, 0.5f) 
-                : new Color(0.2f, 0.6f, 0.8f, 0.3f);
+            DropZoneHandler petHandler = petDropZone.GetComponent<DropZoneHandler>();
+            if (petHandler != null && petHandler.IsBeingHovered)
+            {
+                petDropZone.GetComponent<Image>().color = new Color(0.3f, 0.8f, 1f, 0.5f);
+            }
+            else
+            {
+                petDropZone.GetComponent<Image>().color = new Color(0.2f, 0.6f, 0.8f, 0.3f);
+            }
         }
-    }
-    
-    private bool IsPositionOverDropZone(Vector3 position, RectTransform dropZone)
-    {
-        if (dropZone == null) return false;
-        
-        Vector2 localPoint;
-        RectTransformUtility.ScreenPointToLocalPointInRectangle(
-            dropZone, position, null, out localPoint);
-        
-        Rect rect = dropZone.rect;
-        return rect.Contains(localPoint);
     }
     
     private Color GetCardTypeColor(CardType type)
@@ -664,55 +1015,146 @@ public class CardUIManager : MonoBehaviourPunCallbacks
     }
 }
 
+// Enumeration for drop zone types
+public enum DropZoneType
+{
+    Enemy,
+    Pet
+}
+
+// Component to handle drop zone events
+public class DropZoneHandler : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IDropHandler
+{
+    public DropZoneType zoneType;
+    public bool IsBeingHovered { get; set; }
+    
+    private CardUIManager cardUIManager;
+    
+    private void Start()
+    {
+        cardUIManager = FindObjectOfType<CardUIManager>();
+    }
+    
+    public void OnPointerEnter(PointerEventData eventData)
+    {
+        IsBeingHovered = true;
+        Debug.Log("Pointer entered " + zoneType + " drop zone");
+    }
+    
+    public void OnPointerExit(PointerEventData eventData)
+    {
+        IsBeingHovered = false;
+        Debug.Log("Pointer exited " + zoneType + " drop zone");
+    }
+    
+    public void OnDrop(PointerEventData eventData)
+    {
+        Debug.Log("Drop detected on " + zoneType + " drop zone");
+        
+        // Try to get the card drag handler from the dropped object
+        CardDragHandler dragHandler = eventData.pointerDrag?.GetComponent<CardDragHandler>();
+        if (dragHandler != null)
+        {
+            // Notify the card UI manager directly that we had a hit
+            cardUIManager.OnZoneHit(zoneType, dragHandler.CardIndex, transform.position);
+        }
+    }
+}
+
 // Class to handle card dragging
 public class CardDragHandler : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDragHandler
 {
     private CardUIManager cardUIManager;
     public int CardIndex { get; set; }
-    private Canvas canvas;
+    public Card CardData { get; private set; }
+    private RectTransform rectTransform;
+    private CanvasGroup canvasGroup;
     
-    public void Initialize(CardUIManager manager, int index)
+    public void Initialize(CardUIManager manager, int index, Card cardData)
     {
         cardUIManager = manager;
         CardIndex = index;
-        canvas = FindObjectOfType<Canvas>();
+        CardData = cardData;
+        rectTransform = GetComponent<RectTransform>();
+        
+        // Add canvas group to control interaction during dragging
+        canvasGroup = gameObject.AddComponent<CanvasGroup>();
     }
     
     public void OnBeginDrag(PointerEventData eventData)
     {
+        // Make slightly transparent during drag
+        canvasGroup.alpha = 0.8f;
+        
+        // Set this to false to allow raycasts to hit objects underneath the card
+        canvasGroup.blocksRaycasts = false;
+        
         if (cardUIManager != null)
         {
+            // Store the current position for returning if needed
             cardUIManager.OnCardDragBegin(CardIndex, transform.position);
         }
     }
     
     public void OnDrag(PointerEventData eventData)
     {
+        // Move the card with the mouse
+        rectTransform.position = eventData.position;
+        
         if (cardUIManager != null)
         {
-            Vector3 position;
-            if (canvas != null && canvas.renderMode == RenderMode.ScreenSpaceOverlay)
-            {
-                position = Input.mousePosition;
-            }
-            else
-            {
-                RectTransformUtility.ScreenPointToWorldPointInRectangle(
-                    GetComponent<RectTransform>(), 
-                    eventData.position, 
-                    eventData.pressEventCamera, 
-                    out position);
-            }
-            
-            cardUIManager.OnCardDrag(CardIndex, position);
+            cardUIManager.OnCardDrag(CardIndex, eventData.position);
         }
     }
     
     public void OnEndDrag(PointerEventData eventData)
     {
+        // Restore transparency and raycast blocking
+        canvasGroup.alpha = 1f;
+        canvasGroup.blocksRaycasts = true;
+        
         if (cardUIManager != null)
         {
-            cardUIManager.OnCardDragEnd(CardIndex, Input.mousePosition);
+            cardUIManager.OnCardDragEnd(CardIndex, eventData.position);
         }
+    }
+}
+
+// Class to animate feedback text
+public class FeedbackTextAnimation : MonoBehaviour
+{
+    private float fadeSpeed = 1.5f;
+    private float moveSpeed = 50f;
+    private float lifetime = 1.5f;
+    private float timer = 0f;
+    private TextMeshProUGUI text;
+    
+    public void Initialize()
+    {
+        text = GetComponent<TextMeshProUGUI>();
+        
+        // Start auto-destroy coroutine
+        StartCoroutine(DestroyAfterTime());
+    }
+    
+    private void Update()
+    {
+        if (text == null) return;
+        
+        // Move upward
+        transform.position += Vector3.up * moveSpeed * Time.deltaTime;
+        
+        // Fade out
+        timer += Time.deltaTime;
+        float alpha = Mathf.Lerp(1f, 0f, timer / lifetime);
+        Color newColor = text.color;
+        newColor.a = alpha;
+        text.color = newColor;
+    }
+    
+    private IEnumerator DestroyAfterTime()
+    {
+        yield return new WaitForSeconds(lifetime);
+        Destroy(gameObject);
     }
 }

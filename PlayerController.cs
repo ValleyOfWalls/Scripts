@@ -634,14 +634,18 @@ public class PlayerController : MonoBehaviourPunCallbacks, IPunObservable
     
     public void PlayCardOnPet(int cardIndex)
 {
-    if (!photonView.IsMine || !isMyTurn || cardIndex >= hand.Count) return;
+    if (!photonView.IsMine || !isMyTurn || cardIndex >= hand.Count)
+    {
+        Debug.Log("Cannot play card on pet: conditions not met. IsMine: " + photonView.IsMine + ", IsMyTurn: " + isMyTurn + ", Valid index: " + (cardIndex < hand.Count));
+        return;
+    }
     
     Card cardToPlay = hand[cardIndex];
     
     // Check if we have enough energy
     if (currentEnergy < cardToPlay.EnergyCost)
     {
-        Debug.Log("Not enough energy to play this card!");
+        Debug.Log("Not enough energy to play this card on pet! Required: " + cardToPlay.EnergyCost + ", Available: " + currentEnergy);
         return;
     }
     
@@ -655,13 +659,14 @@ public class PlayerController : MonoBehaviourPunCallbacks, IPunObservable
     // Spend energy
     currentEnergy -= cardToPlay.EnergyCost;
     
-    Debug.Log($"Playing card {cardToPlay.CardName} on pet {petMonster.MonsterName}");
+    Debug.Log("Playing card " + cardToPlay.CardName + " on pet " + petMonster.MonsterName);
     
     // Apply card effects to pet based on type
     switch (cardToPlay.CardType)
     {
         case CardType.Attack:
             // For attack cards targeting your pet, add temporary strength
+            Debug.Log("Adding temporary strength to pet: " + (cardToPlay.DamageAmount / 2));
             petMonster.ModifyStrength(cardToPlay.DamageAmount / 2);
             break;
             
@@ -669,35 +674,42 @@ public class PlayerController : MonoBehaviourPunCallbacks, IPunObservable
             // Apply block to pet
             if (cardToPlay.BlockAmount > 0)
             {
+                Debug.Log("Adding " + cardToPlay.BlockAmount + " block to pet");
                 petMonster.AddBlock(cardToPlay.BlockAmount);
             }
             
             // Apply other effects
             if (cardToPlay.HealAmount > 0)
             {
+                Debug.Log("Healing pet for " + cardToPlay.HealAmount);
                 petMonster.Heal(cardToPlay.HealAmount);
             }
             
             if (cardToPlay.StrengthModifier != 0)
             {
+                Debug.Log("Modifying pet strength by " + cardToPlay.StrengthModifier);
                 petMonster.ModifyStrength(cardToPlay.StrengthModifier);
             }
             
             if (cardToPlay.DexterityModifier != 0)
             {
+                Debug.Log("Modifying pet dexterity by " + cardToPlay.DexterityModifier);
                 petMonster.ModifyDexterity(cardToPlay.DexterityModifier);
             }
             break;
             
         case CardType.Power:
             // Handle persistent effects for pet
+            Debug.Log("Applying power card effect to pet");
             if (cardToPlay.StrengthModifier != 0)
             {
+                Debug.Log("Modifying pet strength by " + cardToPlay.StrengthModifier);
                 petMonster.ModifyStrength(cardToPlay.StrengthModifier);
             }
             
             if (cardToPlay.DexterityModifier != 0)
             {
+                Debug.Log("Modifying pet dexterity by " + cardToPlay.DexterityModifier);
                 petMonster.ModifyDexterity(cardToPlay.DexterityModifier);
             }
             break;
@@ -722,6 +734,7 @@ public class PlayerController : MonoBehaviourPunCallbacks, IPunObservable
         
     UpdateUI();
 }
+
 
     
     #endregion
@@ -852,85 +865,109 @@ public class PlayerController : MonoBehaviourPunCallbacks, IPunObservable
     }
     
     public void PlayCard(int cardIndex, int targetIndex)
+{
+    if (!photonView.IsMine || !isMyTurn || cardIndex >= hand.Count)
     {
-        if (!photonView.IsMine || !isMyTurn || cardIndex >= hand.Count) return;
-        
-        Card cardToPlay = hand[cardIndex];
-        
-        // Check if we have enough energy
-        if (currentEnergy < cardToPlay.EnergyCost)
-        {
-            Debug.Log("Not enough energy to play this card!");
-            return;
-        }
-        
-        // Spend energy
-        currentEnergy -= cardToPlay.EnergyCost;
-        
-        // Apply card effects based on type
-        switch (cardToPlay.CardType)
-        {
-            case CardType.Attack:
-                if (opponentMonster != null)
-                {
-                    // Apply strength modifier to damage
-                    int totalDamage = cardToPlay.DamageAmount + strengthModifier;
-                    opponentMonster.TakeDamage(totalDamage, photonView.Owner.ActorNumber.ToString());
-                }
-                break;
-                
-            case CardType.Skill:
-                // Apply block
-                if (cardToPlay.BlockAmount > 0)
-                {
-                    AddBlock(cardToPlay.BlockAmount);
-                }
-                
-                // Apply other effects
-                if (cardToPlay.HealAmount > 0)
-                {
-                    Heal(cardToPlay.HealAmount);
-                }
-                
-                if (cardToPlay.StrengthModifier != 0)
-                {
-                    ModifyStrength(cardToPlay.StrengthModifier);
-                }
-                
-                if (cardToPlay.DexterityModifier != 0)
-                {
-                    ModifyDexterity(cardToPlay.DexterityModifier);
-                }
-                
-                // Add more effects as needed...
-                
-                break;
-                
-            case CardType.Power:
-                // Handle persistent effects
-                // This would be expanded based on your game design
-                break;
-        }
-        
-        // Remove card from hand and add to discard (unless it's a power or exhausts)
-        hand.RemoveAt(cardIndex);
-        
-        if (cardToPlay.Exhaust)
-        {
-            // Exhausted cards don't go to discard
-            Debug.Log("Card exhausted: " + cardToPlay.CardName);
-        }
-        else if (cardToPlay.CardType != CardType.Power)
-        {
-            discardPile.Add(cardToPlay);
-        }
-        
-        // Update UI
-        if (cardUIManager != null)
-            cardUIManager.RemoveCardFromHand(cardIndex);
-            
-        UpdateUI();
+        Debug.Log("Cannot play card: conditions not met. IsMine: " + photonView.IsMine + ", IsMyTurn: " + isMyTurn + ", Valid index: " + (cardIndex < hand.Count));
+        return;
     }
+    
+    Card cardToPlay = hand[cardIndex];
+    
+    // Check if we have enough energy
+    if (currentEnergy < cardToPlay.EnergyCost)
+    {
+        Debug.Log("Not enough energy to play this card! Required: " + cardToPlay.EnergyCost + ", Available: " + currentEnergy);
+        return;
+    }
+    
+    // Log the play
+    Debug.Log("Playing card " + cardToPlay.CardName + " on opponent monster");
+    
+    // Spend energy
+    currentEnergy -= cardToPlay.EnergyCost;
+    
+    // Apply card effects based on type
+    switch (cardToPlay.CardType)
+    {
+        case CardType.Attack:
+            if (opponentMonster != null)
+            {
+                // Apply strength modifier to damage
+                int totalDamage = cardToPlay.DamageAmount + strengthModifier;
+                Debug.Log("Dealing " + totalDamage + " damage to opponent monster");
+                opponentMonster.TakeDamage(totalDamage, photonView.Owner.ActorNumber.ToString());
+            }
+            else
+            {
+                Debug.LogError("No opponent monster set to attack!");
+            }
+            break;
+            
+        case CardType.Skill:
+            // Apply block
+            if (cardToPlay.BlockAmount > 0)
+            {
+                AddBlock(cardToPlay.BlockAmount);
+                Debug.Log("Adding " + cardToPlay.BlockAmount + " block to player");
+            }
+            
+            // Apply other effects
+            if (cardToPlay.HealAmount > 0)
+            {
+                Heal(cardToPlay.HealAmount);
+                Debug.Log("Healing player for " + cardToPlay.HealAmount);
+            }
+            
+            if (cardToPlay.StrengthModifier != 0)
+            {
+                ModifyStrength(cardToPlay.StrengthModifier);
+                Debug.Log("Modifying player strength by " + cardToPlay.StrengthModifier);
+            }
+            
+            if (cardToPlay.DexterityModifier != 0)
+            {
+                ModifyDexterity(cardToPlay.DexterityModifier);
+                Debug.Log("Modifying player dexterity by " + cardToPlay.DexterityModifier);
+            }
+            break;
+            
+        case CardType.Power:
+            // Handle persistent effects
+            Debug.Log("Applying power card effect");
+            if (cardToPlay.StrengthModifier != 0)
+            {
+                ModifyStrength(cardToPlay.StrengthModifier);
+                Debug.Log("Modifying player strength by " + cardToPlay.StrengthModifier);
+            }
+            
+            if (cardToPlay.DexterityModifier != 0)
+            {
+                ModifyDexterity(cardToPlay.DexterityModifier);
+                Debug.Log("Modifying player dexterity by " + cardToPlay.DexterityModifier);
+            }
+            break;
+    }
+    
+    // Remove card from hand and add to discard (unless it's a power or exhausts)
+    hand.RemoveAt(cardIndex);
+    
+    if (cardToPlay.Exhaust)
+    {
+        // Exhausted cards don't go to discard
+        Debug.Log("Card exhausted: " + cardToPlay.CardName);
+    }
+    else if (cardToPlay.CardType != CardType.Power)
+    {
+        discardPile.Add(cardToPlay);
+    }
+    
+    // Update UI
+    if (cardUIManager != null)
+        cardUIManager.RemoveCardFromHand(cardIndex);
+        
+    UpdateUI();
+}
     
     public void AddCardToDeck(Card card)
     {
