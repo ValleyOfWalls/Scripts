@@ -896,7 +896,9 @@ public class PlayerController : MonoBehaviourPunCallbacks, IPunObservable
                 // Apply strength modifier to damage
                 int totalDamage = cardToPlay.DamageAmount + strengthModifier;
                 Debug.Log("Dealing " + totalDamage + " damage to opponent monster");
-                opponentMonster.TakeDamage(totalDamage, photonView.Owner.ActorNumber.ToString());
+                
+                // Use ApplyDamage instead of TakeDamage to ensure network synchronization
+                opponentMonster.ApplyDamage(totalDamage, photonView.Owner.ActorNumber.ToString());
             }
             else
             {

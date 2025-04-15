@@ -462,6 +462,15 @@ public class MonsterController : MonoBehaviourPunCallbacks, IPunObservable
         if (gameplayManager != null && opponentPlayer != null)
             gameplayManager.MonsterDefeated(photonView.Owner.ActorNumber, opponentPlayer.photonView.Owner.ActorNumber);
     }
+
+    // Add this method to MonsterController.cs
+public void ApplyDamage(int damage, string sourceId)
+{
+    // Call RPC to ensure damage is applied on all clients
+    photonView.RPC("TakeDamage", RpcTarget.All, damage, sourceId);
+    
+    Debug.Log($"ApplyDamage called on {MonsterName} for {damage} damage from source {sourceId}");
+}
     
     public void TakeTurn()
 {
