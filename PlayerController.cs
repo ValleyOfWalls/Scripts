@@ -970,6 +970,17 @@ public class PlayerController : MonoBehaviourPunCallbacks, IPunObservable
         
     UpdateUI();
 }
+
+public MonsterController GetOpponentMonster()
+{
+    return opponentMonster;
+}
+
+public MonsterController GetPetMonster()
+{
+    return petMonster;
+}
+
     
     public void AddCardToDeck(Card card)
     {

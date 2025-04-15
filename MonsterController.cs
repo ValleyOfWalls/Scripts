@@ -403,27 +403,71 @@ public class MonsterController : MonoBehaviourPunCallbacks, IPunObservable
     }
     
     [PunRPC]
-    public void TakeDamage(int damage, string sourceId)
+public void TakeDamage(int damage, string sourceId)
+{
+    // Calculate actual damage after block and modifiers
+    int actualDamage = Mathf.Max(0, damage - block);
+    
+    // Reduce block
+    block = Mathf.Max(0, block - damage);
+    
+    // Apply damage to health
+    currentHealth = Mathf.Max(0, currentHealth - actualDamage);
+    
+    // Check if monster is defeated
+    if (currentHealth <= 0)
     {
-        // Calculate actual damage after block and modifiers
-        int actualDamage = Mathf.Max(0, damage - block);
-        
-        // Reduce block
-        block = Mathf.Max(0, block - damage);
-        
-        // Apply damage to health
-        currentHealth = Mathf.Max(0, currentHealth - actualDamage);
-        
-        // Check if monster is defeated
-        if (currentHealth <= 0)
-        {
-            photonView.RPC("RPC_MonsterDefeated", RpcTarget.All);
-        }
-        
-        // Update UI
-        UpdateUI();
+        photonView.RPC("RPC_MonsterDefeated", RpcTarget.All);
     }
     
+    // Update UI
+    UpdateUI();
+    
+    // Force UI update across the network for battle overview
+    BattleUIManager battleUIManager = FindObjectOfType<BattleUIManager>();
+    if (battleUIManager != null)
+    {
+        battleUIManager.UpdateBattleCard(photonView.Owner.ActorNumber, false, currentHealth, maxHealth);
+    }
+    
+    // Also update BattleUI if it exists
+    BattleUI battleUI = FindObjectOfType<BattleUI>();
+    if (battleUI != null)
+    {
+        // This will update UI for all players who have this monster as opponent
+        photonView.RPC("RPC_UpdateMonsterUI", RpcTarget.All, currentHealth, maxHealth);
+    }
+}
+    
+[PunRPC]
+public void RPC_UpdateMonsterUI(int health, int maxHealth)
+{
+    // This ensures all clients update their UI representation of this monster
+    BattleUI battleUI = FindObjectOfType<BattleUI>();
+    if (battleUI != null)
+    {
+        // Check if this is the opponent monster for the local player
+        PlayerController localPlayer = null;
+        foreach (PlayerController player in FindObjectsOfType<PlayerController>())
+        {
+            if (player.photonView.IsMine)
+            {
+                localPlayer = player;
+                break;
+            }
+        }
+        
+        if (localPlayer != null && localPlayer.GetOpponentMonster() == this)
+        {
+            battleUI.UpdateMonsterStats(this);
+        }
+        else if (localPlayer != null && localPlayer.GetPetMonster() == this)
+        {
+            battleUI.UpdatePetStats(this);
+        }
+    }
+}
+
     [PunRPC]
     public void Heal(int amount)
     {
@@ -471,6 +515,7 @@ public void ApplyDamage(int damage, string sourceId)
     
     Debug.Log($"ApplyDamage called on {MonsterName} for {damage} damage from source {sourceId}");
 }
+
     
     public void TakeTurn()
 {
