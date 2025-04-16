@@ -12,6 +12,7 @@ public class CardDragHandler : MonoBehaviour, IBeginDragHandler, IDragHandler, I
     private Transform originalParent;
     private Canvas rootCanvas; // To ensure correct drag positioning
     private GameManager gameManager; // To call PlayCard
+    private CardDropZone currentDropZone = null;
 
     void Awake()
     {
@@ -23,7 +24,11 @@ public class CardDragHandler : MonoBehaviour, IBeginDragHandler, IDragHandler, I
              canvasGroup = gameObject.AddComponent<CanvasGroup>(); // Need this to ignore raycasts while dragging
         }
         rootCanvas = GetComponentInParent<Canvas>(); // Find the root canvas for positioning
-        gameManager = FindObjectOfType<GameManager>(); // Find the GameManager
+        gameManager = FindFirstObjectByType<GameManager>(); // Recommended replacement
+        if (gameManager == null)
+        {
+            Debug.LogError("CardDragHandler could not find GameManager in the scene!");
+        }
     }
 
     public void OnBeginDrag(PointerEventData eventData)

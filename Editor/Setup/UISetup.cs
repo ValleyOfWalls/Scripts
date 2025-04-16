@@ -134,7 +134,7 @@ public class UISetup : Editor
             ContentSizeFitter descFitter = descPanel.GetComponent<ContentSizeFitter>();
             if(descFitter != null) { descFitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained; descFitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize; }
             TextMeshProUGUI cardDescText = CreateText(descPanel.transform, "CardDescText", "Desc...", 12, TextAlignmentOptions.Center);
-            cardDescText.enableWordWrapping = true;
+            cardDescText.textWrappingMode = TextWrappingModes.Normal;
             SetLayoutElement(cardDescText.gameObject, minHeight: 30); 
             // --- End Card Hierarchy --- 
 
@@ -513,7 +513,7 @@ public class UISetup : Editor
         }
 
         // Find the GameManager component in the scene (requires an active scene with GameManager)
-        GameManager gameManager = FindObjectOfType<GameManager>();
+        GameManager gameManager = FindFirstObjectByType<GameManager>();
         if (gameManager == null)
         {
             // Alternative: Find the GameManager prefab if not in scene

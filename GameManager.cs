@@ -87,6 +87,7 @@ public class GameManager : MonoBehaviourPunCallbacks
     // Player Ready Status
     private const string PLAYER_READY_PROPERTY = "IsReady";
     private const string COMBAT_FINISHED_PROPERTY = "CombatFinished";
+    private const string PLAYER_SCORE_PROP = "PlayerScore";
 
     // Draft State Keys (Room Properties) - Queued Pack Draft Style
     // private const string DRAFT_PACKS_PROP = "DraftPacks";     // OLD: Dictionary<int ActorNum, string SerializedPack>
@@ -102,6 +103,7 @@ public class GameManager : MonoBehaviourPunCallbacks
     private Dictionary<int, DraftOption> localActiveOptionMap = new Dictionary<int, DraftOption>(); // Maps OptionId to full DraftOption for local pack
     private Dictionary<int, int> draftPicksMade = new Dictionary<int, int>(); // Local cache of picks made
     private bool isWaitingForLocalPick = false; // NEW FLAG: True if player is currently presented with a pack
+    private bool isWaitingToStartCombatRPC = false; // Master client flag
 
     // Player List Management
     private List<GameObject> playerListEntries = new List<GameObject>();
@@ -133,12 +135,16 @@ public class GameManager : MonoBehaviourPunCallbacks
 
     // --- Other combat state vars like buffs, debuffs, etc. --- 
 
+    // Combat State Keys
+    private const string COMBAT_PAIRINGS_PROP = "CombatPairings"; // NEW: Dictionary<int, int> PlayerActorNum -> OpponentPetOwnerActorNum
+    private const string PLAYER_BASE_PET_HP_PROP = "BasePetHP"; // NEW: Player Custom Property
+
     #region Unity Methods
 
     void Start()
     {
         // Ensure we have only one GameManager instance
-        if (FindObjectsOfType<GameManager>().Length > 1)
+        if (FindObjectsByType<GameManager>(FindObjectsSortMode.None).Length > 1) // Recommended replacement
         {
             Destroy(gameObject);
             return;
@@ -254,12 +260,27 @@ public class GameManager : MonoBehaviourPunCallbacks
                 CheckForAllPlayersFinishedCombat();
             }
         }
+        else if (changedProps.ContainsKey(PLAYER_SCORE_PROP)) // Check for score changes
+        {
+            Debug.Log($"Score property updated for {targetPlayer.NickName}. Refreshing Score UI.");
+            UpdateScoreUI(); // Update UI when score changes
+        }
         // Note: We now handle draft state changes in OnRoomPropertiesUpdate
     }
 
     public override void OnRoomPropertiesUpdate(Hashtable propertiesThatChanged)
     {
         Debug.Log($"Room properties updated. CurrentState: {currentState}");
+
+        // Master Client check: If waiting to send StartCombat RPC and pairings are now set
+        if (PhotonNetwork.IsMasterClient && isWaitingToStartCombatRPC && propertiesThatChanged.ContainsKey(COMBAT_PAIRINGS_PROP))
+        {
+            Debug.Log("Master Client confirms pairings property set. Sending RpcStartCombat.");
+            isWaitingToStartCombatRPC = false; // Reset flag
+            photonView.RPC("RpcStartCombat", RpcTarget.All);
+            // Return early? Or let subsequent checks run? Let subsequent checks run for now.
+        }
+
         if (currentState == GameState.Drafting)
         {
             bool draftStateUpdated = false;
@@ -283,46 +304,66 @@ public class GameManager : MonoBehaviourPunCallbacks
 
             if (draftStateUpdated)
             {
-                Debug.Log("Updating Draft UI due to room property change.");
-                UpdateDraftUI(); // Refresh UI based on new state
+                // NOTE: Draft UI update is now handled within UpdateLocalDraftStateFromRoomProps
+                // Debug.Log("Updating Draft UI due to room property change.");
+                // UpdateDraftUI(); 
+            }
 
-                // Check if draft ended - check if DRAFT_PLAYER_QUEUES_PROP is empty or all queues are empty
-                object queuesProp = null;
-                bool queuesExist = PhotonNetwork.CurrentRoom.CustomProperties.TryGetValue(DRAFT_PLAYER_QUEUES_PROP, out queuesProp);
-                bool draftEnded = !queuesExist || queuesProp == null;
+            // --- Check Draft End Condition --- 
+            object queuesProp = null;
+            bool queuesExist = PhotonNetwork.CurrentRoom.CustomProperties.TryGetValue(DRAFT_PLAYER_QUEUES_PROP, out queuesProp);
+            bool draftEnded = !queuesExist || queuesProp == null;
+            string queuesJson = queuesProp as string; // Get JSON regardless of initial draftEnded state for logging
+            Debug.Log($"OnRoomPropertiesUpdate: Checking draft end. queuesExist={queuesExist}, queuesProp='{queuesJson}'");
 
-                if (!draftEnded)
+            if (!draftEnded && !string.IsNullOrEmpty(queuesJson))
+            {
+                try
                 {
-                    try
+                    var queuesDict = JsonConvert.DeserializeObject<Dictionary<int, List<string>>>(queuesJson);
+                    if (queuesDict == null) 
                     {
-                        string queuesJson = queuesProp as string;
-                        var queuesDict = JsonConvert.DeserializeObject<Dictionary<int, List<string>>>(queuesJson);
-                        if (queuesDict == null || queuesDict.Count == 0 || queuesDict.Values.All(q => q == null || q.Count == 0))
+                         Debug.LogWarning("End Check: Deserialized queuesDict is null.");
+                         draftEnded = true; // Treat null dict as ended
+                    }
+                    else if (queuesDict.Count == 0)
+                    {
+                         Debug.Log("End Check: queuesDict count is 0.");
+                         draftEnded = true; 
+                    }
+                    else
+                    {
+                        bool allEmpty = queuesDict.Values.All(q => q == null || q.Count == 0);
+                        Debug.Log($"End Check: queuesDict count={queuesDict.Count}. All queues empty={allEmpty}");
+                        if (allEmpty)
                         {
                             draftEnded = true;
                         }
                     }
-                    catch (System.Exception e)
-                    {
-                        Debug.LogError($"Error checking draft end condition: {e.Message}");
-                        draftEnded = true; // Assume ended if state is corrupted
-                    }
                 }
-
-                if (draftEnded)
+                catch (System.Exception e)
                 {
-                    Debug.Log("Draft queues property is empty or all queues are empty, ending draft phase.");
-                    EndDraftPhase();
+                    Debug.LogError($"Error checking draft end condition: {e.Message}");
+                    draftEnded = true; // Assume ended if state is corrupted
                 }
-                /* OLD CHECK
-                if (!packsExist || packsProp == null || ((string)packsProp).Length < 5) // Basic check for empty serialized dictionary "{}"
-                {
-                    // A better check might deserialize and see if Count == 0
-                    Debug.Log("Draft packs property is empty or missing, ending draft phase.");
-                    EndDraftPhase();
-                }
-                */
             }
+            else if (!draftEnded && string.IsNullOrEmpty(queuesJson))
+            {
+                 // If queuesExist was true but the string is null/empty, it means draft ended.
+                 Debug.Log("End Check: queuesProp exists but is null/empty string.");
+                 draftEnded = true;
+            }
+
+            if (draftEnded)
+            {
+                // Prevent multiple calls if EndDraftPhase was already triggered
+                if (currentState == GameState.Drafting)
+                {
+                    Debug.Log("Draft queues property indicates draft ended. Calling EndDraftPhase.");
+                    EndDraftPhase();
+                }
+            }
+            // --- End Draft End Condition Check --- 
         }
         // Handle other room property updates if necessary
     }
@@ -639,7 +680,7 @@ public class GameManager : MonoBehaviourPunCallbacks
             Debug.LogWarning("Cannot start game, not all players are ready.");
             return;
         }
-        // Ensure minimum player count if desired (e.g., 2)
+        // Ensure minimum player count
         if (PhotonNetwork.PlayerList.Length < 2)
         {
              Debug.LogWarning("Cannot start game, need at least 2 players.");
@@ -652,8 +693,17 @@ public class GameManager : MonoBehaviourPunCallbacks
         PhotonNetwork.CurrentRoom.IsOpen = false;
         PhotonNetwork.CurrentRoom.IsVisible = false;
 
-        // Tell all clients to start combat setup via RPC
-        photonView.RPC("RpcStartCombat", RpcTarget.All);
+        // Initialize scores for all players to 0
+        Debug.Log("Initializing player scores...");
+        Hashtable initialScoreProps = new Hashtable { { PLAYER_SCORE_PROP, 0 } };
+        foreach (Player p in PhotonNetwork.PlayerList)
+        {
+            p.SetCustomProperties(initialScoreProps);
+            Debug.Log($"Set initial score for {p.NickName}");
+        }
+
+        // Call the preparation method which will set pairings and THEN call RpcStartCombat
+        PrepareNextCombatRound(); 
     }
 
     [PunRPC]
@@ -662,6 +712,34 @@ public class GameManager : MonoBehaviourPunCallbacks
         Debug.Log($"RPC: Starting Combat Setup for {PhotonNetwork.LocalPlayer.NickName}");
         currentState = GameState.Combat; // Transition state
 
+        // Fetch pairings from Room Properties
+        int opponentPetOwnerActorNum = -1;
+        if (PhotonNetwork.CurrentRoom.CustomProperties.TryGetValue(COMBAT_PAIRINGS_PROP, out object pairingsObj))
+        {
+            try
+            {
+                string pairingsJson = pairingsObj as string;
+                var pairingsDict = JsonConvert.DeserializeObject<Dictionary<int, int>>(pairingsJson);
+                if (pairingsDict != null && pairingsDict.TryGetValue(PhotonNetwork.LocalPlayer.ActorNumber, out int oppActorNum))
+                {
+                    opponentPetOwnerActorNum = oppActorNum;
+                    Debug.Log($"Combat pairing found: Fighting pet of player {opponentPetOwnerActorNum}");
+                }
+                else
+                {
+                    Debug.LogWarning("Could not find local player's pairing in COMBAT_PAIRINGS_PROP.");
+                }
+            }
+            catch(System.Exception e)
+            {
+                 Debug.LogError($"Failed to deserialize combat pairings: {e.Message}");
+            }
+        }
+        else
+        {
+            Debug.LogWarning($"Room property {COMBAT_PAIRINGS_PROP} not found.");
+        }
+
         // Disable Lobby
         if (lobbyInstance != null) lobbyInstance.SetActive(false);
 
@@ -669,7 +747,8 @@ public class GameManager : MonoBehaviourPunCallbacks
         ShowCombatScreen();
 
         // Initialize combat state for this player
-        InitializeCombatState();
+        // InitializeCombatState(); // OLD CALL
+        InitializeCombatState(opponentPetOwnerActorNum); // NEW CALL with opponent info
     }
 
     private void ShowCombatScreen()
@@ -758,90 +837,89 @@ public class GameManager : MonoBehaviourPunCallbacks
         combatInstance.SetActive(true);
     }
 
-    private void InitializeCombatState()
+    private void InitializeCombatState(int opponentPetOwnerActorNum)
     {
-        Debug.Log("Initializing Combat State...");
+        Debug.Log($"Initializing Combat State for round. Fighting pet of ActorNum {opponentPetOwnerActorNum}");
         
-        // Reset scores (example)
-        player1Score = 0;
-        player2Score = 0;
-        UpdateScoreUI();
+        combatEndedForLocalPlayer = false; // Reset combat end flag for the new round
 
-        // Determine opponent (Simple 2-player logic)
-        opponentPlayer = null;
-        foreach (Player p in PhotonNetwork.PlayerList)
+        // Determine opponent player based on provided ActorNumber
+        opponentPlayer = null; // Reset from previous round
+        if (opponentPetOwnerActorNum > 0)
         {
-            if (p != PhotonNetwork.LocalPlayer)
-            {
-                opponentPlayer = p;
-                break;
-            }
+            opponentPlayer = PhotonNetwork.CurrentRoom.GetPlayer(opponentPetOwnerActorNum);
         }
 
-        if (opponentPlayer == null && PhotonNetwork.PlayerList.Length > 1)
+        if (opponentPlayer == null && opponentPetOwnerActorNum > 0)
         {
-            Debug.LogError("Could not determine opponent!");
-            // Fallback or error handling? For now, continue, might be single player test?
+            Debug.LogError($"Could not find opponent player with ActorNum {opponentPetOwnerActorNum}!");
+             // Handle this case? Maybe assign a default/dummy opponent?
+        }
+        else if (opponentPetOwnerActorNum <= 0)
+        {
+            Debug.LogWarning("InitializeCombatState called with invalid opponent ActorNum. Likely single player or pairing issue.");
         }
 
-        // Initialize Health (Using TEST values)
-        localPlayerHealth = startingPlayerHealth;
-        localPetHealth = startingPetHealth;
-        // Find the opponent's pet health property or use default if not set
-        int opponentStartingPetHealth = startingPetHealth;
-        if (opponentPlayer != null && opponentPlayer.CustomProperties.TryGetValue("PetHealth", out object oppPetHealth))
+        // Initialize Health - Use potentially upgraded BASE values
+        // Player health resets to their current startingPlayerHealth
+        localPlayerHealth = startingPlayerHealth; 
+        // Local pet health resets to its current startingPetHealth
+        localPetHealth = startingPetHealth; 
+        
+        // Opponent pet health resets based on THEIR base value (from Player Property)
+        int opponentBasePetHealth = startingPetHealth; // Default if property not found
+        if (opponentPlayer != null && opponentPlayer.CustomProperties.TryGetValue(PLAYER_BASE_PET_HP_PROP, out object oppBasePetHP))
         {
-            opponentStartingPetHealth = (int)oppPetHealth; // Use opponent's actual pet health if available later
+            try { opponentBasePetHealth = (int)oppBasePetHP; }
+            catch { Debug.LogError($"Failed to cast {PLAYER_BASE_PET_HP_PROP} for player {opponentPlayer.NickName}"); }
         }
-        else
-        {
-             // If opponent or property doesn't exist, use default (which is now 1 for testing)
-             opponentStartingPetHealth = startingPetHealth;
-        }
-        opponentPetHealth = opponentStartingPetHealth;
+        opponentPetHealth = opponentBasePetHealth; // Refresh opponent pet health
+        Debug.Log($"Set opponent pet health to {opponentPetHealth} (Base: {opponentBasePetHealth})");
 
         // Setup Initial UI
         if(playerNameText) playerNameText.text = PhotonNetwork.LocalPlayer.NickName;
-        UpdateHealthUI(); // Call helper to update all health displays
-
+        UpdateHealthUI(); // Update UI with refreshed health values
         if (opponentPetNameText) opponentPetNameText.text = opponentPlayer != null ? $"{opponentPlayer.NickName}'s Pet" : "Opponent Pet";
         if (ownPetNameText) ownPetNameText.text = "Your Pet";
 
-        // Initialize Player Deck
-        deck = new List<CardData>(starterDeck); // Copy starter deck
-        ShuffleDeck();
-        hand.Clear();
-        discardPile.Clear();
+        // Initialize Player Deck (reshuffle existing deck)
+        // Check if this is likely the first round (deck, hand, discard are empty)
+        if (deck.Count == 0 && hand.Count == 0 && discardPile.Count == 0)
+        {
+            Debug.Log("First round detected: Initializing deck from starterDeck.");
+            deck = new List<CardData>(starterDeck); 
+            // Hand and discard are already clear
+        }
+        else
+        {
+            // Subsequent rounds: Combine hand/discard into deck
+             Debug.Log("Subsequent round detected: Reshuffling existing deck/hand/discard.");
+            discardPile.AddRange(hand); 
+            hand.Clear();
+            deck.AddRange(discardPile); 
+            discardPile.Clear();
+        }
+        ShuffleDeck(); // Shuffle the full deck (either new or combined)
         UpdateDeckCountUI();
 
-        // <<--- INITIALIZE PET DECK START --->>
-        // Initialize Opponent Pet Deck (using local simulation)
+        // Re-initialize Opponent Pet Deck Simulation State
+        // This simulation uses the STARTING pet deck defined in the inspector for simplicity.
+        // A more complex simulation could try to mirror the opponent's actual pet deck state.
         if (starterPetDeck != null && starterPetDeck.Count > 0)
         {
             opponentPetDeck = new List<CardData>(starterPetDeck);
-            ShuffleOpponentPetDeck(); // Need to create this helper
+            ShuffleOpponentPetDeck();
         }
         else
         {
-             Debug.LogWarning("StarterPetDeck is not assigned or empty in GameManager inspector!");
-             opponentPetDeck = new List<CardData>(); // Start with empty if none assigned
+             opponentPetDeck = new List<CardData>();
         }
         opponentPetHand.Clear();
         opponentPetDiscard.Clear();
-        // Don't necessarily need pet deck/discard count UI, but could add later
-        // <<--- INITIALIZE PET DECK END --->>
 
-        // --- Initialize Local Pet Deck ---
-        if (starterPetDeck != null && starterPetDeck.Count > 0)
-        {
-            localPetDeck = new List<CardData>(starterPetDeck);
-            ShuffleLocalPetDeck();
-        }
-        else
-        {
-            Debug.LogWarning("StarterPetDeck is not assigned or empty in GameManager inspector! Local Pet starts with no cards.");
-            localPetDeck = new List<CardData>();
-        }
+        // Initialize Local Pet Deck (reshuffle existing)
+        // localPetDeck = new List<CardData>(starterPetDeck); // Don't reset to starter deck
+        ShuffleLocalPetDeck(); // Just reshuffle the current pet deck
 
         // Start the first turn
         StartTurn();
@@ -1110,11 +1188,49 @@ public class GameManager : MonoBehaviourPunCallbacks
 
     private void UpdateScoreUI()
     {
-        if (scoreText)
+        if (!scoreText) return;
+
+        // Fetch scores from Player Properties
+        int localScore = 0;
+        if (PhotonNetwork.LocalPlayer.CustomProperties.TryGetValue(PLAYER_SCORE_PROP, out object localScoreVal))
         {
-            // Basic 2-player score display
-            scoreText.text = $"Score: You: {player1Score} / Opp: {player2Score}"; // Adjust based on who is P1/P2
+             try { localScore = (int)localScoreVal; } catch { /* Ignore cast error, keep 0 */ }
         }
+
+        int opponentScore = 0;
+        // Find the opponent player (simple 2-player logic assumption)
+        Player currentOpponent = null; 
+        foreach(Player p in PhotonNetwork.PlayerList)
+        {
+            if (p != PhotonNetwork.LocalPlayer) 
+            {
+                currentOpponent = p;
+                break;
+            }
+        }
+        
+        if (currentOpponent != null && currentOpponent.CustomProperties.TryGetValue(PLAYER_SCORE_PROP, out object oppScoreVal))
+        {
+             try { opponentScore = (int)oppScoreVal; } catch { /* Ignore cast error, keep 0 */ }
+        }
+        
+        // Basic 2-player score display
+        scoreText.text = $"Score: You: {localScore} / Opp: {opponentScore}"; 
+        
+        // --- FOR > 2 players, needs different display logic --- 
+        /* Example:
+        System.Text.StringBuilder scoreString = new System.Text.StringBuilder("Scores: ");
+        foreach (Player p in PhotonNetwork.PlayerList.OrderBy(p => p.ActorNumber))
+        {
+            int score = 0;
+            if (p.CustomProperties.TryGetValue(PLAYER_SCORE_PROP, out object scoreVal))
+            {
+                 try { score = (int)scoreVal; } catch {}
+            }
+            scoreString.Append($"{p.NickName}: {score}  ");
+        }
+        scoreText.text = scoreString.ToString();
+        */
     }
 
     private void UpdateHandUI()
@@ -1445,10 +1561,12 @@ public class GameManager : MonoBehaviourPunCallbacks
         }
 
         // 7. Set updated properties
-        propsToUpdate[DRAFT_PLAYER_QUEUES_PROP] = JsonConvert.SerializeObject(currentQueues); // Update the queues
-        propsToUpdate[DRAFT_PICKS_MADE_PROP] = JsonConvert.SerializeObject(currentPicks);
+        string finalQueuesJson = JsonConvert.SerializeObject(currentQueues);
+        string finalPicksJson = JsonConvert.SerializeObject(currentPicks);
+        propsToUpdate[DRAFT_PLAYER_QUEUES_PROP] = finalQueuesJson; // Update the queues
+        propsToUpdate[DRAFT_PICKS_MADE_PROP] = finalPicksJson;
         
-        Debug.Log("Master Client setting updated DRAFT_PLAYER_QUEUES_PROP and DRAFT_PICKS_MADE_PROP.");
+        Debug.Log($"Master Client setting properties. Queues JSON: {finalQueuesJson}, Picks JSON: {finalPicksJson}");
         PhotonNetwork.CurrentRoom.SetCustomProperties(propsToUpdate);
     }
 
@@ -1463,8 +1581,22 @@ public class GameManager : MonoBehaviourPunCallbacks
 
         Debug.Log("COMBAT WIN! Player defeated the opponent's pet.");
         // Award point (Placeholder)
-        player1Score++; // Assuming local player is P1 for now
-        UpdateScoreUI();
+        // player1Score++; // OLD local increment
+        // UpdateScoreUI(); // OLD call with local scores
+
+        // Award point using Player Property
+        int currentScore = 0;
+        if (PhotonNetwork.LocalPlayer.CustomProperties.TryGetValue(PLAYER_SCORE_PROP, out object scoreVal))
+        {
+            currentScore = (int)scoreVal;
+        }
+        int newScore = currentScore + 1;
+        Hashtable scoreUpdate = new Hashtable { { PLAYER_SCORE_PROP, newScore } };
+        // Use Check-And-Swap for safety against race conditions
+        Hashtable expectedScore = new Hashtable { { PLAYER_SCORE_PROP, currentScore } }; 
+        PhotonNetwork.LocalPlayer.SetCustomProperties(scoreUpdate, expectedScore);
+        Debug.Log($"Attempted to set local player score to {newScore} (expected {currentScore}).");
+        // UI will be updated via OnPlayerPropertiesUpdate
 
         // Mark this player as finished with combat for this round
         SetPlayerCombatFinished(true);
@@ -1481,8 +1613,28 @@ public class GameManager : MonoBehaviourPunCallbacks
 
         Debug.Log("COMBAT LOSS! Player was defeated.");
         // Opponent gets point (Placeholder)
-        player2Score++; // Assuming opponent is P2 for now
-        UpdateScoreUI();
+        // player2Score++; // OLD local increment
+        // UpdateScoreUI(); // OLD call with local scores
+
+        // Award point to opponent using Player Property
+        if (opponentPlayer != null)
+        {
+            int currentOpponentScore = 0;
+            if (opponentPlayer.CustomProperties.TryGetValue(PLAYER_SCORE_PROP, out object scoreVal))
+            {
+                currentOpponentScore = (int)scoreVal;
+            }
+            int newOpponentScore = currentOpponentScore + 1;
+            Hashtable scoreUpdate = new Hashtable { { PLAYER_SCORE_PROP, newOpponentScore } };
+            Hashtable expectedScore = new Hashtable { { PLAYER_SCORE_PROP, currentOpponentScore } };
+            opponentPlayer.SetCustomProperties(scoreUpdate, expectedScore);
+            Debug.Log($"Attempted to set opponent ({opponentPlayer.NickName}) score to {newOpponentScore} (expected {currentOpponentScore}).");
+        }
+        else
+        {
+            Debug.LogError("HandleCombatLoss: Cannot award point, opponentPlayer is null!");
+        }
+         // UI will be updated via OnPlayerPropertiesUpdate
 
         // Mark this player as finished with combat for this round
         SetPlayerCombatFinished(true);
@@ -1914,6 +2066,11 @@ public class GameManager : MonoBehaviourPunCallbacks
                     startingPetHealth += choice.StatIncreaseAmount; // Modify the base for next round
                     localPetHealth += choice.StatIncreaseAmount; // Increase current health too
                     Debug.Log($"Upgraded Pet Max Health by {choice.StatIncreaseAmount}. New base: {startingPetHealth}");
+                    
+                    // Sync the new base health to Player Properties
+                    Hashtable petProps = new Hashtable { { PLAYER_BASE_PET_HP_PROP, startingPetHealth } };
+                    PhotonNetwork.LocalPlayer.SetCustomProperties(petProps);
+                    Debug.Log($"Set {PLAYER_BASE_PET_HP_PROP} to {startingPetHealth} for local player.");
                  }
                  // TODO: Handle Pet Energy if pets have energy?
                  // Update UI relevant to the stat
@@ -1950,7 +2107,11 @@ public class GameManager : MonoBehaviourPunCallbacks
         else
         {
              // Start next combat round via RPC
-             photonView.RPC("RpcStartCombat", RpcTarget.All);
+             // photonView.RPC("RpcStartCombat", RpcTarget.All);
+             if (PhotonNetwork.IsMasterClient)
+             {
+                 PrepareNextCombatRound();
+             }
         }
     }
 
@@ -1987,6 +2148,57 @@ public class GameManager : MonoBehaviourPunCallbacks
             localPetDeck[n] = value;
         }
         Debug.Log("Local Pet Deck shuffled.");
+    }
+
+    private void PrepareNextCombatRound()
+    {
+        if (!PhotonNetwork.IsMasterClient) return;
+
+        Debug.Log("Master Client preparing next combat round...");
+
+        List<Player> players = PhotonNetwork.PlayerList.ToList();
+        // Shuffle players for randomized pairings (optional but good)
+        System.Random rng = new System.Random();
+        players = players.OrderBy(p => rng.Next()).ToList();
+
+        Dictionary<int, int> pairings = new Dictionary<int, int>();
+        if (players.Count < 2)
+        {
+            Debug.LogWarning("Cannot create pairings with less than 2 players.");
+            // Handle this case? End game? For now, just proceed without pairings.
+        }
+        else
+        {
+            for (int i = 0; i < players.Count; i++)
+            {
+                Player currentPlayer = players[i];
+                Player opponentPetOwner = players[(i + 1) % players.Count]; // Cyclical pairing
+                pairings[currentPlayer.ActorNumber] = opponentPetOwner.ActorNumber;
+                Debug.Log($"Pairing: {currentPlayer.NickName} vs {opponentPetOwner.NickName}'s Pet");
+            }
+        }
+
+        // Store pairings in room properties
+        string pairingsJson = JsonConvert.SerializeObject(pairings);
+        Hashtable roomProps = new Hashtable
+        {
+            { COMBAT_PAIRINGS_PROP, pairingsJson }
+            // Optionally add a timestamp or round number here if needed
+        };
+        
+        // Reset combat finished flags BEFORE setting properties that trigger the next step
+        ResetCombatFinishedFlags();
+        
+        // Set properties
+        PhotonNetwork.CurrentRoom.SetCustomProperties(roomProps);
+        
+        // Set flag to wait for OnRoomPropertiesUpdate confirmation
+        isWaitingToStartCombatRPC = true;
+        Debug.Log($"Master Client set pairings property and isWaitingToStartCombatRPC = true. Waiting for confirmation.");
+
+        // Tell all clients to start combat -- REMOVED, now triggered by OnRoomPropertiesUpdate
+        // Debug.Log("Pairings set. Calling RpcStartCombat.");
+        // photonView.RPC("RpcStartCombat", RpcTarget.All);
     }
 
     #endregion
