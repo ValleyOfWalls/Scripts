@@ -88,16 +88,20 @@ public class GameManager : MonoBehaviourPunCallbacks
     private const string PLAYER_READY_PROPERTY = "IsReady";
     private const string COMBAT_FINISHED_PROPERTY = "CombatFinished";
 
-    // Draft State Keys (Room Properties)
-    private const string DRAFT_OPTIONS_PROP = "DraftOptions"; // Stores serialized List<SerializableDraftOption>
-    private const string DRAFT_TURN_PROP = "DraftTurn";       // Stores ActorNumber of current picker
-    private const string DRAFT_ORDER_PROP = "DraftOrder";    // Stores List<int> of ActorNumbers
+    // Draft State Keys (Room Properties) - Queued Pack Draft Style
+    // private const string DRAFT_PACKS_PROP = "DraftPacks";     // OLD: Dictionary<int ActorNum, string SerializedPack>
+    private const string DRAFT_PLAYER_QUEUES_PROP = "DraftQueues"; // NEW: Dictionary<int ActorNum, List<string> SerializedPacks>
+    private const string DRAFT_PICKS_MADE_PROP = "DraftPicks"; // NEW: Dictionary<int ActorNum, int Picks>
+    private const string DRAFT_ORDER_PROP = "DraftOrder";    // Stores List<int> of ActorNumbers (Pass direction)
 
-    // Local Draft State Cache
-    private List<SerializableDraftOption> currentDraftOptions = new List<SerializableDraftOption>();
+    // Local Draft State Cache - Pack Draft Style
+    // private List<SerializableDraftOption> currentDraftOptions = new List<SerializableDraftOption>(); // OLD
+    // private int currentPickerActorNumber = -1; // OLD
     private List<int> draftPlayerOrder = new List<int>();
-    private int currentPickerActorNumber = -1;
-    private Dictionary<int, DraftOption> activeOptionMap = new Dictionary<int, DraftOption>(); // Maps OptionId to full DraftOption
+    private List<SerializableDraftOption> localCurrentPack = new List<SerializableDraftOption>(); // Local player's current pack
+    private Dictionary<int, DraftOption> localActiveOptionMap = new Dictionary<int, DraftOption>(); // Maps OptionId to full DraftOption for local pack
+    private Dictionary<int, int> draftPicksMade = new Dictionary<int, int>(); // Local cache of picks made
+    private bool isWaitingForLocalPick = false; // NEW FLAG: True if player is currently presented with a pack
 
     // Player List Management
     private List<GameObject> playerListEntries = new List<GameObject>();
@@ -259,23 +263,22 @@ public class GameManager : MonoBehaviourPunCallbacks
         if (currentState == GameState.Drafting)
         {
             bool draftStateUpdated = false;
-            if (propertiesThatChanged.ContainsKey(DRAFT_OPTIONS_PROP))
+            // Check for changes in the packs or picks made
+            if (propertiesThatChanged.ContainsKey(DRAFT_PLAYER_QUEUES_PROP))
             {
-                Debug.Log("Draft options updated in room properties.");
-                UpdateLocalDraftOptionsFromRoomProps();
-                draftStateUpdated = true;
+                Debug.Log("Draft packs updated in room properties.");
+                UpdateLocalDraftStateFromRoomProps(); // Updated method name
+                // draftStateUpdated = true; // UpdateLocalDraftStateFromRoomProps now handles UI update internally
             }
-            if (propertiesThatChanged.ContainsKey(DRAFT_TURN_PROP))
+            if (propertiesThatChanged.ContainsKey(DRAFT_PICKS_MADE_PROP))
             {
-                Debug.Log("Draft turn updated in room properties.");
-                UpdateLocalDraftTurnFromRoomProps();
-                draftStateUpdated = true;
+                 Debug.Log("Draft picks made updated in room properties.");
+                 UpdateLocalDraftPicksFromRoomProps(); // Separate update for picks cache
+                 // May not trigger UI update directly, depends on if you display picks
             }
-            // Draft order typically set once at start, but handle if needed
             if (propertiesThatChanged.ContainsKey(DRAFT_ORDER_PROP))
             {
                  UpdateLocalDraftOrderFromRoomProps();
-                 // May not need UI update just for this
             }
 
             if (draftStateUpdated)
@@ -283,46 +286,187 @@ public class GameManager : MonoBehaviourPunCallbacks
                 Debug.Log("Updating Draft UI due to room property change.");
                 UpdateDraftUI(); // Refresh UI based on new state
 
-                // Check if draft ended
-                if (currentDraftOptions.Count == 0 && currentPickerActorNumber != -1) // Ensure it wasn't just initialized empty
+                // Check if draft ended - check if DRAFT_PLAYER_QUEUES_PROP is empty or all queues are empty
+                object queuesProp = null;
+                bool queuesExist = PhotonNetwork.CurrentRoom.CustomProperties.TryGetValue(DRAFT_PLAYER_QUEUES_PROP, out queuesProp);
+                bool draftEnded = !queuesExist || queuesProp == null;
+
+                if (!draftEnded)
                 {
-                    Debug.Log("Draft options empty, ending draft phase.");
+                    try
+                    {
+                        string queuesJson = queuesProp as string;
+                        var queuesDict = JsonConvert.DeserializeObject<Dictionary<int, List<string>>>(queuesJson);
+                        if (queuesDict == null || queuesDict.Count == 0 || queuesDict.Values.All(q => q == null || q.Count == 0))
+                        {
+                            draftEnded = true;
+                        }
+                    }
+                    catch (System.Exception e)
+                    {
+                        Debug.LogError($"Error checking draft end condition: {e.Message}");
+                        draftEnded = true; // Assume ended if state is corrupted
+                    }
+                }
+
+                if (draftEnded)
+                {
+                    Debug.Log("Draft queues property is empty or all queues are empty, ending draft phase.");
                     EndDraftPhase();
                 }
+                /* OLD CHECK
+                if (!packsExist || packsProp == null || ((string)packsProp).Length < 5) // Basic check for empty serialized dictionary "{}"
+                {
+                    // A better check might deserialize and see if Count == 0
+                    Debug.Log("Draft packs property is empty or missing, ending draft phase.");
+                    EndDraftPhase();
+                }
+                */
             }
         }
         // Handle other room property updates if necessary
     }
 
     // Helper methods to update local state from Room Properties
-    private void UpdateLocalDraftOptionsFromRoomProps()
+    // --- UPDATED: Renamed and modified for Pack Draft --- 
+    private void UpdateLocalDraftStateFromRoomProps()
     {
-        if (PhotonNetwork.CurrentRoom.CustomProperties.TryGetValue(DRAFT_OPTIONS_PROP, out object optionsObj))
+        // Don't process new packs if player hasn't finished with the current one
+        if (isWaitingForLocalPick)
+        {
+            Debug.Log("UpdateLocalDraftStateFromRoomProps: Skipping update, player is still picking (isWaitingForLocalPick=true).");
+            return;
+        }
+
+        // bool hadPackBefore = localCurrentPack.Count > 0; // Don't need this check anymore
+        bool needsUIUpdate = false;
+
+        // --- Try to load the next pack from the queue --- 
+        localCurrentPack.Clear(); // Clear local pack first
+        localActiveOptionMap.Clear();
+        bool nowHasPack = false;
+
+        if (PhotonNetwork.CurrentRoom.CustomProperties.TryGetValue(DRAFT_PLAYER_QUEUES_PROP, out object queuesObj))
         {
             try
             {
-                string optionsJson = optionsObj as string;
-                currentDraftOptions = JsonConvert.DeserializeObject<List<SerializableDraftOption>>(optionsJson) ?? new List<SerializableDraftOption>();
-                RebuildActiveOptionMap(); // Rebuild the lookup map
-                 Debug.Log($"Successfully deserialized {currentDraftOptions.Count} draft options.");
+                string queuesJson = queuesObj as string;
+                if (string.IsNullOrEmpty(queuesJson) || queuesJson == "{}")
+                {
+                     Debug.Log("UpdateLocalDraftStateFromRoomProps: Draft queues property is empty JSON.");
+                }
+                else
+                {
+                    var queuesDict = JsonConvert.DeserializeObject<Dictionary<int, List<string>>>(queuesJson);
+                    if (queuesDict == null) 
+                    { 
+                        Debug.LogError("UpdateLocalDraftStateFromRoomProps: Failed to deserialize DRAFT_PLAYER_QUEUES_PROP.");
+                    }
+                    else
+                    {
+                        int localActorNumber = PhotonNetwork.LocalPlayer.ActorNumber;
+                        // Check if the local player has a queue and if it's not empty
+                        if (queuesDict.TryGetValue(localActorNumber, out List<string> localQueue) && localQueue != null && localQueue.Count > 0)
+                        {
+                            // Get the first pack JSON from the queue
+                            string nextPackJson = localQueue[0];
+                            if (!string.IsNullOrEmpty(nextPackJson))
+                            {
+                                // Deserialize into local pack
+                                localCurrentPack = JsonConvert.DeserializeObject<List<SerializableDraftOption>>(nextPackJson) ?? new List<SerializableDraftOption>();
+                                RebuildLocalActiveOptionMap(); 
+                                Debug.Log($"UpdateLocalDraftStateFromRoomProps: Deserialized {localCurrentPack.Count} options from queue for local player.");
+                                nowHasPack = localCurrentPack.Count > 0;
+                            }
+                            else
+                            {
+                                Debug.LogWarning("UpdateLocalDraftStateFromRoomProps: Local player's queue[0] is null or empty.");
+                                // TODO: Should the Master Client remove this entry? Or client RPC to ask for removal?
+                                // For now, we just won't load a pack.
+                            }
+                        }
+                        else
+                        {
+                            Debug.Log("UpdateLocalDraftStateFromRoomProps: Local player does not have a non-empty pack queue assigned.");
+                        }
+                    }
+                }
             }
             catch (System.Exception e)
             {
-                Debug.LogError($"Failed to deserialize draft options from room properties: {e.Message}");
-                currentDraftOptions = new List<SerializableDraftOption>();
-                activeOptionMap.Clear();
+                Debug.LogError($"UpdateLocalDraftStateFromRoomProps: Failed to deserialize queues: {e.Message}");
+                 localCurrentPack.Clear();
+                 localActiveOptionMap.Clear();
+                 nowHasPack = false;
             }
         }
         else
         {
-            Debug.LogWarning($"Room property {DRAFT_OPTIONS_PROP} not found.");
-            currentDraftOptions = new List<SerializableDraftOption>();
-            activeOptionMap.Clear();
+            Debug.LogWarning($"UpdateLocalDraftStateFromRoomProps: Room property {DRAFT_PLAYER_QUEUES_PROP} not found.");
+             localCurrentPack.Clear();
+             localActiveOptionMap.Clear();
+             nowHasPack = false;
+        }
+
+        // Update the waiting flag ONLY if we successfully loaded a pack
+        if (nowHasPack)
+        {
+            isWaitingForLocalPick = true;
+            needsUIUpdate = true; // Need to show the new pack
+        }
+        // If we previously had a pack but now don't (because the queue became empty),
+        // ensure the UI is updated to show the waiting message.
+        else if (isWaitingForLocalPick) // This handles the case where we were waiting, but queue is now empty
+        {
+             isWaitingForLocalPick = false; // No longer waiting as there's no pack
+             needsUIUpdate = true; // Need to update UI to show waiting message
+        }
+        
+        // Update UI if needed
+        if (needsUIUpdate)
+        {
+             Debug.Log($"UpdateLocalDraftStateFromRoomProps: Needs UI Update (nowHasPack={nowHasPack}). Calling UpdateDraftUI.");
+             UpdateDraftUI(); 
+        }
+        /* // OLD logic for flag/UI update
+        // Update the waiting flag AFTER processing
+        isWaitingForLocalPick = nowHasPack;
+        
+        // Update UI only if the pack status changed (prevents flicker if update was skipped)
+        if (nowHasPack != hadPackBefore)
+        {
+             Debug.Log($"UpdateLocalDraftStateFromRoomProps: Pack status changed ({hadPackBefore} -> {nowHasPack}), updating UI.");
+             UpdateDraftUI(); 
+        }
+        */
+    }
+
+    private void UpdateLocalDraftPicksFromRoomProps()
+    {
+        if (PhotonNetwork.CurrentRoom.CustomProperties.TryGetValue(DRAFT_PICKS_MADE_PROP, out object picksObj))
+        {
+            try
+            {
+                 string picksJson = picksObj as string;
+                 draftPicksMade = JsonConvert.DeserializeObject<Dictionary<int, int>>(picksJson) ?? new Dictionary<int, int>();
+                 Debug.Log($"Successfully deserialized draft picks made: {draftPicksMade.Count} players.");
+            }
+            catch(System.Exception e)
+            {
+                 Debug.LogError($"Failed to deserialize draft picks: {e.Message}");
+                 draftPicksMade = new Dictionary<int, int>();
+            }
+        }
+        else
+        {
+            Debug.LogWarning($"Room property {DRAFT_PICKS_MADE_PROP} not found.");
+            draftPicksMade = new Dictionary<int, int>();
         }
     }
 
-    private void UpdateLocalDraftTurnFromRoomProps()
+    private void UpdateLocalDraftTurnFromRoomProps() // Kept for compatibility if needed elsewhere, but not primary logic anymore
     {
+         /* // OLD LOGIC
          if (PhotonNetwork.CurrentRoom.CustomProperties.TryGetValue(DRAFT_TURN_PROP, out object turnObj))
         {
             currentPickerActorNumber = (int)turnObj;
@@ -333,10 +477,13 @@ public class GameManager : MonoBehaviourPunCallbacks
              Debug.LogWarning($"Room property {DRAFT_TURN_PROP} not found.");
             currentPickerActorNumber = -1;
          }
+         */
+         // No longer relevant for pack draft turn logic
     }
 
-     private void UpdateLocalDraftOrderFromRoomProps()
+    private void UpdateLocalDraftOrderFromRoomProps()
     {
+         // ... (Keep existing logic as draft order is still used for passing) ...
          if (PhotonNetwork.CurrentRoom.CustomProperties.TryGetValue(DRAFT_ORDER_PROP, out object orderObj))
         {
             try
@@ -358,20 +505,20 @@ public class GameManager : MonoBehaviourPunCallbacks
          }
     }
 
-    // Rebuilds the Dict mapping OptionId to full DraftOption based on currentDraftOptions
-    private void RebuildActiveOptionMap()
+    // Rebuilds the Dict mapping OptionId to full DraftOption *for the local pack*
+    private void RebuildLocalActiveOptionMap()
     {
-        activeOptionMap.Clear();
-        foreach (var serializableOption in currentDraftOptions)
+        localActiveOptionMap.Clear();
+        foreach (var serializableOption in localCurrentPack)
         {
             DraftOption fullOption = serializableOption.ToDraftOption(allPlayerCardPool, allPetCardPool);
             if (fullOption != null)
             {
-                activeOptionMap[fullOption.OptionId] = fullOption;
+                localActiveOptionMap[fullOption.OptionId] = fullOption;
             }
             else
             {
-                 Debug.LogWarning($"Could not fully deserialize option ID {serializableOption.OptionId}, Card maybe missing from pools?");
+                 Debug.LogWarning($"Could not fully deserialize option ID {serializableOption.OptionId} in local pack, Card maybe missing from pools?");
             }
         }
     }
@@ -1182,70 +1329,127 @@ public class GameManager : MonoBehaviourPunCallbacks
         // We still might want logic here if the pet dying has other consequences.
     }
 
-    [PunRPC]
-    private void RpcSelectDraftOption(int chosenOptionId, PhotonMessageInfo info)
+    [PunRPC] // NEW RPC for Pack Draft
+    private void RpcPlayerPickedOption(int chosenOptionId, PhotonMessageInfo info)
     {
-        // Primarily executed on Master Client, but could be RpcTarget.All if needed
-        Debug.Log($"RPC Received: Player {info.Sender.ActorNumber} selected draft option ID {chosenOptionId}");
-
         if (!PhotonNetwork.IsMasterClient)
         {
-            Debug.Log("Non-master client received RpcSelectDraftOption, ignoring.");
+            // This RPC should only be processed by the Master Client
             return;
         }
 
-        // --- Master Client Validation and Update --- 
+        Debug.Log($"RPC Received: Player {info.Sender.NickName} ({info.Sender.ActorNumber}) picked Option ID {chosenOptionId}");
+
         if (currentState != GameState.Drafting)
         {
-            Debug.LogWarning("RpcSelectDraftOption received outside of Drafting state.");
+            Debug.LogWarning("RpcPlayerPickedOption received but not in Drafting state.");
             return;
         }
 
-        // Validate Turn
-        if (info.Sender.ActorNumber != currentPickerActorNumber)
+        // --- Master Client: Process the Pick --- 
+
+        // 1. Get current state from Room Properties
+        // Dictionary<int, string> currentPacks = null; // OLD
+        Dictionary<int, List<string>> currentQueues = null; // NEW
+        Dictionary<int, int> currentPicks = null;
+        List<int> currentOrder = null;
+
+        object queuesObj, picksObj, orderObj; // Renamed packsObj to queuesObj
+        if (!PhotonNetwork.CurrentRoom.CustomProperties.TryGetValue(DRAFT_PLAYER_QUEUES_PROP, out queuesObj) || // Use new key
+            !PhotonNetwork.CurrentRoom.CustomProperties.TryGetValue(DRAFT_PICKS_MADE_PROP, out picksObj) ||
+            !PhotonNetwork.CurrentRoom.CustomProperties.TryGetValue(DRAFT_ORDER_PROP, out orderObj))
         {
-            Debug.LogWarning($"Player {info.Sender.ActorNumber} tried to pick out of turn (Current: {currentPickerActorNumber}).");
-            // Maybe send an error back?
+            Debug.LogError("RpcPlayerPickedOption: Failed to retrieve current draft state from Room Properties.");
             return;
         }
 
-        // Find the option in the *current* list from Room Properties
-        // Important to use the synchronized state, not a potentially stale local cache
-        UpdateLocalDraftOptionsFromRoomProps(); // Ensure we have the latest list
-        SerializableDraftOption selectedOption = currentDraftOptions.FirstOrDefault(opt => opt.OptionId == chosenOptionId);
-
-        if (selectedOption == null)
+        try
         {
-            Debug.LogWarning($"Player {info.Sender.ActorNumber} tried to pick invalid/already taken option ID {chosenOptionId}.");
-            // Option might have been taken by another player just before this RPC arrived
+            // currentPacks = JsonConvert.DeserializeObject<Dictionary<int, string>>((string)packsObj) ?? new Dictionary<int, string>(); // OLD
+            currentQueues = JsonConvert.DeserializeObject<Dictionary<int, List<string>>>((string)queuesObj) ?? new Dictionary<int, List<string>>(); // NEW
+            currentPicks = JsonConvert.DeserializeObject<Dictionary<int, int>>((string)picksObj) ?? new Dictionary<int, int>();
+            currentOrder = JsonConvert.DeserializeObject<List<int>>((string)orderObj) ?? new List<int>();
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogError($"RpcPlayerPickedOption: Failed to deserialize draft state: {e.Message}");
             return;
         }
 
-        // --- Update Room Properties --- 
-
-        // 1. Remove chosen option
-        currentDraftOptions.Remove(selectedOption);
-        string newOptionsJson = JsonConvert.SerializeObject(currentDraftOptions);
-
-        // 2. Determine next player
-        int currentPlayerIndex = draftPlayerOrder.IndexOf(currentPickerActorNumber);
-        int nextPlayerIndex = (currentPlayerIndex + 1) % draftPlayerOrder.Count;
-        int nextPickerActorNumber = draftPlayerOrder[nextPlayerIndex];
-
-        // Prepare properties to set
-        Hashtable roomPropsToUpdate = new Hashtable
+        // 2. Validate the pick
+        int pickerActorNum = info.Sender.ActorNumber;
+        // if (!currentPacks.ContainsKey(pickerActorNum)) // OLD
+        if (!currentQueues.ContainsKey(pickerActorNum) || currentQueues[pickerActorNum] == null || currentQueues[pickerActorNum].Count == 0) // NEW
         {
-            { DRAFT_OPTIONS_PROP, newOptionsJson },
-            { DRAFT_TURN_PROP, nextPickerActorNumber }
-        };
+            Debug.LogWarning($"Player {pickerActorNum} sent RpcPlayerPickedOption but doesn't have a pack in their queue currently.");
+            // Maybe they already picked, or state is out of sync?
+            return;
+        }
 
-        Debug.Log($"Master Client updating room props: Removed option {chosenOptionId}, next turn for {nextPickerActorNumber}");
-        PhotonNetwork.CurrentRoom.SetCustomProperties(roomPropsToUpdate);
+        // 3. Process the pack (take the FIRST pack from the queue)
+        List<string> pickerQueue = currentQueues[pickerActorNum];
+        string packToProcessJson = pickerQueue[0]; // Get the first pack
+        pickerQueue.RemoveAt(0); // Remove it from the picker's queue
 
-        // Optionally, send an RPC confirm to the picker? Or just let OnRoomPropertiesUpdate handle it.
+        List<SerializableDraftOption> packToProcess = JsonConvert.DeserializeObject<List<SerializableDraftOption>>(packToProcessJson) ?? new List<SerializableDraftOption>();
+        SerializableDraftOption pickedOption = packToProcess.FirstOrDefault(opt => opt.OptionId == chosenOptionId);
 
-        // The Master Client doesn't apply the effect directly, that happens on the client
-        // who made the pick, triggered by OnRoomPropertiesUpdate detecting the change.
+        if (pickedOption == null)
+        {
+            Debug.LogWarning($"Player {pickerActorNum} tried to pick invalid Option ID {chosenOptionId} from their current pack.");
+            // Put the pack back at the front of the queue? Or just drop the pick?
+            // For now, just log and return, effectively dropping the pick.
+            // Consider adding pickerQueue.Insert(0, packToProcessJson); to revert if needed.
+            return; // Invalid option ID for this pack
+        }
+
+        packToProcess.Remove(pickedOption); // Remove the chosen option
+        Debug.Log($"Removed option {chosenOptionId} from pack for player {pickerActorNum}. Remaining in pack: {packToProcess.Count}. Remaining in queue: {pickerQueue.Count}");
+
+        // 4. Update Picks Made Count
+        currentPicks[pickerActorNum] = currentPicks.ContainsKey(pickerActorNum) ? currentPicks[pickerActorNum] + 1 : 1;
+
+        // 5. Prepare properties to update
+        Hashtable propsToUpdate = new Hashtable();
+        // currentPacks.Remove(pickerActorNum); // OLD: No need to remove entry, just modified the list
+
+        // 6. Pass the remaining pack (if any options left)
+        if (packToProcess.Count > 0)
+        {
+            int pickerIndex = currentOrder.IndexOf(pickerActorNum);
+            if (pickerIndex == -1)
+            {
+                 Debug.LogError($"RpcPlayerPickedOption: Picker {pickerActorNum} not found in draft order!");
+                 return; // Should not happen
+            }
+            int nextPlayerIndex = (pickerIndex + 1) % currentOrder.Count;
+            int nextPlayerActorNum = currentOrder[nextPlayerIndex];
+
+            string remainingPackJson = JsonConvert.SerializeObject(packToProcess);
+            
+            // Get or create the queue for the next player
+            List<string> nextPlayerQueue;
+            if (!currentQueues.TryGetValue(nextPlayerActorNum, out nextPlayerQueue) || nextPlayerQueue == null)
+            {
+                nextPlayerQueue = new List<string>();
+                currentQueues[nextPlayerActorNum] = nextPlayerQueue;
+            }
+            // APPEND the passed pack to the END of the next player's queue
+            nextPlayerQueue.Add(remainingPackJson);
+            
+            Debug.Log($"Passing remaining {packToProcess.Count} options to player {nextPlayerActorNum}. Their queue size is now {nextPlayerQueue.Count}");
+        }
+        else
+        {
+            Debug.Log($"Pack processed for player {pickerActorNum} is now empty. Not passing.");
+        }
+
+        // 7. Set updated properties
+        propsToUpdate[DRAFT_PLAYER_QUEUES_PROP] = JsonConvert.SerializeObject(currentQueues); // Update the queues
+        propsToUpdate[DRAFT_PICKS_MADE_PROP] = JsonConvert.SerializeObject(currentPicks);
+        
+        Debug.Log("Master Client setting updated DRAFT_PLAYER_QUEUES_PROP and DRAFT_PICKS_MADE_PROP.");
+        PhotonNetwork.CurrentRoom.SetCustomProperties(propsToUpdate);
     }
 
     #endregion
@@ -1374,31 +1578,34 @@ public class GameManager : MonoBehaviourPunCallbacks
     {
         Debug.Log("RPC Received: Starting Draft Phase");
         currentState = GameState.Drafting;
-        combatEndedForLocalPlayer = false; // Reset local flag for the next combat round
+        combatEndedForLocalPlayer = false; // Reset local flag
 
         // Hide Combat Screen
         if (combatInstance != null) combatInstance.SetActive(false);
 
-        // Initialize local draft state cache before showing screen
-        currentDraftOptions.Clear();
-        activeOptionMap.Clear();
+        // Initialize local draft state cache
+        localCurrentPack.Clear();
+        localActiveOptionMap.Clear();
         draftPlayerOrder.Clear();
-        currentPickerActorNumber = -1;
+        draftPicksMade.Clear();
+        // currentPickerActorNumber = -1; // No longer used
 
         // Master Client generates and distributes draft options / sets initial state
         if (PhotonNetwork.IsMasterClient)
         {
-            GenerateAndDistributeDraftOptions();
+            // GenerateAndDistributeDraftOptions(); // OLD NAME
+            InitializeDraftState(); // NEW NAME
         }
         else
         {
             // Non-master clients need to fetch initial state set by master
-            UpdateLocalDraftOptionsFromRoomProps();
-            UpdateLocalDraftTurnFromRoomProps();
+            // UpdateLocalDraftOptionsFromRoomProps(); // OLD NAME
+            UpdateLocalDraftStateFromRoomProps(); // NEW NAME
+            UpdateLocalDraftPicksFromRoomProps();
             UpdateLocalDraftOrderFromRoomProps();
         }
 
-        // Show Draft Screen (Needs Implementation)
+        // Show Draft Screen
         ShowDraftScreen();
          // Update UI after potentially getting initial state
         UpdateDraftUI();
@@ -1451,8 +1658,6 @@ public class GameManager : MonoBehaviourPunCallbacks
     {
         if (currentState != GameState.Drafting || draftInstance == null || !draftInstance.activeSelf)
         {
-             // Don't update if not in draft or UI not ready
-             // Debug.LogWarning("Skipping UpdateDraftUI - Not in Drafting state or UI inactive.");
              return;
         }
 
@@ -1462,25 +1667,7 @@ public class GameManager : MonoBehaviourPunCallbacks
             return;
         }
 
-        // Update Turn Text
-        if (currentPickerActorNumber == -1)
-        {
-            draftTurnText.text = "Waiting for draft to start...";
-        }
-        else
-        {
-            Player picker = PhotonNetwork.CurrentRoom.GetPlayer(currentPickerActorNumber);
-            if (picker != null)
-            {
-                draftTurnText.text = (picker.IsLocal ? "Your Turn to Pick!" : $"Waiting for {picker.NickName} to pick...");
-            }
-            else
-            {
-                 draftTurnText.text = "Waiting for player..."; // Player might have left
-            }
-        }
-
-        // Clear previous option buttons
+        // Clear previous option buttons first
         foreach (Transform child in draftOptionsPanel.transform)
         {
             if (child.gameObject != draftOptionButtonTemplate) // Don't destroy template
@@ -1489,50 +1676,41 @@ public class GameManager : MonoBehaviourPunCallbacks
             }
         }
 
-        bool isMyTurn = PhotonNetwork.LocalPlayer.ActorNumber == currentPickerActorNumber;
-
-        // Populate with current options IF it's the local player's turn
-        if (isMyTurn)
+        // Determine UI state based on whether the local player has a pack
+        if (localCurrentPack.Count > 0)
         {
-            if (currentDraftOptions.Count == 0)
+            draftTurnText.text = "Your Turn to Pick!";
+            // Populate buttons from the local pack
+            foreach (var serializableOption in localCurrentPack)
             {
-                 draftTurnText.text = "No options remaining..."; // Or handle end draft
-            }
-            else
-            {
-                foreach (var serializableOption in currentDraftOptions)
+                if (localActiveOptionMap.TryGetValue(serializableOption.OptionId, out DraftOption optionData))
                 {
-                    // Use the activeOptionMap which has richer data
-                    if (activeOptionMap.TryGetValue(serializableOption.OptionId, out DraftOption optionData))
-                    {
-                         GameObject optionButtonGO = Instantiate(draftOptionButtonTemplate, draftOptionsPanel.transform);
-                        optionButtonGO.SetActive(true);
+                    GameObject optionButtonGO = Instantiate(draftOptionButtonTemplate, draftOptionsPanel.transform);
+                    optionButtonGO.SetActive(true);
 
-                        TextMeshProUGUI buttonText = optionButtonGO.GetComponentInChildren<TextMeshProUGUI>();
-                        if (buttonText != null) buttonText.text = optionData.Description;
+                    TextMeshProUGUI buttonText = optionButtonGO.GetComponentInChildren<TextMeshProUGUI>();
+                    if (buttonText != null) buttonText.text = optionData.Description;
 
-                        Button optionButton = optionButtonGO.GetComponent<Button>();
-                        if (optionButton != null)
-                        {
-                            // Make a local copy of the ID for the lambda closure
-                            int optionId = optionData.OptionId; 
-                            optionButton.onClick.RemoveAllListeners(); // Clear previous
-                            optionButton.onClick.AddListener(() => HandleOptionSelected(optionId));
-                            optionButton.interactable = true; // Enable button
-                        }
-                    }
-                    else
+                    Button optionButton = optionButtonGO.GetComponent<Button>();
+                    if (optionButton != null)
                     {
-                         Debug.LogWarning($"Option ID {serializableOption.OptionId} found in list but not in active map. UI cannot display.");
+                        int optionId = optionData.OptionId;
+                        optionButton.onClick.RemoveAllListeners();
+                        optionButton.onClick.AddListener(() => HandleOptionSelected(optionId));
+                        optionButton.interactable = true;
                     }
+                }
+                else
+                {
+                    Debug.LogWarning($"Option ID {serializableOption.OptionId} found in local pack list but not in active map. UI cannot display.");
                 }
             }
         }
         else
         {
-            // Not my turn, maybe show options dimmed or just the turn text
-            // Current implementation just shows empty panel if not my turn
-            Debug.Log("Not local player's turn, not showing draft options.");
+            // Local player doesn't have a pack right now
+            draftTurnText.text = "Waiting for next pack...";
+            // Buttons are already cleared
         }
     }
 
@@ -1540,107 +1718,158 @@ public class GameManager : MonoBehaviourPunCallbacks
     {
         Debug.Log($"Local player selected option ID: {selectedOptionId}");
 
-        // Disable buttons immediately to prevent double-clicks
+        // Validate: Do we actually have this option locally?
+        if (!localActiveOptionMap.ContainsKey(selectedOptionId))
+        {
+             Debug.LogError($"HandleOptionSelected: Clicked option {selectedOptionId} but it's not in the localActiveOptionMap! Maybe double-click or state issue?");
+             return; // Avoid proceeding if state is inconsistent
+        }
+        
+        // Prevent further interaction immediately
+        isWaitingForLocalPick = false; // Mark as no longer waiting for local pick
+
+        // Disable buttons immediately and show waiting text
         if (draftOptionsPanel != null)
         {
-            foreach (Transform child in draftOptionsPanel.transform)
+             // ... (disable/clear buttons as before) ...
+             foreach (Transform child in draftOptionsPanel.transform)
             {
-                Button btn = child.GetComponent<Button>();
-                if (btn != null) btn.interactable = false;
+                 if (child.gameObject != draftOptionButtonTemplate)
+                 {
+                     Button btn = child.GetComponent<Button>();
+                     if (btn != null) btn.interactable = false;
+                     Destroy(child.gameObject);
+                 }
             }
         }
-        draftTurnText.text = "Sending choice...";
+        if(draftTurnText != null) draftTurnText.text = "Waiting for next pack...";
 
-        // Find the selected option data locally *before* sending RPC
-        // We need this to apply the effect later
-        if (activeOptionMap.TryGetValue(selectedOptionId, out DraftOption chosenOptionData))
-        {   
-            // Apply the effect locally immediately for responsiveness
-            // The state change confirmation will come via OnRoomPropertiesUpdate
-            Debug.Log("Applying draft choice locally BEFORE confirmation."); // Optional immediate apply
-            ApplyDraftChoice(chosenOptionData);
-        }
-        else
-        {
-             Debug.LogError($"Selected option ID {selectedOptionId} not found in local active map when trying to apply! Cannot apply effect.");
-             // Should not happen if UI was populated correctly
-        }
+        // Find the selected option data locally
+        DraftOption chosenOptionData = localActiveOptionMap[selectedOptionId];
+       
+        // Apply the effect locally immediately
+        Debug.Log("Applying draft choice locally.");
+        ApplyDraftChoice(chosenOptionData);
+        
+        // Clear the local pack state immediately AFTER applying choice
+        localCurrentPack.Clear();
+        localActiveOptionMap.Clear();
 
-        // Send RPC to Master Client to make the choice official
-        photonView.RPC("RpcSelectDraftOption", RpcTarget.MasterClient, selectedOptionId);
+        // Send RPC to Master Client to make the choice official and pass the pack
+        Debug.Log($"Sending RpcPlayerPickedOption for ID {selectedOptionId} to Master Client.");
+        photonView.RPC("RpcPlayerPickedOption", RpcTarget.MasterClient, selectedOptionId);
+
+        // Now that the pick is sent, immediately check if a new pack is waiting in the room state
+        // Debug.Log("HandleOptionSelected: Immediately re-checking room state for pending pack after sending RPC."); // REMOVE THIS BLOCK
+        // UpdateLocalDraftStateFromRoomProps(); 
+        // UpdateDraftUI(); // No need to call here, UpdateLocalDraftStateFromRoomProps calls it if state changed
     }
 
     // --- Draft Logic Methods ---
-    private void GenerateAndDistributeDraftOptions()
+    // --- RENAMED from GenerateAndDistributeDraftOptions ---
+    private void InitializeDraftState()
     {
          if (!PhotonNetwork.IsMasterClient) return;
-         Debug.Log("Master Client generating draft options...");
+         Debug.Log("Master Client initializing draft state (creating queues)... ");
 
-        List<SerializableDraftOption> generatedOptions = new List<SerializableDraftOption>();
-        int optionIdCounter = 0; // Simple unique ID for this draft pool
-
-        // Determine number of options to generate (e.g., based on player count)
-        int totalOptionsToGenerate = PhotonNetwork.CurrentRoom.PlayerCount * optionsPerDraft; // Example: 3 options per player
-
-        // Simple generation logic (replace with more sophisticated selection)
-        for (int i = 0; i < totalOptionsToGenerate; i++)
-        {
-            optionIdCounter++;
-            int choiceType = Random.Range(0, 4); // 0: Player Card, 1: Pet Card, 2: Player Stat, 3: Pet Stat
-
-            if (choiceType <= 1 && (allPlayerCardPool.Count > 0 || allPetCardPool.Count > 0)) // Add Card
-            {
-                bool forPet = (choiceType == 1 && allPetCardPool.Count > 0) || allPlayerCardPool.Count == 0;
-                List<CardData> pool = forPet ? allPetCardPool : allPlayerCardPool;
-                if (pool.Count > 0)
-                {
-                    CardData randomCard = pool[Random.Range(0, pool.Count)];
-                    generatedOptions.Add(SerializableDraftOption.FromDraftOption(DraftOption.CreateAddCardOption(optionIdCounter, randomCard, forPet)));
-                }
-                else i--; // Try again if selected pool was empty
-            }
-            else // Upgrade Stat
-            {
-                 bool forPet = (choiceType == 3); // 2=Player, 3=Pet
-                 StatType stat = (StatType)Random.Range(0, System.Enum.GetValues(typeof(StatType)).Length);
-                 int amount = 0;
-                 if (stat == StatType.MaxHealth) amount = Random.Range(5, 11); // e.g., 5-10 health
-                 else if (stat == StatType.StartingEnergy) amount = 1; // Always +1 energy?
-                 // Add other stat amounts
-
-                if (amount > 0)
-                {
-                    generatedOptions.Add(SerializableDraftOption.FromDraftOption(DraftOption.CreateUpgradeStatOption(optionIdCounter, stat, amount, forPet)));
-                }
-                 else i--; // Try again if amount was 0 (e.g., for unhandled stats)
-            }
-        }
-
-        // Shuffle the generated options
-        System.Random rng = new System.Random();
-        generatedOptions = generatedOptions.OrderBy(a => rng.Next()).ToList();
+        // Dictionary<int, string> initialPacks = new Dictionary<int, string>(); // OLD
+        Dictionary<int, List<string>> initialQueues = new Dictionary<int, List<string>>(); // NEW
+        Dictionary<int, int> initialPicks = new Dictionary<int, int>();
+        int totalOptionsGenerated = 0;
+        int optionIdCounter = 0; // Make IDs unique across all options this draft
 
         // Determine player order (simple example: based on ActorNumber)
         List<int> playerOrder = PhotonNetwork.PlayerList.Select(p => p.ActorNumber).OrderBy(n => n).ToList();
         string playerOrderJson = JsonConvert.SerializeObject(playerOrder);
 
-        // Serialize options for network
-        string optionsJson = JsonConvert.SerializeObject(generatedOptions);
+        int initialOptionsPerPack = optionsPerDraft; // Use the existing setting
+
+        // Create one pack for each player
+        foreach (Player player in PhotonNetwork.PlayerList)
+        {
+            List<SerializableDraftOption> packForPlayer = new List<SerializableDraftOption>();
+            Debug.Log($"Generating pack for player {player.NickName} ({player.ActorNumber})");
+
+            for (int i = 0; i < initialOptionsPerPack; i++)
+            {
+                 optionIdCounter++;
+                 SerializableDraftOption newOption = GenerateSingleDraftOption(optionIdCounter);
+                 if (newOption != null) 
+                 { 
+                    packForPlayer.Add(newOption);
+                    totalOptionsGenerated++;
+                 }
+                 else i--; // Try again if generation failed (e.g., pools empty)
+            }
+
+            // Shuffle the pack for this player
+            System.Random packRng = new System.Random();
+            packForPlayer = packForPlayer.OrderBy(a => packRng.Next()).ToList();
+
+            // Serialize and add to the initial packs dictionary
+            // initialPacks[player.ActorNumber] = JsonConvert.SerializeObject(packForPlayer); // OLD
+            // NEW: Add the serialized pack as the first element in the player's queue
+            initialQueues[player.ActorNumber] = new List<string> { JsonConvert.SerializeObject(packForPlayer) };
+
+            initialPicks[player.ActorNumber] = 0; // Initialize picks made to 0
+        }
+
+        // Serialize dictionaries for network
+        // string packsJson = JsonConvert.SerializeObject(initialPacks); // OLD
+        string queuesJson = JsonConvert.SerializeObject(initialQueues); // NEW
+        string picksJson = JsonConvert.SerializeObject(initialPicks);
 
         // Set initial Room Properties
         Hashtable initialRoomProps = new Hashtable
         {
-            { DRAFT_OPTIONS_PROP, optionsJson },
-            { DRAFT_TURN_PROP, playerOrder[0] }, // First player in order starts
+            // { DRAFT_PACKS_PROP, packsJson }, // OLD
+            { DRAFT_PLAYER_QUEUES_PROP, queuesJson }, // NEW
+            { DRAFT_PICKS_MADE_PROP, picksJson },
             { DRAFT_ORDER_PROP, playerOrderJson }
+            // { DRAFT_TURN_PROP, playerOrder[0] }, // No longer needed
         };
 
-        Debug.Log($"Setting initial draft properties: {generatedOptions.Count} options, first turn {playerOrder[0]}");
+        Debug.Log($"Setting initial draft properties: {initialQueues.Count} queues generated ({totalOptionsGenerated} total options), Order: {string.Join(", ", playerOrder)}"); // NEW
         PhotonNetwork.CurrentRoom.SetCustomProperties(initialRoomProps);
     }
 
+    // Helper to generate one option (extracted from old loop)
+    private SerializableDraftOption GenerateSingleDraftOption(int optionId)
+    {
+        int choiceType = Random.Range(0, 4); // 0: Player Card, 1: Pet Card, 2: Player Stat, 3: Pet Stat
+
+        if (choiceType <= 1 && (allPlayerCardPool.Count > 0 || allPetCardPool.Count > 0)) // Add Card
+        {
+            bool forPet = (choiceType == 1 && allPetCardPool.Count > 0) || allPlayerCardPool.Count == 0;
+            List<CardData> pool = forPet ? allPetCardPool : allPlayerCardPool;
+            if (pool.Count > 0)
+            {
+                CardData randomCard = pool[Random.Range(0, pool.Count)];
+                return SerializableDraftOption.FromDraftOption(DraftOption.CreateAddCardOption(optionId, randomCard, forPet));
+            }
+            else return null; // Selected pool was empty
+        }
+        else // Upgrade Stat
+        {
+            bool forPet = (choiceType == 3); // 2=Player, 3=Pet
+            StatType stat = (StatType)Random.Range(0, System.Enum.GetValues(typeof(StatType)).Length);
+            int amount = 0;
+            if (stat == StatType.MaxHealth) amount = Random.Range(5, 11); // e.g., 5-10 health
+            else if (stat == StatType.StartingEnergy) amount = 1; // Always +1 energy?
+            // Add other stat amounts
+
+            if (amount > 0)
+            {
+                return SerializableDraftOption.FromDraftOption(DraftOption.CreateUpgradeStatOption(optionId, stat, amount, forPet));
+            }
+            else return null; // Amount was 0 (e.g., for unhandled stats)
+        }
+    }
+
+
     private void ApplyDraftChoice(DraftOption choice)
     {
+        // ... (Keep existing logic, it applies the choice locally) ...
         Debug.Log($"Applying draft choice: {choice.Description}");
         switch (choice.Type)
         {
@@ -1656,13 +1885,8 @@ public class GameManager : MonoBehaviourPunCallbacks
             case DraftOptionType.AddPetCard:
                 if (choice.CardToAdd != null)
                 {
-                    // TODO: Need a dedicated Pet Deck list for the local player's pet
-                    // For now, adding to opponentPetDeck as placeholder, Needs Fix
-                    // opponentPetDeck.Add(choice.CardToAdd); 
-                    // ShuffleOpponentPetDeck();
                     localPetDeck.Add(choice.CardToAdd); // CORRECT: Add to the local player's pet deck
                     ShuffleLocalPetDeck(); // Shuffle after adding
-                    // Debug.LogWarning("Added card to Pet Deck - Placeholder: Needs dedicated pet deck list");
                     Debug.Log($"Added {choice.CardToAdd.cardName} to local pet deck.");
                      // Update pet deck UI if exists
                 }
@@ -1708,16 +1932,16 @@ public class GameManager : MonoBehaviourPunCallbacks
 
     private void EndDraftPhase()
     {
+        // ... (Keep existing logic, but maybe check picks made count?) ...
         Debug.Log("Ending Draft Phase. Preparing for next round...");
         HideDraftScreen();
 
         // Reset necessary combat states BUT keep upgraded stats/decks
-        // This is similar to InitializeCombatState but without resetting health/energy bases
         
         // Maybe transition to a brief "Round Start" screen?
         // For now, go directly back to combat setup
 
-        // TODO: Check win condition (e.g., score limit reached)
+        // Check win condition (e.g., score limit reached)
         int scoreLimit = 10; // Example
         if (player1Score >= scoreLimit || player2Score >= scoreLimit)
         { 
@@ -1726,8 +1950,6 @@ public class GameManager : MonoBehaviourPunCallbacks
         else
         {
              // Start next combat round via RPC
-             // Make sure flags are reset before RpcStartCombat is called again
-            // ResetCombatFinishedFlags(); // Already called by Master before RpcStartDraft
              photonView.RPC("RpcStartCombat", RpcTarget.All);
         }
     }
