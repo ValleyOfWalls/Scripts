@@ -12,7 +12,6 @@ public class CardDragHandler : MonoBehaviour, IBeginDragHandler, IDragHandler, I
     private Transform originalParent;
     private Canvas rootCanvas; // To ensure correct drag positioning
     private GameManager gameManager; // To call PlayCard
-    private CardDropZone currentDropZone = null;
 
     void Awake()
     {

@@ -41,6 +41,8 @@ public class GameManager : MonoBehaviourPunCallbacks
 
     [Header("Start Screen References")]
     private Button connectButton;
+    [SerializeField] private TMP_InputField playerNameInput; // <<< ADDED
+    [SerializeField] private TMP_InputField petNameInput; // <<< ADDED
 
     [Header("Lobby Screen References")]
     private GameObject playerListPanel; // Parent for player entries
@@ -139,6 +141,10 @@ public class GameManager : MonoBehaviourPunCallbacks
     private const string COMBAT_PAIRINGS_PROP = "CombatPairings"; // NEW: Dictionary<int, int> PlayerActorNum -> OpponentPetOwnerActorNum
     private const string PLAYER_BASE_PET_HP_PROP = "BasePetHP"; // NEW: Player Custom Property
 
+    // Local Player/Pet Info
+    private string localPetName = "MyPet"; // <<< ADDED default pet name
+    private bool userInitiatedConnection = false; // <<< ADDED flag for connection logic
+
     #region Unity Methods
 
     void Start()
@@ -157,14 +163,37 @@ public class GameManager : MonoBehaviourPunCallbacks
         if (startScreenCanvasPrefab != null)
         {
             startScreenInstance = Instantiate(startScreenCanvasPrefab);
-            connectButton = startScreenInstance.transform.Find("ConnectButton")?.GetComponent<Button>();
-            if (connectButton != null)
+
+            // <<< MODIFIED: Find CenterPanel first >>>
+            Transform centerPanel = startScreenInstance.transform.Find("CenterPanel");
+            if (centerPanel != null)
             {
-                connectButton.onClick.AddListener(ConnectToPhoton);
+                connectButton = centerPanel.Find("ConnectButton")?.GetComponent<Button>();
+                playerNameInput = centerPanel.Find("PlayerNameInput")?.GetComponent<TMP_InputField>();
+                petNameInput = centerPanel.Find("PetNameInput")?.GetComponent<TMP_InputField>();
+
+                if (connectButton != null)
+                {
+                    connectButton.onClick.AddListener(ConnectToPhoton);
+                }
+                else Debug.LogError("ConnectButton not found within CenterPanel in StartScreenCanvasPrefab!");
+
+                if (playerNameInput == null) Debug.LogError("PlayerNameInput not found within CenterPanel in StartScreenCanvasPrefab!");
+                else playerNameInput.text = "Player_" + Random.Range(1000, 9999); // Default Player Name
+
+                if (petNameInput == null) Debug.LogError("PetNameInput not found within CenterPanel in StartScreenCanvasPrefab!");
+                else petNameInput.text = "Buddy_" + Random.Range(100, 999); // Default Pet Name
             }
-            else Debug.LogError("ConnectButton not found in StartScreenCanvasPrefab!");
+            else
+            {
+                 Debug.LogError("CenterPanel not found in StartScreenCanvasPrefab!");
+                 // Assign null to prevent potential NullReferenceExceptions later if needed
+                 connectButton = null;
+                 playerNameInput = null;
+                 petNameInput = null;
+            }
         }
-        else Debug.LogError("StartScreenCanvasPrefab is not assigned!");
+        else Debug.LogError("StartScreenCanvasPrefab is not assigned to GameManager!");
 
         // Initially hide Lobby & Combat (will be instantiated when needed)
     }
@@ -177,20 +206,67 @@ public class GameManager : MonoBehaviourPunCallbacks
     {
         Debug.Log("Connecting to Photon...");
         if(connectButton) connectButton.interactable = false;
-        PhotonNetwork.NickName = "Player_" + Random.Range(1000, 9999);
-        PhotonNetwork.ConnectUsingSettings();
+
+        // <<< ADDED: Read names from input, set NickName, store pet name >>>
+        string playerName = playerNameInput?.text;
+        if (string.IsNullOrWhiteSpace(playerName))
+        {
+            playerName = "Player_" + Random.Range(1000, 9999); // Fallback name
+        }
+        PhotonNetwork.NickName = playerName;
+
+        localPetName = petNameInput?.text;
+        if (string.IsNullOrWhiteSpace(localPetName))
+        {
+            localPetName = "Buddy_" + Random.Range(100, 999); // Fallback pet name
+        }
+        Debug.Log($"Using Player Name: {PhotonNetwork.NickName}, Pet Name: {localPetName}");
+
+        userInitiatedConnection = true; // Mark that the user clicked connect
+        if(PhotonNetwork.IsConnected)
+        {
+             // Already connected to master, maybe from a previous session or quick leave/rejoin? Try joining room directly.
+             Debug.Log("Already connected to Master, attempting to join/create room...");
+             TryJoinGameRoom();
+        }
+        else
+        {
+            // Not connected, establish connection first. OnConnectedToMaster will handle joining.
+            PhotonNetwork.ConnectUsingSettings();
+        }
     }
 
     public override void OnConnectedToMaster()
     {
         Debug.Log($"Connected to Master Server. Player Nickname: {PhotonNetwork.NickName}");
-        RoomOptions roomOptions = new RoomOptions { MaxPlayers = 4 }; // Allow up to 4 for future use
+        // <<< MODIFIED: Only join if user initiated >>>
+        if (userInitiatedConnection)
+        {
+            Debug.Log("User initiated connection - attempting to join/create room...");
+            TryJoinGameRoom();
+        }
+        else
+        {
+             Debug.Log("Connected to Master, but not user-initiated. Waiting for user action.");
+             // Make sure connect button is interactable if we somehow got here without user action
+             if (startScreenInstance != null && startScreenInstance.activeSelf && connectButton != null)
+             {
+                 connectButton.interactable = true;
+             }
+        }
+    }
+
+    // <<< ADDED Helper Method >>>
+    private void TryJoinGameRoom()
+    {
+        RoomOptions roomOptions = new RoomOptions { MaxPlayers = 4 };
         PhotonNetwork.JoinOrCreateRoom("asd", roomOptions, TypedLobby.Default);
     }
 
     public override void OnJoinedRoom()
     {
         Debug.Log($"Joined Room: {PhotonNetwork.CurrentRoom.Name}");
+        userInitiatedConnection = false; // Reset flag once joined
         currentState = GameState.Lobby; // Transition state
         if (startScreenInstance != null) startScreenInstance.SetActive(false);
         if (combatInstance != null) combatInstance.SetActive(false); // Ensure combat is hidden
@@ -202,13 +278,21 @@ public class GameManager : MonoBehaviourPunCallbacks
     public override void OnLeftRoom()
     {
         Debug.Log("Left Room");
+        userInitiatedConnection = false; // <<< ADDED: Reset flag on leaving
         currentState = GameState.Connecting; // Transition state back
         if (lobbyInstance != null) Destroy(lobbyInstance); // Clean up instantiated lobby
         if (combatInstance != null) Destroy(combatInstance); // Clean up instantiated combat
+        if (draftInstance != null) Destroy(draftInstance); // <<< ADDED: Clean up draft screen too
+
+        // Destroy card instances if they are parented to the canvas root during drag/drop?
+        // Might need more robust cleanup depending on drag/drop implementation.
 
         if (startScreenInstance != null)
         {
             startScreenInstance.SetActive(true);
+            // <<< Update default names when returning? Optional >>>
+            // if (playerNameInput != null) playerNameInput.text = "Player_" + Random.Range(1000, 9999);
+            // if (petNameInput != null) petNameInput.text = "Buddy_" + Random.Range(100, 999);
             if (connectButton != null) connectButton.interactable = true;
         }
         // Reset state if necessary
@@ -217,13 +301,40 @@ public class GameManager : MonoBehaviourPunCallbacks
     public override void OnJoinRoomFailed(short returnCode, string message)
     {
         Debug.LogError($"Join Room Failed: ({returnCode}) {message}");
+        userInitiatedConnection = false; // <<< ADDED: Reset flag on failure
         if (connectButton != null) connectButton.interactable = true;
     }
 
     public override void OnCreateRoomFailed(short returnCode, string message)
     {
         Debug.LogError($"Create Room Failed: ({returnCode}) {message}");
+        userInitiatedConnection = false; // <<< ADDED: Reset flag on failure
         if (connectButton != null) connectButton.interactable = true;
+    }
+
+     public override void OnDisconnected(DisconnectCause cause)
+    {
+        Debug.LogWarning($"Disconnected from Photon: {cause}");
+        userInitiatedConnection = false; // Reset flag on disconnect
+        currentState = GameState.Connecting; // Go back to connecting state
+
+        // Clean up UI instances
+        if (lobbyInstance != null) Destroy(lobbyInstance);
+        if (combatInstance != null) Destroy(combatInstance);
+        if (draftInstance != null) Destroy(draftInstance);
+
+        // Show Start Screen and enable button
+        if (startScreenInstance != null)
+        {
+             startScreenInstance.SetActive(true);
+             if (connectButton != null) connectButton.interactable = true;
+             // Optionally clear/reset input fields here too
+        }
+        else
+        {
+             // If start screen was somehow destroyed, we might need to recreate it or handle differently
+             Debug.LogError("Start screen instance not found after disconnect!");
+        }
     }
 
     public override void OnPlayerEnteredRoom(Player newPlayer)
@@ -379,11 +490,8 @@ public class GameManager : MonoBehaviourPunCallbacks
             return;
         }
 
-        // bool hadPackBefore = localCurrentPack.Count > 0; // Don't need this check anymore
         bool needsUIUpdate = false;
-
-        // --- Try to load the next pack from the queue --- 
-        localCurrentPack.Clear(); // Clear local pack first
+        localCurrentPack.Clear();
         localActiveOptionMap.Clear();
         bool nowHasPack = false;
 
@@ -392,94 +500,71 @@ public class GameManager : MonoBehaviourPunCallbacks
             try
             {
                 string queuesJson = queuesObj as string;
-                if (string.IsNullOrEmpty(queuesJson) || queuesJson == "{}")
+                Dictionary<int, List<string>> currentQueues = JsonConvert.DeserializeObject<Dictionary<int, List<string>>>(queuesJson) ?? new Dictionary<int, List<string>>();
+
+                int localActorNum = PhotonNetwork.LocalPlayer.ActorNumber;
+                if (currentQueues.ContainsKey(localActorNum) && currentQueues[localActorNum] != null && currentQueues[localActorNum].Count > 0)
                 {
-                     Debug.Log("UpdateLocalDraftStateFromRoomProps: Draft queues property is empty JSON.");
-                }
-                else
-                {
-                    var queuesDict = JsonConvert.DeserializeObject<Dictionary<int, List<string>>>(queuesJson);
-                    if (queuesDict == null) 
-                    { 
-                        Debug.LogError("UpdateLocalDraftStateFromRoomProps: Failed to deserialize DRAFT_PLAYER_QUEUES_PROP.");
+                    string nextPackJson = currentQueues[localActorNum][0]; // Peek at the first pack
+                    List<SerializableDraftOption> serializablePack = JsonConvert.DeserializeObject<List<SerializableDraftOption>>(nextPackJson) ?? new List<SerializableDraftOption>();
+                    
+                    // Deserialize into full DraftOption, linking actual CardData
+                    foreach (var serializableOption in serializablePack)
+                    {
+                        // PASS LOCAL DECKS HERE
+                        DraftOption fullOption = serializableOption.ToDraftOption(allPlayerCardPool, allPetCardPool, deck, localPetDeck); 
+                        if (fullOption != null)
+                        {
+                            localCurrentPack.Add(serializableOption); // Still store the serializable version
+                            localActiveOptionMap[serializableOption.OptionId] = fullOption; // Map ID to full data
+                        }
+                        else 
+                        {
+                            Debug.LogError($"Failed to deserialize draft option ID {serializableOption.OptionId} ({serializableOption.Description}) - skipping.");
+                        }
+                    }
+
+                    if(localCurrentPack.Count > 0)
+                    {
+                        nowHasPack = true;
+                        isWaitingForLocalPick = true; // We received a pack, now wait for player input
+                        needsUIUpdate = true;
+                         Debug.Log($"Deserialized pack for local player. {localCurrentPack.Count} options. Setting isWaitingForLocalPick=true.");
                     }
                     else
                     {
-                        int localActorNumber = PhotonNetwork.LocalPlayer.ActorNumber;
-                        // Check if the local player has a queue and if it's not empty
-                        if (queuesDict.TryGetValue(localActorNumber, out List<string> localQueue) && localQueue != null && localQueue.Count > 0)
-                        {
-                            // Get the first pack JSON from the queue
-                            string nextPackJson = localQueue[0];
-                            if (!string.IsNullOrEmpty(nextPackJson))
-                            {
-                                // Deserialize into local pack
-                                localCurrentPack = JsonConvert.DeserializeObject<List<SerializableDraftOption>>(nextPackJson) ?? new List<SerializableDraftOption>();
-                                RebuildLocalActiveOptionMap(); 
-                                Debug.Log($"UpdateLocalDraftStateFromRoomProps: Deserialized {localCurrentPack.Count} options from queue for local player.");
-                                nowHasPack = localCurrentPack.Count > 0;
-                            }
-                            else
-                            {
-                                Debug.LogWarning("UpdateLocalDraftStateFromRoomProps: Local player's queue[0] is null or empty.");
-                                // TODO: Should the Master Client remove this entry? Or client RPC to ask for removal?
-                                // For now, we just won't load a pack.
-                            }
-                        }
-                        else
-                        {
-                            Debug.Log("UpdateLocalDraftStateFromRoomProps: Local player does not have a non-empty pack queue assigned.");
-                        }
+                        Debug.LogWarning("Deserialized pack for local player, but it resulted in zero valid options after deserialization.");
+                        // Potentially try to dequeue this empty pack and check the next one?
+                        // For now, just log.
                     }
+                }
+                else
+                {
+                    Debug.Log("No pack currently queued for local player.");
                 }
             }
             catch (System.Exception e)
             {
-                Debug.LogError($"UpdateLocalDraftStateFromRoomProps: Failed to deserialize queues: {e.Message}");
-                 localCurrentPack.Clear();
-                 localActiveOptionMap.Clear();
-                 nowHasPack = false;
+                Debug.LogError($"Failed to deserialize draft queues: {e.Message}");
             }
         }
         else
         {
-            Debug.LogWarning($"UpdateLocalDraftStateFromRoomProps: Room property {DRAFT_PLAYER_QUEUES_PROP} not found.");
-             localCurrentPack.Clear();
-             localActiveOptionMap.Clear();
-             nowHasPack = false;
+            Debug.LogWarning($"Room property {DRAFT_PLAYER_QUEUES_PROP} not found.");
         }
 
-        // Update the waiting flag ONLY if we successfully loaded a pack
-        if (nowHasPack)
-        {
-            isWaitingForLocalPick = true;
-            needsUIUpdate = true; // Need to show the new pack
-        }
-        // If we previously had a pack but now don't (because the queue became empty),
-        // ensure the UI is updated to show the waiting message.
-        else if (isWaitingForLocalPick) // This handles the case where we were waiting, but queue is now empty
-        {
-             isWaitingForLocalPick = false; // No longer waiting as there's no pack
-             needsUIUpdate = true; // Need to update UI to show waiting message
-        }
-        
-        // Update UI if needed
         if (needsUIUpdate)
         {
-             Debug.Log($"UpdateLocalDraftStateFromRoomProps: Needs UI Update (nowHasPack={nowHasPack}). Calling UpdateDraftUI.");
-             UpdateDraftUI(); 
+            Debug.Log("UpdateLocalDraftStateFromRoomProps triggering Draft UI update.");
+            UpdateDraftUI();
         }
-        /* // OLD logic for flag/UI update
-        // Update the waiting flag AFTER processing
-        isWaitingForLocalPick = nowHasPack;
-        
-        // Update UI only if the pack status changed (prevents flicker if update was skipped)
-        if (nowHasPack != hadPackBefore)
+        else if (!nowHasPack && isWaitingForLocalPick)
         {
-             Debug.Log($"UpdateLocalDraftStateFromRoomProps: Pack status changed ({hadPackBefore} -> {nowHasPack}), updating UI.");
-             UpdateDraftUI(); 
+            // If we were waiting, but now have no pack, reset waiting flag
+            Debug.Log("Resetting isWaitingForLocalPick as no pack was found.");
+            isWaitingForLocalPick = false; 
+            UpdateDraftUI(); // Update UI to show waiting state
         }
-        */
     }
 
     private void UpdateLocalDraftPicksFromRoomProps()
@@ -552,14 +637,15 @@ public class GameManager : MonoBehaviourPunCallbacks
         localActiveOptionMap.Clear();
         foreach (var serializableOption in localCurrentPack)
         {
-            DraftOption fullOption = serializableOption.ToDraftOption(allPlayerCardPool, allPetCardPool);
+            // Pass local decks for accurate deserialization, especially for UpgradeCard options
+            DraftOption fullOption = serializableOption.ToDraftOption(allPlayerCardPool, allPetCardPool, deck, localPetDeck);
             if (fullOption != null)
             {
                 localActiveOptionMap[fullOption.OptionId] = fullOption;
             }
             else
             {
-                 Debug.LogWarning($"Could not fully deserialize option ID {serializableOption.OptionId} in local pack, Card maybe missing from pools?");
+                 Debug.LogWarning($"Could not fully deserialize option ID {serializableOption.OptionId} in local pack, Card maybe missing from pools or deck?");
             }
         }
     }
@@ -880,7 +966,7 @@ public class GameManager : MonoBehaviourPunCallbacks
         if(playerNameText) playerNameText.text = PhotonNetwork.LocalPlayer.NickName;
         UpdateHealthUI(); // Update UI with refreshed health values
         if (opponentPetNameText) opponentPetNameText.text = opponentPlayer != null ? $"{opponentPlayer.NickName}'s Pet" : "Opponent Pet";
-        if (ownPetNameText) ownPetNameText.text = "Your Pet";
+        if (ownPetNameText) ownPetNameText.text = $"{localPetName}"; // <<< MODIFIED
 
         // Initialize Player Deck (reshuffle existing deck)
         // Check if this is likely the first round (deck, hand, discard are empty)
@@ -1988,101 +2074,183 @@ public class GameManager : MonoBehaviourPunCallbacks
     // Helper to generate one option (extracted from old loop)
     private SerializableDraftOption GenerateSingleDraftOption(int optionId)
     {
-        int choiceType = Random.Range(0, 4); // 0: Player Card, 1: Pet Card, 2: Player Stat, 3: Pet Stat
+        // Increased range to potentially include Upgrade Card options
+        int choiceType = Random.Range(0, 6); // 0: Player Add, 1: Pet Add, 2: Player Stat, 3: Pet Stat, 4: Player Upgrade, 5: Pet Upgrade
 
-        if (choiceType <= 1 && (allPlayerCardPool.Count > 0 || allPetCardPool.Count > 0)) // Add Card
+        // --- Try Upgrade Card --- (if applicable deck has upgradable cards)
+        if (choiceType >= 4) 
         {
-            bool forPet = (choiceType == 1 && allPetCardPool.Count > 0) || allPlayerCardPool.Count == 0;
-            List<CardData> pool = forPet ? allPetCardPool : allPlayerCardPool;
-            if (pool.Count > 0)
-            {
-                CardData randomCard = pool[Random.Range(0, pool.Count)];
-                return SerializableDraftOption.FromDraftOption(DraftOption.CreateAddCardOption(optionId, randomCard, forPet));
-            }
-            else return null; // Selected pool was empty
-        }
-        else // Upgrade Stat
-        {
-            bool forPet = (choiceType == 3); // 2=Player, 3=Pet
-            StatType stat = (StatType)Random.Range(0, System.Enum.GetValues(typeof(StatType)).Length);
-            int amount = 0;
-            if (stat == StatType.MaxHealth) amount = Random.Range(5, 11); // e.g., 5-10 health
-            else if (stat == StatType.StartingEnergy) amount = 1; // Always +1 energy?
-            // Add other stat amounts
+            bool forPet = (choiceType == 5);
+            List<CardData> deckToCheck = forPet ? localPetDeck : deck;
+            // Find cards in the deck that HAVE an upgrade defined
+            List<CardData> upgradableCards = deckToCheck.Where(card => card != null && card.upgradedVersion != null).ToList();
 
-            if (amount > 0)
+            if (upgradableCards.Count > 0)
             {
-                return SerializableDraftOption.FromDraftOption(DraftOption.CreateUpgradeStatOption(optionId, stat, amount, forPet));
+                CardData cardToUpgrade = upgradableCards[Random.Range(0, upgradableCards.Count)];
+                DraftOption upgradeOption = DraftOption.CreateUpgradeCardOption(optionId, cardToUpgrade, forPet);
+                if(upgradeOption != null) return SerializableDraftOption.FromDraftOption(upgradeOption);
+                // else: generation failed (shouldn't happen if upgradableCards.Count > 0), fall through...
             }
-            else return null; // Amount was 0 (e.g., for unhandled stats)
+            // else: No upgradable cards found in the target deck, fall through to other option types...
         }
+
+        // --- Fallback / Original Logic: Try Add Card --- 
+        if (choiceType <= 1 || choiceType >= 4) // Also try adding if upgrade failed
+        {
+             // Determine if adding for pet (either explicitly chosen or player pool empty)
+             bool forPetAdd = (choiceType == 1 || choiceType == 5) ? // Prioritize pet if type 1 or 5
+                                (allPetCardPool.Count > 0) :
+                                (allPlayerCardPool.Count == 0 && allPetCardPool.Count > 0);
+
+             List<CardData> pool = forPetAdd ? allPetCardPool : allPlayerCardPool;
+             if (pool.Count > 0)
+             {
+                 CardData randomCard = pool[Random.Range(0, pool.Count)];
+                 return SerializableDraftOption.FromDraftOption(DraftOption.CreateAddCardOption(optionId, randomCard, forPetAdd));
+             }
+             // else: Selected pool was empty, fall through...
+        }
+
+        // --- Fallback: Upgrade Stat ---
+        // Only reach here if choice was Stat (2 or 3) OR Add Card failed
+        bool forPetStat = (choiceType == 3 || choiceType == 5); // Upgrade Pet Stat if type 3 or 5 (and others failed)
+        StatType stat = (StatType)Random.Range(0, System.Enum.GetValues(typeof(StatType)).Length);
+        int amount = 0;
+        if (stat == StatType.MaxHealth) amount = Random.Range(5, 11); // e.g., 5-10 health
+        else if (stat == StatType.StartingEnergy) amount = 1; // Always +1 energy?
+        // Add other stat amounts
+
+        if (amount > 0)
+        {
+            // Ensure we don't upgrade pet energy if it doesn't exist
+            if(forPetStat && stat == StatType.StartingEnergy) 
+            {
+                // Maybe default to pet health upgrade instead? Or try player stat?
+                // For now, let's try player energy if pet energy was chosen
+                if(startingEnergy < 10) { // Arbitrary cap
+                     return SerializableDraftOption.FromDraftOption(DraftOption.CreateUpgradeStatOption(optionId, StatType.StartingEnergy, amount, false));
+                } else { // If player energy also invalid, try pet health
+                     return SerializableDraftOption.FromDraftOption(DraftOption.CreateUpgradeStatOption(optionId, StatType.MaxHealth, Random.Range(5, 11), true));
+                }
+            }
+            return SerializableDraftOption.FromDraftOption(DraftOption.CreateUpgradeStatOption(optionId, stat, amount, forPetStat));
+        }
+        
+        // --- Final Fallback: If everything else failed (e.g., pools empty, no stats to upgrade) ---
+        // Return a simple player health upgrade as a last resort
+        Debug.LogWarning("GenerateSingleDraftOption: Failed to generate desired option type, defaulting to Player Health upgrade.");
+        return SerializableDraftOption.FromDraftOption(DraftOption.CreateUpgradeStatOption(optionId, StatType.MaxHealth, 5, false)); 
     }
 
 
     private void ApplyDraftChoice(DraftOption choice)
     {
-        // ... (Keep existing logic, it applies the choice locally) ...
+        if (choice == null) 
+        {
+            Debug.LogError("ApplyDraftChoice received a null choice!");
+            return;
+        }
+
         Debug.Log($"Applying draft choice: {choice.Description}");
         switch (choice.Type)
         {
             case DraftOptionType.AddPlayerCard:
                 if (choice.CardToAdd != null)
                 {
-                    deck.Add(choice.CardToAdd); // Add to deck (or maybe a temporary reward list?)
+                    deck.Add(choice.CardToAdd); // Add to deck
                     ShuffleDeck(); // Reshuffle after adding
                     UpdateDeckCountUI();
                     Debug.Log($"Added {choice.CardToAdd.cardName} to player deck.");
                 }
+                else { Debug.LogWarning("AddPlayerCard choice had null CardToAdd."); }
                 break;
             case DraftOptionType.AddPetCard:
                 if (choice.CardToAdd != null)
                 {
-                    localPetDeck.Add(choice.CardToAdd); // CORRECT: Add to the local player's pet deck
+                    localPetDeck.Add(choice.CardToAdd); // Add to the local player's pet deck
                     ShuffleLocalPetDeck(); // Shuffle after adding
                     Debug.Log($"Added {choice.CardToAdd.cardName} to local pet deck.");
                      // Update pet deck UI if exists
                 }
+                 else { Debug.LogWarning("AddPetCard choice had null CardToAdd."); }
                 break;
             case DraftOptionType.UpgradePlayerStat:
                  if (choice.StatToUpgrade == StatType.MaxHealth)
                  {
-                    startingPlayerHealth += choice.StatIncreaseAmount; // Modify the base for next round
-                    localPlayerHealth += choice.StatIncreaseAmount; // Increase current health too
+                    startingPlayerHealth += choice.StatIncreaseAmount;
+                    localPlayerHealth += choice.StatIncreaseAmount;
                     Debug.Log($"Upgraded Player Max Health by {choice.StatIncreaseAmount}. New base: {startingPlayerHealth}");
                  }
                  else if (choice.StatToUpgrade == StatType.StartingEnergy)
                  {
                      startingEnergy += choice.StatIncreaseAmount;
-                     currentEnergy += choice.StatIncreaseAmount; // Optionally give energy now?
+                     currentEnergy += choice.StatIncreaseAmount; // Give energy now as well
                      Debug.Log($"Upgraded Player Starting Energy by {choice.StatIncreaseAmount}. New base: {startingEnergy}");
                  }
-                 // Update UI relevant to the stat
                  UpdateHealthUI();
                  UpdateEnergyUI(); 
                  break;
             case DraftOptionType.UpgradePetStat:
                  if (choice.StatToUpgrade == StatType.MaxHealth)
                  {
-                    startingPetHealth += choice.StatIncreaseAmount; // Modify the base for next round
-                    localPetHealth += choice.StatIncreaseAmount; // Increase current health too
+                    startingPetHealth += choice.StatIncreaseAmount;
+                    localPetHealth += choice.StatIncreaseAmount;
                     Debug.Log($"Upgraded Pet Max Health by {choice.StatIncreaseAmount}. New base: {startingPetHealth}");
-                    
-                    // Sync the new base health to Player Properties
                     Hashtable petProps = new Hashtable { { PLAYER_BASE_PET_HP_PROP, startingPetHealth } };
                     PhotonNetwork.LocalPlayer.SetCustomProperties(petProps);
                     Debug.Log($"Set {PLAYER_BASE_PET_HP_PROP} to {startingPetHealth} for local player.");
                  }
                  // TODO: Handle Pet Energy if pets have energy?
-                 // Update UI relevant to the stat
-                 UpdateHealthUI();
+                 UpdateHealthUI(); // Updates both player and pet health bars
                  break;
 
-            // TODO: Implement UpgradePlayerCard / UpgradePetCard
+            // --- IMPLEMENTED Upgrade Card --- 
             case DraftOptionType.UpgradePlayerCard:
-                 Debug.LogWarning("ApplyDraftChoice: UpgradePlayerCard not implemented.");
+                 if (choice.CardToUpgrade != null && choice.CardToUpgrade.upgradedVersion != null)
+                 {
+                     // Find the first instance of the card to upgrade in the player's deck
+                     int indexToUpgrade = deck.FindIndex(card => card == choice.CardToUpgrade);
+                     if (indexToUpgrade != -1)
+                     {
+                         CardData upgradedCard = choice.CardToUpgrade.upgradedVersion;
+                         deck[indexToUpgrade] = upgradedCard; // Replace the card
+                         ShuffleDeck(); // Reshuffle maybe?
+                         UpdateDeckCountUI();
+                         Debug.Log($"Upgraded player card {choice.CardToUpgrade.cardName} to {upgradedCard.cardName} in deck.");
+                     }
+                     else
+                     {
+                         Debug.LogWarning($"Could not find player card '{choice.CardToUpgrade.cardName}' in deck to upgrade. It might have been removed or transformed already.");
+                     }
+                 }
+                 else
+                 {
+                     Debug.LogError($"UpgradePlayerCard choice failed: CardToUpgrade ({choice.CardToUpgrade?.cardName}) or its upgradedVersion was null.");
+                 }
                  break;
             case DraftOptionType.UpgradePetCard:
-                 Debug.LogWarning("ApplyDraftChoice: UpgradePetCard not implemented.");
+                 if (choice.CardToUpgrade != null && choice.CardToUpgrade.upgradedVersion != null)
+                 {
+                     // Find the first instance of the card to upgrade in the pet's deck
+                     int indexToUpgrade = localPetDeck.FindIndex(card => card == choice.CardToUpgrade);
+                     if (indexToUpgrade != -1)
+                     {
+                         CardData upgradedCard = choice.CardToUpgrade.upgradedVersion;
+                         localPetDeck[indexToUpgrade] = upgradedCard; // Replace the card
+                         ShuffleLocalPetDeck();
+                         // Update pet deck UI if exists
+                         Debug.Log($"Upgraded pet card {choice.CardToUpgrade.cardName} to {upgradedCard.cardName} in local pet deck.");
+                     }
+                     else
+                     {
+                         Debug.LogWarning($"Could not find pet card '{choice.CardToUpgrade.cardName}' in local pet deck to upgrade.");
+                     }
+                 }
+                 else
+                 {
+                    Debug.LogError($"UpgradePetCard choice failed: CardToUpgrade ({choice.CardToUpgrade?.cardName}) or its upgradedVersion was null.");
+                 }
                  break;
         }
     }
@@ -2215,7 +2383,7 @@ public class SerializableDraftOption
     public string Description;
 
     // Store identifiers instead of direct references
-    public string CardName;        // For Add/Upgrade Card
+    public string CardName;        // For Add Card OR Card to UPGRADE
     public bool IsPetCard;
     public StatType StatToUpgrade; // For Upgrade Stat
     public int StatIncreaseAmount; // For Upgrade Stat
@@ -2239,13 +2407,18 @@ public class SerializableDraftOption
             serializable.CardName = option.CardToAdd?.cardName;
             serializable.IsPetCard = (option.Type == DraftOptionType.AddPetCard);
         }
+        else if (option.Type == DraftOptionType.UpgradePlayerCard || option.Type == DraftOptionType.UpgradePetCard)
+        {
+            serializable.CardName = option.CardToUpgrade?.cardName; // Store the NAME of the card to be upgraded
+            serializable.IsPetCard = (option.Type == DraftOptionType.UpgradePetCard);
+        }
         // TODO: Handle UpgradePlayerCard / UpgradePetCard serialization (e.g., store CardName of card to upgrade)
 
         return serializable;
     }
 
     // Convert from SerializableDraftOption back to DraftOption
-    public DraftOption ToDraftOption(List<CardData> playerCardPool, List<CardData> petCardPool)
+    public DraftOption ToDraftOption(List<CardData> playerCardPool, List<CardData> petCardPool, List<CardData> playerDeck, List<CardData> petDeck)
     {
         DraftOption option = new DraftOption(this.OptionId)
         {
@@ -2263,6 +2436,26 @@ public class SerializableDraftOption
             {
                 Debug.LogWarning($"Could not find card with name '{this.CardName}' in the corresponding pool during deserialization.");
                 return null; // Indicate failure to deserialize fully
+            }
+        }
+        else if (this.Type == DraftOptionType.UpgradePlayerCard || this.Type == DraftOptionType.UpgradePetCard)
+        {
+            // When deserializing an upgrade option, we need the ACTUAL CardData object to upgrade from the player's/pet's deck
+            List<CardData> deckToCheck = this.IsPetCard ? petDeck : playerDeck;
+            option.CardToUpgrade = deckToCheck?.FirstOrDefault(card => card.cardName == this.CardName && card.upgradedVersion != null);
+            if (option.CardToUpgrade == null && !string.IsNullOrEmpty(this.CardName))
+            {
+                // This might happen if the card was somehow removed from the deck before deserialization, or never existed.
+                // It's also possible the card existed but didn't have an upgrade path when the option was created.
+                Debug.LogWarning($"Could not find upgradable card with name '{this.CardName}' in the corresponding deck during deserialization. Type: {this.Type}");
+                // We *could* return null, but maybe the UI should just display the description and fail gracefully if selected?
+                // For now, let's return the option but with CardToUpgrade being null.
+                // The ApplyDraftChoice logic will need to handle this null case.
+            }
+            else if (option.CardToUpgrade != null)
+            {
+                // We found the card, reconstruct the description accurately using the found card and its upgrade
+                 option.Description = $"Upgrade {(this.IsPetCard ? "Pet" : "Player")} Card: {option.CardToUpgrade.cardName} -> {option.CardToUpgrade.upgradedVersion.cardName}";
             }
         }
         // TODO: Handle UpgradePlayerCard / UpgradePetCard deserialization

@@ -170,10 +170,34 @@ public class UISetup : Editor
 
     private static void AddStartScreenElements(GameObject canvasRoot)
     {
-        TextMeshProUGUI title = CreateText(canvasRoot.transform, "TitleText", "My Awesome Game", 48, TextAlignmentOptions.Center, new Vector2(0, 150), new Vector2(600, 100));
-        ConfigureRectTransform(title.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0, 150), new Vector2(600, 100));
-        Button connectBtn = CreateButton(canvasRoot.transform, "ConnectButton", "Connect");
-        ConfigureRectTransform(connectBtn.GetComponent<RectTransform>(), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0, -50), new Vector2(200, 50));
+        // Add Background Image (Optional)
+        // Image bgImage = AddPanel(canvasRoot.transform, "Background"); 
+        // // Configure bgImage (color, sprite, stretch)
+
+        // Add Vertical Layout Group for centering content - parented to canvasRoot now
+        GameObject centerPanel = CreatePanel(canvasRoot.transform, "CenterPanel", false); // No background image
+        ConfigureRectTransform(centerPanel.GetComponent<RectTransform>(), 
+                                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
+                                Vector2.zero, new Vector2(300, 250)); // Adjust size as needed
+        VerticalLayoutGroup layoutGroup = AddVerticalLayoutGroup(centerPanel, DefaultPadding, DefaultSpacing * 2, true);
+        layoutGroup.childAlignment = TextAnchor.MiddleCenter;
+        layoutGroup.childControlWidth = true;
+        layoutGroup.childControlHeight = false;
+        layoutGroup.childForceExpandWidth = true;
+        layoutGroup.childForceExpandHeight = false;
+
+        // Add elements to the centerPanel
+        TextMeshProUGUI title = CreateText(centerPanel.transform, "TitleText", "Pet Battler Royale", 28, TextAlignmentOptions.Center);
+        SetLayoutElement(title.gameObject, minHeight: 40);
+
+        TMP_InputField playerNameInput = CreateInputField(centerPanel.transform, "PlayerNameInput", "Enter Player Name...");
+        SetLayoutElement(playerNameInput.gameObject, minHeight: 40);
+
+        TMP_InputField petNameInput = CreateInputField(centerPanel.transform, "PetNameInput", "Enter Pet Name...");
+        SetLayoutElement(petNameInput.gameObject, minHeight: 40);
+
+        Button connectButton = CreateButton(centerPanel.transform, "ConnectButton", "Connect and Play");
+        SetLayoutElement(connectButton.gameObject, minHeight: 50);
     }
 
     private static void AddLobbyScreenElements(GameObject canvasRoot)
@@ -777,4 +801,53 @@ public class UISetup : Editor
         if (handleImage != null) handleImage.raycastTarget = enabled;
     }
     // <<--- NEW HELPER FUNCTION END --->>
+
+    // <<< ADDED Input Field Creation Helper >>>
+    private static TMP_InputField CreateInputField(Transform parent, string name, string placeholderText)
+    {
+        // Create Root GameObject with Image (Background) and InputField Component
+        GameObject inputGO = new GameObject(name, typeof(RectTransform), typeof(Image), typeof(TMP_InputField));
+        inputGO.transform.SetParent(parent, false);
+        ConfigureRectTransform(inputGO.GetComponent<RectTransform>(), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(200, 40));
+
+        Image bgImage = inputGO.GetComponent<Image>();
+        bgImage.color = new Color(0.1f, 0.1f, 0.1f, 1f); // Dark background
+
+        TMP_InputField inputField = inputGO.GetComponent<TMP_InputField>();
+
+        // Create Viewport (Optional but good practice)
+        GameObject viewportGO = new GameObject("Text Area", typeof(RectTransform), typeof(RectMask2D));
+        viewportGO.transform.SetParent(inputGO.transform, false);
+        RectTransform viewportRect = viewportGO.GetComponent<RectTransform>();
+        ConfigureRectTransform(viewportRect, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(-10, -10)); // Add padding
+
+        // Create Placeholder Text
+        TextMeshProUGUI placeholderTextComp = CreateText(viewportGO.transform, "Placeholder", placeholderText, 16, TextAlignmentOptions.Left);
+        placeholderTextComp.color = new Color(0.7f, 0.7f, 0.7f, 0.8f); // Dimmed placeholder color
+        ConfigureRectTransform(placeholderTextComp.rectTransform, Vector2.zero, Vector2.one, new Vector2(0, 1), Vector2.zero, Vector2.zero);
+        placeholderTextComp.rectTransform.offsetMin = new Vector2(5, 0); // Align left, full height
+        placeholderTextComp.rectTransform.offsetMax = new Vector2(0, 0);
+        placeholderTextComp.enableWordWrapping = false;
+        placeholderTextComp.overflowMode = TextOverflowModes.Ellipsis;
+
+        // Create Text Component (for actual input)
+        TextMeshProUGUI textComp = CreateText(viewportGO.transform, "Text", "", 16, TextAlignmentOptions.Left);
+        textComp.color = Color.white;
+        ConfigureRectTransform(textComp.rectTransform, Vector2.zero, Vector2.one, new Vector2(0, 1), Vector2.zero, Vector2.zero);
+        textComp.rectTransform.offsetMin = new Vector2(5, 0); // Align left, full height
+        textComp.rectTransform.offsetMax = new Vector2(0, 0);
+        textComp.enableWordWrapping = false;
+        textComp.overflowMode = TextOverflowModes.Ellipsis; // Or Overflow
+
+        // Assign components to InputField
+        inputField.textViewport = viewportRect;
+        inputField.textComponent = textComp;
+        inputField.placeholder = placeholderTextComp;
+        inputField.caretWidth = 2;
+        inputField.customCaretColor = true;
+        inputField.caretColor = Color.white;
+        inputField.selectionColor = new Color(0.2f, 0.5f, 0.8f, 0.7f); // Match button blue-ish
+
+        return inputField;
+    }
 } 

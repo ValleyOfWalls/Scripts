@@ -12,5 +12,8 @@ public class CardData : ScriptableObject
     // public int block = 0; // Example for later
     // Add other effects like buffs, debuffs, draw, etc.
 
+    [Header("Upgrade Info")]
+    public CardData upgradedVersion = null; // Link to the ScriptableObject representing the upgraded version of this card
+
     // Add more properties later (e.g., damage, block, effects)
 } 

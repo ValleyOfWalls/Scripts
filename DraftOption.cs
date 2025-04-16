@@ -59,7 +59,20 @@ public class DraftOption
         };
     }
     
-    // TODO: Add factory methods for UpgradeCard options (might require more complex selection logic)
+    public static DraftOption CreateUpgradeCardOption(int id, CardData cardToUpgrade, bool forPet)
+    {
+        if (cardToUpgrade == null || cardToUpgrade.upgradedVersion == null)
+        {
+            Debug.LogWarning($"Cannot create UpgradeCardOption for {cardToUpgrade?.cardName} - null card or no upgraded version defined.");
+            return null; // Cannot create if no upgrade path
+        }
+        return new DraftOption(id)
+        {
+            Type = forPet ? DraftOptionType.UpgradePetCard : DraftOptionType.UpgradePlayerCard,
+            CardToUpgrade = cardToUpgrade,
+            Description = $"Upgrade {(forPet ? "Pet" : "Player")} Card: {cardToUpgrade.cardName} -> {cardToUpgrade.upgradedVersion.cardName}"
+        };
+    }
 
     // NOTE: For network synchronization, directly serializing this class with CardData might be tricky.
     // We might need to convert these options to a simpler format (e.g., using Card IDs/Names, enum indices)
