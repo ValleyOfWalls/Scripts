@@ -16,7 +16,7 @@ public class GameManager : MonoBehaviourPunCallbacks
     [SerializeField] private DeckManager deckManager;
 
     // Game state
-    public enum GameState { Connecting, Lobby, Draft, Battle }
+    public enum GameState { MainMenu, Connecting, Lobby, Draft, Battle }
     private GameState currentState;
 
     // Player information
@@ -65,7 +65,7 @@ public class GameManager : MonoBehaviourPunCallbacks
             deckManager = deckManagerObj.AddComponent<DeckManager>();
         }
 
-        // Set initial game state
+        // Set initial game state to MainMenu
         StartCoroutine(DelayedStateChange());
     }
 
@@ -75,7 +75,7 @@ public class GameManager : MonoBehaviourPunCallbacks
         yield return null;
         
         // Set initial game state
-        SetState(GameState.Connecting);
+        SetState(GameState.MainMenu);
     }
 
     public void SetState(GameState newState)
@@ -85,6 +85,13 @@ public class GameManager : MonoBehaviourPunCallbacks
         
         switch (currentState)
         {
+            case GameState.MainMenu:
+                if (uiManager != null)
+                {
+                    uiManager.ShowMainMenuUI();
+                }
+                break;
+                
             case GameState.Connecting:
                 if (networkManager != null)
                 {
@@ -278,6 +285,12 @@ public class GameManager : MonoBehaviourPunCallbacks
     public DeckManager GetDeckManager()
     {
         return deckManager;
+    }
+    
+    // Method to initiate connection to Photon
+    public void StartConnection()
+    {
+        SetState(GameState.Connecting);
     }
 }
 

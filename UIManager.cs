@@ -463,105 +463,174 @@ public class UIManager : MonoBehaviour
     }
     
     private void CreateMainMenuUI(GameObject panel)
+{
+    // Create title
+    TextMeshProUGUI titleText = CreateText(panel, "TitleText", "Card Battle Game");
+    RectTransform titleRect = titleText.GetComponent<RectTransform>();
+    titleRect.anchorMin = new Vector2(0.5f, 0.8f);
+    titleRect.anchorMax = new Vector2(0.5f, 0.9f);
+    titleRect.sizeDelta = new Vector2(600, 100);
+    titleText.fontSize = 60;
+    
+    // Create subtitle
+    TextMeshProUGUI subtitleText = CreateText(panel, "SubtitleText", "A Multiplayer Deck Builder");
+    RectTransform subtitleRect = subtitleText.GetComponent<RectTransform>();
+    subtitleRect.anchorMin = new Vector2(0.5f, 0.72f);
+    subtitleRect.anchorMax = new Vector2(0.5f, 0.78f);
+    subtitleRect.sizeDelta = new Vector2(400, 50);
+    subtitleText.fontSize = 24;
+    subtitleText.color = new Color(0.8f, 0.8f, 0.8f, 1f);
+    
+    // Create input fields container
+    GameObject inputContainer = new GameObject("InputContainer");
+    inputContainer.transform.SetParent(panel.transform, false);
+    RectTransform inputContainerRect = inputContainer.AddComponent<RectTransform>();
+    inputContainerRect.anchorMin = new Vector2(0.5f, 0.4f);
+    inputContainerRect.anchorMax = new Vector2(0.5f, 0.7f);
+    inputContainerRect.sizeDelta = new Vector2(400, 300);
+    
+    // Create name input field
+    nameInput = CreateInputField(inputContainer, "NameInput", "Your Name");
+    RectTransform nameInputRect = nameInput.GetComponent<RectTransform>();
+    nameInputRect.anchorMin = new Vector2(0, 0.7f);
+    nameInputRect.anchorMax = new Vector2(1, 0.85f);
+    nameInputRect.sizeDelta = new Vector2(0, 0);
+    
+    // Set a random name
+    if (nameInput != null)
     {
-        // Create title
-        TextMeshProUGUI titleText = CreateText(panel, "TitleText", "Card Battle Game");
-        RectTransform titleRect = titleText.GetComponent<RectTransform>();
-        titleRect.anchorMin = new Vector2(0.5f, 0.8f);
-        titleRect.anchorMax = new Vector2(0.5f, 0.9f);
-        titleRect.sizeDelta = new Vector2(600, 100);
-        titleText.fontSize = 60;
-        
-        // Create input fields container
-        GameObject inputContainer = new GameObject("InputContainer");
-        inputContainer.transform.SetParent(panel.transform, false);
-        RectTransform inputContainerRect = inputContainer.AddComponent<RectTransform>();
-        inputContainerRect.anchorMin = new Vector2(0.5f, 0.4f);
-        inputContainerRect.anchorMax = new Vector2(0.5f, 0.7f);
-        inputContainerRect.sizeDelta = new Vector2(400, 300);
-        
-        // Create name input field
-        nameInput = CreateInputField(inputContainer, "NameInput", "Your Name");
-        RectTransform nameInputRect = nameInput.GetComponent<RectTransform>();
-        nameInputRect.anchorMin = new Vector2(0, 0.7f);
-        nameInputRect.anchorMax = new Vector2(1, 0.85f);
-        nameInputRect.sizeDelta = new Vector2(0, 0);
-        
-        // Set a random name
-        if (nameInput != null)
-        {
-            nameInput.text = GenerateRandomName();
-        }
-        
-        // Create room code input field
-        roomInput = CreateInputField(inputContainer, "RoomInput", "Room Code");
-        RectTransform roomInputRect = roomInput.GetComponent<RectTransform>();
-        roomInputRect.anchorMin = new Vector2(0, 0.4f);
-        roomInputRect.anchorMax = new Vector2(1, 0.55f);
-        roomInputRect.sizeDelta = new Vector2(0, 0);
-        
-        // Set default room code
-        if (roomInput != null)
-        {
-            roomInput.text = "asd";
-        }
-        
-        // Create button container
-        GameObject buttonContainer = new GameObject("ButtonContainer");
-        buttonContainer.transform.SetParent(panel.transform, false);
-        RectTransform buttonContainerRect = buttonContainer.AddComponent<RectTransform>();
-        buttonContainerRect.anchorMin = new Vector2(0.5f, 0.2f);
-        buttonContainerRect.anchorMax = new Vector2(0.5f, 0.3f);
-        buttonContainerRect.sizeDelta = new Vector2(400, 100);
-        
-        // Create join button
-        Button joinButton = CreateButton(buttonContainer, "JoinButton", "Join Room");
-        RectTransform joinButtonRect = joinButton.GetComponent<RectTransform>();
-        joinButtonRect.anchorMin = new Vector2(0, 0);
-        joinButtonRect.anchorMax = new Vector2(0.48f, 1);
-        joinButtonRect.sizeDelta = new Vector2(0, 0);
-        
-        // Create create button
-        Button createButton = CreateButton(buttonContainer, "CreateButton", "Create Room");
-        RectTransform createButtonRect = createButton.GetComponent<RectTransform>();
-        createButtonRect.anchorMin = new Vector2(0.52f, 0);
-        createButtonRect.anchorMax = new Vector2(1, 1);
-        createButtonRect.sizeDelta = new Vector2(0, 0);
-        
-        // Set button actions with proper null checking
-        joinButton.onClick.AddListener(() => {
-            FindManagers(); // Make sure we have the NetworkManager
-            
-            if (networkManager == null)
-            {
-                Debug.LogError("NetworkManager is null when trying to join room");
-                ShowErrorUI("Error: Cannot connect to network services");
-                return;
-            }
-            
-            string playerName = nameInput != null ? nameInput.text : GenerateRandomName();
-            string roomCode = roomInput != null ? roomInput.text : "asd";
-            
-            networkManager.JoinRoom(roomCode, playerName);
-        });
-        
-        createButton.onClick.AddListener(() => {
-            FindManagers(); // Make sure we have the NetworkManager
-            
-            if (networkManager == null)
-            {
-                Debug.LogError("NetworkManager is null when trying to create room");
-                ShowErrorUI("Error: Cannot connect to network services");
-                return;
-            }
-            
-            string playerName = nameInput != null ? nameInput.text : GenerateRandomName();
-            string roomCode = roomInput != null ? roomInput.text : "asd";
-            
-            networkManager.CreateRoom(roomCode, playerName);
-        });
+        nameInput.text = GenerateRandomName();
     }
     
+    // Create room code input field
+    roomInput = CreateInputField(inputContainer, "RoomInput", "Room Code");
+    RectTransform roomInputRect = roomInput.GetComponent<RectTransform>();
+    roomInputRect.anchorMin = new Vector2(0, 0.4f);
+    roomInputRect.anchorMax = new Vector2(1, 0.55f);
+    roomInputRect.sizeDelta = new Vector2(0, 0);
+    
+    // Set default room code
+    if (roomInput != null)
+    {
+        roomInput.text = "asd";
+    }
+    
+    // Create button container
+    GameObject buttonContainer = new GameObject("ButtonContainer");
+    buttonContainer.transform.SetParent(panel.transform, false);
+    RectTransform buttonContainerRect = buttonContainer.AddComponent<RectTransform>();
+    buttonContainerRect.anchorMin = new Vector2(0.5f, 0.2f);
+    buttonContainerRect.anchorMax = new Vector2(0.5f, 0.3f);
+    buttonContainerRect.sizeDelta = new Vector2(400, 100);
+    
+    // Create join button
+    Button joinButton = CreateButton(buttonContainer, "JoinButton", "Join Room");
+    RectTransform joinButtonRect = joinButton.GetComponent<RectTransform>();
+    joinButtonRect.anchorMin = new Vector2(0, 0);
+    joinButtonRect.anchorMax = new Vector2(0.48f, 1);
+    joinButtonRect.sizeDelta = new Vector2(0, 0);
+    
+    // Create create button
+    Button createButton = CreateButton(buttonContainer, "CreateButton", "Create Room");
+    RectTransform createButtonRect = createButton.GetComponent<RectTransform>();
+    createButtonRect.anchorMin = new Vector2(0.52f, 0);
+    createButtonRect.anchorMax = new Vector2(1, 1);
+    createButtonRect.sizeDelta = new Vector2(0, 0);
+    
+    // Set button actions with proper null checking and connection check
+    joinButton.onClick.AddListener(() => {
+        FindManagers(); // Make sure we have the NetworkManager
+        
+        if (networkManager == null)
+        {
+            Debug.LogError("NetworkManager is null when trying to join room");
+            ShowErrorUI("Error: Cannot connect to network services");
+            return;
+        }
+        
+        string playerName = nameInput != null ? nameInput.text : GenerateRandomName();
+        string roomCode = roomInput != null ? roomInput.text : "asd";
+        
+        // Check if connected first, if not, connect
+        if (!networkManager.IsConnected())
+        {
+            // Start connection first, then join room when connected
+            if (GameManager.Instance != null)
+            {
+                GameManager.Instance.StartConnection();
+                StartCoroutine(JoinRoomWhenConnected(roomCode, playerName));
+            }
+        }
+        else
+        {
+            // Already connected, join directly
+            networkManager.JoinRoom(roomCode, playerName);
+        }
+    });
+    
+    createButton.onClick.AddListener(() => {
+        FindManagers(); // Make sure we have the NetworkManager
+        
+        if (networkManager == null)
+        {
+            Debug.LogError("NetworkManager is null when trying to create room");
+            ShowErrorUI("Error: Cannot connect to network services");
+            return;
+        }
+        
+        string playerName = nameInput != null ? nameInput.text : GenerateRandomName();
+        string roomCode = roomInput != null ? roomInput.text : "asd";
+        
+        // Check if connected first, if not, connect
+        if (!networkManager.IsConnected())
+        {
+            // Start connection first, then create room when connected
+            if (GameManager.Instance != null)
+            {
+                GameManager.Instance.StartConnection();
+                StartCoroutine(CreateRoomWhenConnected(roomCode, playerName));
+            }
+        }
+        else
+        {
+            // Already connected, create directly
+            networkManager.CreateRoom(roomCode, playerName);
+        }
+    });
+}
+
+    private IEnumerator JoinRoomWhenConnected(string roomCode, string playerName)
+{
+    // Wait until connected to Master Server specifically
+    while (networkManager != null && 
+          (!networkManager.IsConnected() || !PhotonNetwork.IsConnectedAndReady))
+    {
+        yield return new WaitForSeconds(0.5f);
+    }
+    
+    // Join room when connected to Master
+    if (networkManager != null && PhotonNetwork.IsConnectedAndReady)
+    {
+        networkManager.JoinRoom(roomCode, playerName);
+    }
+}
+
+private IEnumerator CreateRoomWhenConnected(string roomCode, string playerName)
+{
+    // Wait until connected to Master Server specifically
+    while (networkManager != null && 
+          (!networkManager.IsConnected() || !PhotonNetwork.IsConnectedAndReady))
+    {
+        yield return new WaitForSeconds(0.5f);
+    }
+    
+    // Create room when connected to Master
+    if (networkManager != null && PhotonNetwork.IsConnectedAndReady)
+    {
+        networkManager.CreateRoom(roomCode, playerName);
+    }
+}
+
     private void CreateErrorUI(GameObject panel)
     {
         // Create error title

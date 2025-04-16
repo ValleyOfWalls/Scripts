@@ -11,6 +11,9 @@ public class NetworkManager : MonoBehaviourPunCallbacks
 
     private UIManager uiManager;
     private PrefabSpawner prefabSpawner;
+    
+    // Flag to check if connection is in progress
+    private bool isConnecting = false;
 
     private void Start()
     {
@@ -36,45 +39,50 @@ public class NetworkManager : MonoBehaviourPunCallbacks
 
     public void Connect()
     {
+        // Only proceed if not already connecting or connected
+        if (isConnecting || PhotonNetwork.IsConnected)
+        {
+            if (PhotonNetwork.IsConnected)
+            {
+                // Already connected, go to lobby
+                Debug.Log("Already connected to Photon, going to lobby");
+                if (GameManager.Instance != null)
+                {
+                    GameManager.Instance.SetState(GameManager.GameState.Lobby);
+                }
+            }
+            return;
+        }
+        
         // Make sure references are initialized
         EnsureReferences();
 
-        // Connect to Photon servers if not already connected
-        if (!PhotonNetwork.IsConnected)
+        // Connect to Photon servers
+        isConnecting = true;
+        PhotonNetwork.AutomaticallySyncScene = true;
+        PhotonNetwork.GameVersion = GameVersion;
+        
+        Debug.Log("Attempting to connect to Photon servers...");
+        
+        try
         {
-            PhotonNetwork.AutomaticallySyncScene = true;
-            PhotonNetwork.GameVersion = GameVersion;
-            
-            Debug.Log("Attempting to connect to Photon servers...");
-            
-            try
+            PhotonNetwork.ConnectUsingSettings();
+            if (uiManager != null)
             {
-                PhotonNetwork.ConnectUsingSettings();
-                if (uiManager != null)
-                {
-                    uiManager.ShowConnectingUI("Connecting to server...");
-                }
-                else
-                {
-                    Debug.LogWarning("UIManager is null when connecting");
-                }
+                uiManager.ShowConnectingUI("Connecting to server...");
             }
-            catch (System.Exception e)
+            else
             {
-                Debug.LogError("Error connecting to Photon: " + e.Message);
-                if (uiManager != null)
-                {
-                    uiManager.ShowErrorUI("Connection Error: " + e.Message);
-                }
+                Debug.LogWarning("UIManager is null when connecting");
             }
         }
-        else
+        catch (System.Exception e)
         {
-            // Already connected, go to lobby
-            Debug.Log("Already connected to Photon, going to lobby");
-            if (GameManager.Instance != null)
+            isConnecting = false;
+            Debug.LogError("Error connecting to Photon: " + e.Message);
+            if (uiManager != null)
             {
-                GameManager.Instance.SetState(GameManager.GameState.Lobby);
+                uiManager.ShowErrorUI("Connection Error: " + e.Message);
             }
         }
     }
@@ -154,11 +162,12 @@ public class NetworkManager : MonoBehaviourPunCallbacks
     public override void OnConnectedToMaster()
     {
         Debug.Log("Connected to Master Server");
+        isConnecting = false;
         
-        // Make sure GameManager exists
+        // Go to main menu after connection - Changed to maintain proper flow
         if (GameManager.Instance != null)
         {
-            GameManager.Instance.SetState(GameManager.GameState.Lobby);
+            GameManager.Instance.SetState(GameManager.GameState.MainMenu);
         }
         else
         {
@@ -169,6 +178,7 @@ public class NetworkManager : MonoBehaviourPunCallbacks
     public override void OnDisconnected(DisconnectCause cause)
     {
         Debug.LogWarning($"Disconnected from server: {cause}");
+        isConnecting = false;
         
         if (uiManager != null)
         {
@@ -207,6 +217,9 @@ public class NetworkManager : MonoBehaviourPunCallbacks
                     }
                 }
             }
+            
+            // Change state to Lobby since we're now in a room
+            GameManager.Instance.SetState(GameManager.GameState.Lobby);
         }
         
         // Spawn player and monster prefabs if prefab spawner exists
@@ -239,26 +252,6 @@ public class NetworkManager : MonoBehaviourPunCallbacks
         
         // Now spawn player and monster prefabs
         prefabSpawner.SpawnPlayerAndMonster();
-        
-        // Set the game state to Lobby
-        if (GameManager.Instance != null)
-        {
-            GameManager.Instance.SetState(GameManager.GameState.Lobby);
-        }
-        else
-        {
-            // Fallback if GameManager is not available
-            if (uiManager == null)
-            {
-                uiManager = FindObjectOfType<UIManager>();
-            }
-            
-            if (uiManager != null)
-            {
-                uiManager.ShowLobbyUI();
-                uiManager.UpdateLobbyUI();
-            }
-        }
     }
 
     public override void OnLeftRoom()
@@ -268,7 +261,7 @@ public class NetworkManager : MonoBehaviourPunCallbacks
         if (GameManager.Instance != null)
         {
             GameManager.Instance.ClearPlayers();
-            GameManager.Instance.SetState(GameManager.GameState.Lobby);
+            GameManager.Instance.SetState(GameManager.GameState.MainMenu);
         }
     }
 
@@ -337,7 +330,7 @@ public class NetworkManager : MonoBehaviourPunCallbacks
         
         if (GameManager.Instance != null)
         {
-            GameManager.Instance.SetState(GameManager.GameState.Lobby);
+            GameManager.Instance.SetState(GameManager.GameState.MainMenu);
         }
     }
 
@@ -352,7 +345,13 @@ public class NetworkManager : MonoBehaviourPunCallbacks
         
         if (GameManager.Instance != null)
         {
-            GameManager.Instance.SetState(GameManager.GameState.Lobby);
+            GameManager.Instance.SetState(GameManager.GameState.MainMenu);
         }
+    }
+    
+    // Method to check if already connected
+    public bool IsConnected()
+    {
+        return PhotonNetwork.IsConnected;
     }
 }
