@@ -1,24 +1,95 @@
 using UnityEngine;
 using UnityEngine.EventSystems;
 
-public enum DropZoneTargetType
+// Attach this script to UI elements that act as drop targets for cards.
+public class CardDropZone : MonoBehaviour, IDropHandler, IPointerEnterHandler, IPointerExitHandler
 {
-    OwnPet,       // Target is the player's own pet
-    OpponentPet   // Target is the opponent's pet
-    // Add other types if needed (e.g., PlayerSelf, SpecificEnemy)
-}
+    // Define the types of targets a card can be dropped on
+    public enum TargetType
+    {
+        OwnPet,
+        EnemyPet,
+        PlayerSelf // If cards can target the player directly
+        // Add other target types as needed
+    }
 
-public class CardDropZone : MonoBehaviour, IDropHandler
-{
-    public DropZoneTargetType targetType; // Set this in the Inspector for each drop zone
+    [Tooltip("Specify what this zone represents (e.g., the opponent's pet area)")]
+    public TargetType targetType;
 
+    // Optional: Reference to an image/graphic for highlighting
+    [SerializeField] public UnityEngine.UI.Image highlightGraphic;
+
+    void Start()
+    {
+        // Ensure the highlight is off initially
+        if (highlightGraphic != null) highlightGraphic.enabled = false;
+    }
+
+    // Called when a draggable object (like a card) is dropped onto this zone
     public void OnDrop(PointerEventData eventData)
     {
-        Debug.Log($"OnDrop detected on {gameObject.name} (Type: {targetType})");
-        // The logic is mostly handled in CardDragHandler's OnEndDrag
-        // This script primarily acts as a marker and provides the targetType.
+        Debug.Log($"Card dropped on {gameObject.name} representing {targetType}");
+        
+        // The CardDragHandler's OnEndDrag currently handles the logic 
+        // of checking eventData.pointerEnter and calling GameManager.
+        // So, this OnDrop might not need to do much unless we change that logic.
+        
+        // Reset highlight on drop
+        if (highlightGraphic != null) highlightGraphic.enabled = false;
+        
+        // Example: If CardDragHandler wasn't doing the work, you'd do it here:
+        // CardDragHandler draggedCard = eventData.pointerDrag.GetComponent<CardDragHandler>();
+        // if (draggedCard != null)
+        // {
+        //     GameManager gameManager = FindObjectOfType<GameManager>();
+        //     if (gameManager != null)
+        //     {
+        //         gameManager.AttemptPlayCard(draggedCard.cardData, targetType);
+        //     }
+        // }
+    }
 
-        // We could add visual feedback here (e.g., highlight when card hovers over)
-        // using IPointerEnterHandler and IPointerExitHandler
+    // Called when a draggable object enters the bounds of this zone
+    public void OnPointerEnter(PointerEventData eventData)
+    {
+        // Check if the object being dragged is a card
+        if (eventData.pointerDrag != null && eventData.pointerDrag.GetComponent<CardDragHandler>() != null)
+        {
+            Debug.Log($"Card entered drop zone: {gameObject.name}");
+            // Show highlight (optional)
+            if (highlightGraphic != null) 
+            {
+                highlightGraphic.enabled = true;
+            }
+            else
+            {
+                Debug.LogWarning($"HighlightGraphic is null on {gameObject.name}");
+            }
+        }
+    }
+
+    // Called when a draggable object exits the bounds of this zone
+    public void OnPointerExit(PointerEventData eventData)
+    {
+         // Check if the object that *was* being dragged is a card 
+         // (eventData.pointerDrag might be null if drop happened elsewhere)
+        if (eventData.pointerDrag != null && eventData.pointerDrag.GetComponent<CardDragHandler>() != null)
+        {
+            Debug.Log($"Card exited drop zone: {gameObject.name}");
+            // Hide highlight (optional)
+            if (highlightGraphic != null) 
+            {
+                highlightGraphic.enabled = false;
+            }
+             else
+            {
+                Debug.LogWarning($"HighlightGraphic is null on {gameObject.name}");
+            }
+        }
+         // Also hide if the pointer exits for any reason while highlight is on
+         else if (highlightGraphic != null && highlightGraphic.enabled)
+         {
+             highlightGraphic.enabled = false;
+         }
     }
 } 

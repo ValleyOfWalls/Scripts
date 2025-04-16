@@ -14,6 +14,7 @@ public class GameManager : MonoBehaviourPunCallbacks
     [SerializeField] private int startingEnergy = 3;
     [SerializeField] private int cardsToDraw = 5;
     [SerializeField] private List<CardData> starterDeck = new List<CardData>(); // Assign starter cards in Inspector
+    [SerializeField] private List<CardData> starterPetDeck = new List<CardData>(); // Assign pet starter cards in Inspector
 
     [Header("UI Panels")][Tooltip("Assign from Assets/Prefabs/UI")]
     [SerializeField] private GameObject startScreenCanvasPrefab;
@@ -51,7 +52,7 @@ public class GameManager : MonoBehaviourPunCallbacks
     private TextMeshProUGUI ownPetHealthText;
     private GameObject othersStatusArea;
     private GameObject otherPlayerStatusTemplate; // Inside Others Status Area
-    // Add Energy Text reference if you have one
+    [SerializeField] private TextMeshProUGUI energyText; // Add Energy Text reference if you have one
 
     // Instantiated Canvases
     private GameObject startScreenInstance;
@@ -65,16 +66,23 @@ public class GameManager : MonoBehaviourPunCallbacks
     private List<GameObject> playerListEntries = new List<GameObject>();
 
     // Combat State
-    private int localPlayerHealth;
-    private int localPetHealth;
-    private int opponentPetHealth; // Health of the pet the local player is fighting
-    private int currentEnergy;
+    [SerializeField] private int localPlayerHealth;
+    [SerializeField] private int localPetHealth;
+    [SerializeField] private int opponentPetHealth; // Health of the pet the local player is fighting
+    [SerializeField] private int currentEnergy;
     private List<CardData> deck = new List<CardData>();
     private List<CardData> hand = new List<CardData>();
     private List<CardData> discardPile = new List<CardData>();
     private Player opponentPlayer; // Reference to the opponent player whose pet we fight
     private int player1Score = 0;
     private int player2Score = 0; // Extend later for >2 players
+    // <<--- ADDED PET STATE START --->>
+    [Header("Opponent Pet Combat State (Local Simulation)")]
+    [SerializeField] private int opponentPetEnergy;
+    private List<CardData> opponentPetDeck = new List<CardData>();
+    private List<CardData> opponentPetHand = new List<CardData>();
+    private List<CardData> opponentPetDiscard = new List<CardData>();
+    // <<--- ADDED PET STATE END --->>
 
     // --- Other combat state vars like buffs, debuffs, etc. --- 
 
@@ -359,16 +367,25 @@ public class GameManager : MonoBehaviourPunCallbacks
 
                 // Find elements within TopArea
                 scoreText = topArea.Find("ScoreText")?.GetComponent<TextMeshProUGUI>();
-                Transform opponentArea = topArea.Find("OpponentPetArea");
+                
+                // <<--- MODIFIED FINDING LOGIC START --->>
+                // Find the container first
+                Transform opponentAreaContainer = topArea.Find("OpponentPetAreaContainer"); 
+                // Then find the panel within the container
+                Transform opponentArea = opponentAreaContainer?.Find("OpponentPetArea"); 
                 opponentPetNameText = opponentArea?.Find("OpponentPetNameText")?.GetComponent<TextMeshProUGUI>();
                 opponentPetHealthSlider = opponentArea?.Find("OpponentPetHealthSlider")?.GetComponent<Slider>();
                 opponentPetHealthText = opponentArea?.Find("OpponentPetHealthText")?.GetComponent<TextMeshProUGUI>();
                 opponentPetIntentText = opponentArea?.Find("OpponentPetIntentText")?.GetComponent<TextMeshProUGUI>();
                 
-                Transform ownPetArea = topArea.Find("OwnPetArea");
+                // Find the container first
+                Transform ownPetAreaContainer = topArea.Find("OwnPetAreaContainer"); 
+                // Then find the panel within the container
+                Transform ownPetArea = ownPetAreaContainer?.Find("OwnPetArea"); 
                 ownPetNameText = ownPetArea?.Find("OwnPetNameText")?.GetComponent<TextMeshProUGUI>();
                 ownPetHealthSlider = ownPetArea?.Find("OwnPetHealthSlider")?.GetComponent<Slider>();
                 ownPetHealthText = ownPetArea?.Find("OwnPetHealthText")?.GetComponent<TextMeshProUGUI>();
+                // <<--- MODIFIED FINDING LOGIC END --->>
 
                 Transform othersAreaTransform = topArea.Find("OthersStatusArea");
                 othersStatusArea = othersAreaTransform?.gameObject;
@@ -379,6 +396,9 @@ public class GameManager : MonoBehaviourPunCallbacks
                 playerNameText = statsRow?.Find("PlayerNameText")?.GetComponent<TextMeshProUGUI>();
                 playerHealthSlider = statsRow?.Find("PlayerHealthSlider")?.GetComponent<Slider>();
                 playerHealthText = statsRow?.Find("PlayerHealthText")?.GetComponent<TextMeshProUGUI>();
+                
+                // Find Energy Text
+                energyText = statsRow?.Find("EnergyText")?.GetComponent<TextMeshProUGUI>();
                 
                 Transform handPanelTransform = playerArea.Find("PlayerHandPanel");
                 playerHandPanel = handPanelTransform?.gameObject;
@@ -450,12 +470,29 @@ public class GameManager : MonoBehaviourPunCallbacks
         if (opponentPetNameText) opponentPetNameText.text = opponentPlayer != null ? $"{opponentPlayer.NickName}'s Pet" : "Opponent Pet";
         if (ownPetNameText) ownPetNameText.text = "Your Pet";
 
-        // Initialize Deck
+        // Initialize Player Deck
         deck = new List<CardData>(starterDeck); // Copy starter deck
         ShuffleDeck();
         hand.Clear();
         discardPile.Clear();
         UpdateDeckCountUI();
+
+        // <<--- INITIALIZE PET DECK START --->>
+        // Initialize Opponent Pet Deck (using local simulation)
+        if (starterPetDeck != null && starterPetDeck.Count > 0)
+        {
+            opponentPetDeck = new List<CardData>(starterPetDeck);
+            ShuffleOpponentPetDeck(); // Need to create this helper
+        }
+        else
+        {
+             Debug.LogWarning("StarterPetDeck is not assigned or empty in GameManager inspector!");
+             opponentPetDeck = new List<CardData>(); // Start with empty if none assigned
+        }
+        opponentPetHand.Clear();
+        opponentPetDiscard.Clear();
+        // Don't necessarily need pet deck/discard count UI, but could add later
+        // <<--- INITIALIZE PET DECK END --->>
 
         // Start the first turn
         StartTurn();
@@ -470,6 +507,7 @@ public class GameManager : MonoBehaviourPunCallbacks
         Debug.Log("Starting Player Turn");
         currentEnergy = startingEnergy;
         // TODO: Update Energy UI
+        UpdateEnergyUI();
 
         DrawHand();
         UpdateHandUI();
@@ -493,11 +531,12 @@ public class GameManager : MonoBehaviourPunCallbacks
         UpdateDeckCountUI();
 
         // 2. Opponent Pet Acts (Placeholder)
-        Debug.Log("Opponent Pet acts...");
+        // Debug.Log("Opponent Pet acts..."); // REMOVE Placeholder
         // --- TODO: Implement Pet AI based on intent --- 
         // Example: Apply damage to player
         // localPlayerHealth -= 5; 
         // UpdateHealthUI();
+        ExecuteOpponentPetTurn(); // <<--- CALL PET TURN
 
         // 3. Check End Conditions (Placeholders)
         // if (opponentPetHealth <= 0) { HandleCombatVictory(); return; } 
@@ -562,8 +601,135 @@ public class GameManager : MonoBehaviourPunCallbacks
         Debug.Log("Deck shuffled.");
     }
 
+    // <<--- OPPONENT PET CARD MANAGEMENT HELPERS START --->>
+    // Based on Player versions
+
+    private void ShuffleOpponentPetDeck()
+    {
+        System.Random rng = new System.Random();
+        int n = opponentPetDeck.Count;
+        while (n > 1)
+        {
+            n--;
+            int k = rng.Next(n + 1);
+            CardData value = opponentPetDeck[k];
+            opponentPetDeck[k] = opponentPetDeck[n];
+            opponentPetDeck[n] = value;
+        }
+        Debug.Log("Opponent Pet Deck shuffled.");
+    }
+
+    private void DrawOpponentPetHand(int amountToDraw)
+    {
+        opponentPetHand.Clear(); // Clear previous hand
+        for (int i = 0; i < amountToDraw; i++)
+        {
+            DrawOpponentPetCard();
+        }
+        Debug.Log($"Opponent Pet drew {opponentPetHand.Count} cards.");
+    }
+
+    private void DrawOpponentPetCard()
+    {
+        if (opponentPetDeck.Count == 0)
+        {
+            if (opponentPetDiscard.Count == 0)
+            {
+                Debug.Log("Opponent Pet has no cards left to draw!");
+                return; // Out of cards
+            }
+            ReshuffleOpponentPetDiscardPile();
+        }
+        
+        if (opponentPetDeck.Count > 0) // Check again after potential reshuffle
+        {
+             CardData drawnCard = opponentPetDeck[0];
+             opponentPetDeck.RemoveAt(0);
+             opponentPetHand.Add(drawnCard);
+        }
+    }
+
+    private void DiscardOpponentPetHand()
+    {
+        opponentPetDiscard.AddRange(opponentPetHand);
+        opponentPetHand.Clear();
+    }
+
+    private void ReshuffleOpponentPetDiscardPile()
+    {
+        Debug.Log("Reshuffling Opponent Pet discard pile into deck.");
+        opponentPetDeck.AddRange(opponentPetDiscard);
+        opponentPetDiscard.Clear();
+        ShuffleOpponentPetDeck();
+    }
+
+    // <<--- OPPONENT PET CARD MANAGEMENT HELPERS END --->>
+
     // --- TODO: Implement Card Playing Logic --- 
     // void PlayCard(CardData card) { ... }
+
+    #endregion
+
+    #region Opponent Pet Turn Logic (Local Simulation)
+
+    private void ExecuteOpponentPetTurn()
+    {
+        Debug.Log("---> Starting Opponent Pet Turn <---");
+        opponentPetEnergy = startingEnergy; // Use player starting energy for now
+        
+        // Determine how many cards the pet should draw (can be different from player)
+        int petCardsToDraw = 3; // Example: Pet draws fewer cards
+        DrawOpponentPetHand(petCardsToDraw);
+
+        // Simple AI: Play cards until out of energy or no playable cards left
+        bool cardPlayedThisLoop;
+        do
+        {
+            cardPlayedThisLoop = false;
+            CardData cardToPlay = null;
+            int cardIndex = -1;
+
+            // Find the first playable card in hand
+            for(int i = 0; i < opponentPetHand.Count; i++)
+            {
+                if (opponentPetHand[i].cost <= opponentPetEnergy)
+                {
+                    cardToPlay = opponentPetHand[i];
+                    cardIndex = i;
+                    break; // Found one, stop looking
+                }
+            }
+
+            // If a playable card was found
+            if (cardToPlay != null)
+            {
+                Debug.Log($"Opponent Pet playing card: {cardToPlay.cardName} (Cost: {cardToPlay.cost})");
+                opponentPetEnergy -= cardToPlay.cost;
+                
+                // Apply effect (Example: Damage to Player)
+                if (cardToPlay.damage > 0)
+                {
+                    localPlayerHealth -= cardToPlay.damage;
+                    Debug.Log($"Opponent Pet dealt {cardToPlay.damage} damage to Local Player. New health: {localPlayerHealth}");
+                    UpdateHealthUI(); // Update player health bar
+                    // TODO: Check player defeat condition
+                }
+                // TODO: Add other pet card effects (block self, apply buffs/debuffs)
+                
+                // Move card from hand to discard
+                opponentPetHand.RemoveAt(cardIndex);
+                opponentPetDiscard.Add(cardToPlay);
+                cardPlayedThisLoop = true; // Indicate a card was played, loop again
+
+                Debug.Log($"Opponent Pet energy remaining: {opponentPetEnergy}");
+            }
+            
+        } while (cardPlayedThisLoop && opponentPetEnergy > 0); // Continue if a card was played and energy remains
+
+        Debug.Log("Opponent Pet finished playing cards.");
+        DiscardOpponentPetHand();
+        Debug.Log("---> Ending Opponent Pet Turn <---");
+    }
 
     #endregion
 
@@ -638,6 +804,17 @@ public class GameManager : MonoBehaviourPunCallbacks
             if (descText != null) descText.text = card.description;
             // if (artImage != null) { /* Load/assign art here... */ }
             
+            // Get the handler and assign the data so it knows which card it represents
+            CardDragHandler handler = cardGO.GetComponent<CardDragHandler>();
+            if (handler != null) 
+            {
+                handler.cardData = card; 
+            }
+            else
+            {
+                Debug.LogError($"CardDragHandler component not found on instantiated card prefab: {cardGO.name}");
+            }
+
             // TODO: Add Button listener for playing the card (pass 'card' data)
             // Button cardButton = cardGO.GetComponent<Button>(); 
             // if (cardButton != null) cardButton.onClick.AddListener(() => PlayCard(card));
@@ -648,8 +825,142 @@ public class GameManager : MonoBehaviourPunCallbacks
 
     private void UpdateDeckCountUI()
     {
-         if(deckCountText) deckCountText.text = $"Deck: {deck.Count}";
-         if(discardCountText) discardCountText.text = $"Discard: {discardPile.Count}";
+        if (deckCountText != null) deckCountText.text = $"Deck: {deck.Count}";
+        if (discardCountText != null) discardCountText.text = $"Discard: {discardPile.Count}";
+    }
+
+    private void UpdateEnergyUI()
+    {
+        if (energyText != null)
+        {
+            energyText.text = $"Energy: {currentEnergy} / {startingEnergy}";
+        }
+        else
+        {
+             Debug.LogWarning("UpdateEnergyUI: energyText reference is null!");
+        }
+    }
+
+    #endregion
+
+    #region Combat UI & State Logic
+
+    // TODO: Implement proper turn management logic
+    public bool IsPlayerTurn()
+    {
+        Debug.Log("GameManager.IsPlayerTurn() called - Returning true for now.");
+        // For now, assume it's always the player's turn for testing drag/drop
+        return true; 
+    }
+
+    // TODO: Implement actual card playing logic (effects, costs, targeting, networking)
+    public bool AttemptPlayCard(CardData cardData, CardDropZone.TargetType targetType)
+    {
+        Debug.Log($"GameManager.AttemptPlayCard called: Card '{cardData.cardName}', TargetType '{targetType}'");
+        
+        // Basic checks (add more like energy cost)
+        if (cardData == null)
+        {
+             Debug.LogError("AttemptPlayCard: cardData is null!");
+             return false;
+        }
+
+        // <<--- ENERGY CHECK START --->>
+        if (cardData.cost > currentEnergy)
+        {
+            Debug.LogWarning($"AttemptPlayCard: Cannot play card '{cardData.cardName}' - Cost ({cardData.cost}) exceeds current energy ({currentEnergy}).");
+            return false; // Not enough energy
+        }
+        // <<--- ENERGY CHECK END --->>
+
+        // Attempt to remove the card from the hand list
+        bool removed = hand.Remove(cardData);
+        Debug.Log($"Attempting to remove card '{cardData.cardName}' from hand. Result: {removed}");
+
+        // Placeholder: Consume the card (remove from hand) and move to discard
+        if (removed) // Use the result from above
+        {
+             discardPile.Add(cardData);
+             UpdateHandUI(); // Update visual hand
+             UpdateDeckCountUI(); // Update discard count display
+
+             // <<--- ENERGY CONSUMPTION START --->>
+             currentEnergy -= cardData.cost;
+             UpdateEnergyUI(); // Update UI after spending energy
+             Debug.Log($"Played card '{cardData.cardName}'. Energy remaining: {currentEnergy}");
+             // <<--- ENERGY CONSUMPTION END --->>
+
+             // <<--- CARD EFFECT LOGIC START --->>
+             // --- Apply card effects based on cardData and targetType --- 
+             if (targetType == CardDropZone.TargetType.EnemyPet && cardData.damage > 0)
+             {
+                 int damageDealt = cardData.damage;
+                 // Apply locally first for immediate feedback
+                 opponentPetHealth -= damageDealt;
+                 Debug.Log($"Dealt {damageDealt} damage to Opponent Pet. New health: {opponentPetHealth}");
+                 UpdateHealthUI();
+
+                 // <<--- SEND RPC START --->>
+                 // Now, tell the actual opponent player to apply the damage to their pet
+                 if (opponentPlayer != null)
+                 {
+                     Debug.Log($"Sending RpcTakePetDamage({damageDealt}) to {opponentPlayer.NickName}");
+                     photonView.RPC("RpcTakePetDamage", opponentPlayer, damageDealt); 
+                 }
+                 else
+                 {
+                     Debug.LogError("Cannot send RpcTakePetDamage: opponentPlayer reference is null!");
+                 }
+                 // <<--- SEND RPC END --->>
+
+                 // TODO: NETWORK - Sync opponentPetHealth change to the other player! // This RPC handles it
+             }
+             // --- Add other effects below (e.g., targeting OwnPet, PlayerSelf, applying block, buffs) --- 
+             // else if (targetType == CardDropZone.TargetType.OwnPet && cardData.block > 0) { ... }
+             
+             // TODO: NETWORK - Send RPC to notify opponent about card play results (damage dealt, buffs applied, etc.) if needed for animations/logs
+             // <<--- CARD EFFECT LOGIC END --->>
+
+             // Log success AFTER effects are processed
+             Debug.Log($"Successfully processed effects for card '{cardData.cardName}' on target '{targetType}'. Moved to discard.");
+
+             return true; // Indicate success
+         }
+         else 
+    {
+        // --- IF REMOVE FAILS ---
+        Debug.LogWarning($"AttemptPlayCard: Card '{cardData.cardName}' NOT found in hand list for removal (reference equality failed?).");
+        // Check if a card with the same name exists, indicating a potential reference issue
+        if (hand.Any(c => c != null && c.cardName == cardData.cardName)) {
+            Debug.LogWarning($"--> NOTE: A card named '{cardData.cardName}' DOES exist in hand, but the reference passed from CardDragHandler doesn't match. Investigate CardData object lifetime/references.");
+        }
+        else
+        {
+            Debug.LogWarning($"--> NOTE: No card named '{cardData.cardName}' found in hand list at all.");
+        }
+        return false; // Card wasn't in hand (or reference didn't match)
+    }
+}
+
+    #endregion
+
+    #region Networking RPCs
+
+    [PunRPC]
+    private void RpcTakePetDamage(int damageAmount)
+    {
+        // This code executes on the client whose pet is taking damage
+        if (damageAmount <= 0) return; // Don't process 0 or negative damage
+
+        Debug.Log($"RPC Received: My Pet taking {damageAmount} damage.");
+        localPetHealth -= damageAmount;
+        // Ensure health doesn't go below zero visually if needed
+        if (localPetHealth < 0) localPetHealth = 0; 
+
+        UpdateHealthUI(); 
+
+        // TODO: Potentially trigger visual effects or animations for taking damage
+        // TODO: Check if pet health reached 0 and handle pet defeat logic for this player
     }
 
     #endregion

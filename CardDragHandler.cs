@@ -55,6 +55,10 @@ public class CardDragHandler : MonoBehaviour, IBeginDragHandler, IDragHandler, I
 
     public void OnEndDrag(PointerEventData eventData)
     {
+        // <<--- ADDED LOGGING START --->>
+        Debug.Log($"CardDragHandler.OnEndDrag fired. Pointer entered: {(eventData.pointerEnter != null ? eventData.pointerEnter.name : "null")}");
+        // <<--- ADDED LOGGING END --->>
+
         canvasGroup.blocksRaycasts = true; // Re-enable raycasting for the card itself
         transform.SetParent(originalParent, true); // Return to original parent (hand) initially
 
