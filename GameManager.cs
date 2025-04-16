@@ -1,305 +1,645 @@
-using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.UI;
+using TMPro;
 using Photon.Pun;
 using Photon.Realtime;
+using System.Collections.Generic;
+using System.Linq;
 
 public class GameManager : MonoBehaviourPunCallbacks
 {
-    // Singleton pattern
-    public static GameManager Instance { get; private set; }
+    [Header("Settings")]
+    [SerializeField] private int startingPlayerHealth = 100;
+    [SerializeField] private int startingPetHealth = 50;
+    [SerializeField] private int startingEnergy = 3;
+    [SerializeField] private int cardsToDraw = 5;
+    [SerializeField] private List<CardData> starterDeck = new List<CardData>(); // Assign starter cards in Inspector
 
-    // References to other managers
-    [SerializeField] private NetworkManager networkManager;
-    [SerializeField] private UIManager uiManager;
-    [SerializeField] private LobbyManager lobbyManager;
-    [SerializeField] private GameplayManager gameplayManager;
-    [SerializeField] private BattleUIManager battleUIManager;
+    [Header("UI Panels")][Tooltip("Assign from Assets/Prefabs/UI")]
+    [SerializeField] private GameObject startScreenCanvasPrefab;
+    [SerializeField] private GameObject lobbyCanvasPrefab;
+    [SerializeField] private GameObject combatCanvasPrefab; // Assign this prefab
+    // [SerializeField] private GameObject draftCanvasPrefab; // For later
 
-    // Game state
-    public enum GameState { Connecting, Lobby, Draft, Battle }
-    private GameState currentState;
+    [Header("Start Screen References")]
+    private Button connectButton;
 
-    // Player information
-    private List<PlayerInfo> players = new List<PlayerInfo>();
-    
-    // Flag to track if GameplayManager has been spawned
-    private bool gameplayManagerSpawned = false;
+    [Header("Lobby Screen References")]
+    private GameObject playerListPanel; // Parent for player entries
+    private GameObject playerEntryTemplate; // Template Text element
+    private Button readyButton;
+    private Button leaveButton;
+    private Button startGameButton; // Master client only
 
-    private void Awake()
+    [Header("Combat Screen References")]
+    private TextMeshProUGUI scoreText;
+    private TextMeshProUGUI playerNameText;
+    private Slider playerHealthSlider;
+    private TextMeshProUGUI playerHealthText;
+    private GameObject playerHandPanel;
+    private GameObject cardTemplate; // Inside Hand Panel
+    private TextMeshProUGUI deckCountText;
+    private TextMeshProUGUI discardCountText;
+    private Button endTurnButton;
+    private TextMeshProUGUI opponentPetNameText;
+    private Slider opponentPetHealthSlider;
+    private TextMeshProUGUI opponentPetHealthText;
+    private TextMeshProUGUI opponentPetIntentText;
+    private TextMeshProUGUI ownPetNameText;
+    private Slider ownPetHealthSlider;
+    private TextMeshProUGUI ownPetHealthText;
+    private GameObject othersStatusArea;
+    private GameObject otherPlayerStatusTemplate; // Inside Others Status Area
+    // Add Energy Text reference if you have one
+
+    // Instantiated Canvases
+    private GameObject startScreenInstance;
+    private GameObject lobbyInstance;
+    private GameObject combatInstance;
+
+    // Player Ready Status
+    private const string PLAYER_READY_PROPERTY = "IsReady";
+
+    // Player List Management
+    private List<GameObject> playerListEntries = new List<GameObject>();
+
+    // Combat State
+    private int localPlayerHealth;
+    private int localPetHealth;
+    private int opponentPetHealth; // Health of the pet the local player is fighting
+    private int currentEnergy;
+    private List<CardData> deck = new List<CardData>();
+    private List<CardData> hand = new List<CardData>();
+    private List<CardData> discardPile = new List<CardData>();
+    private Player opponentPlayer; // Reference to the opponent player whose pet we fight
+    private int player1Score = 0;
+    private int player2Score = 0; // Extend later for >2 players
+
+    // --- Other combat state vars like buffs, debuffs, etc. --- 
+
+    #region Unity Methods
+
+    void Start()
     {
-        // Ensure only one instance exists
-        if (Instance != null && Instance != this)
+        // Ensure we have only one GameManager instance
+        if (FindObjectsOfType<GameManager>().Length > 1)
         {
             Destroy(gameObject);
             return;
         }
-        
-        Instance = this;
-        DontDestroyOnLoad(gameObject);
-        
-        // Initialize managers in the correct order
-        InitializeManagers();
-    }
+        DontDestroyOnLoad(gameObject); // Keep GameManager across scenes
 
-    private void InitializeManagers()
-    {
-        // Create all manager GameObjects as children of GameManager
-        if (networkManager == null)
+        // Instantiate and setup Start Screen
+        if (startScreenCanvasPrefab != null)
         {
-            GameObject networkObj = new GameObject("NetworkManager");
-            networkObj.transform.SetParent(transform);
-            networkManager = networkObj.AddComponent<NetworkManager>();
-        }
-        
-        if (uiManager == null)
-        {
-            GameObject uiObj = new GameObject("UIManager");
-            uiObj.transform.SetParent(transform);
-            uiManager = uiObj.AddComponent<UIManager>();
-        }
-        
-        if (lobbyManager == null)
-        {
-            GameObject lobbyObj = new GameObject("LobbyManager");
-            lobbyObj.transform.SetParent(transform);
-            lobbyManager = lobbyObj.AddComponent<LobbyManager>();
-        }
-
-        if (battleUIManager == null)
-        {
-            GameObject battleUIMgrObj = new GameObject("BattleUIManager");
-            battleUIMgrObj.transform.SetParent(transform);
-            battleUIManager = battleUIMgrObj.AddComponent<BattleUIManager>();
-        }
-
-        // Set initial game state
-        StartCoroutine(DelayedStateChange());
-    }
-
-    private IEnumerator DelayedStateChange()
-    {
-        // Wait for a frame to make sure all managers are initialized
-        yield return null;
-        
-        // Set initial game state
-        SetState(GameState.Connecting);
-    }
-
-    public void SetState(GameState newState)
-    {
-        currentState = newState;
-        Debug.Log($"Game state changed to: {currentState}");
-        
-        switch (currentState)
-        {
-            case GameState.Connecting:
-                if (networkManager != null)
-                {
-                    networkManager.Connect();
-                }
-                break;
-                
-            case GameState.Lobby:
-                if (lobbyManager != null)
-                {
-                    lobbyManager.InitializeLobby();
-                }
-                break;
-                
-            case GameState.Draft:
-                if (gameplayManager != null)
-                {
-                    gameplayManager.InitializeDraftPhase();
-                }
-                break;
-                
-            case GameState.Battle:
-                if (gameplayManager != null)
-                {
-                    gameplayManager.InitializeBattlePhase();
-                }
-                
-                // Show gameplay UI
-                if (uiManager != null)
-                {
-                    uiManager.ShowGameplayUI();
-                }
-                break;
-        }
-    }
-
-    // Method for the master client to instantiate the networked GameplayManager
-    public void InstantiateNetworkedGameplayManager()
-    {
-        if (!PhotonNetwork.IsMasterClient || !PhotonNetwork.InRoom) return;
-        if (gameplayManagerSpawned) return;
-        
-        Debug.Log("Master client instantiating networked GameplayManager");
-        
-        // Instantiate the GameplayManager prefab through PhotonNetwork
-        GameObject gameplayManagerObj = PhotonNetwork.Instantiate("GameplayManager", Vector3.zero, Quaternion.identity);
-        
-        if (gameplayManagerObj != null)
-        {
-            gameplayManager = gameplayManagerObj.GetComponent<GameplayManager>();
-            gameplayManagerSpawned = true;
-            Debug.Log("GameplayManager instantiated successfully with PhotonView ID: " + 
-                      gameplayManagerObj.GetComponent<PhotonView>().ViewID);
-        }
-        else
-        {
-            Debug.LogError("Failed to instantiate GameplayManager prefab!");
-        }
-    }
-
-    public GameState GetCurrentState()
-    {
-        return currentState;
-    }
-
-    public void ClearPlayers()
-    {
-        players.Clear();
-        Debug.Log("Cleared player list");
-    }
-
-    public void AddPlayer(string playerId, string playerName)
-    {
-        // Check if player already exists
-        if (players.Find(p => p.PlayerId == playerId) != null)
-        {
-            Debug.Log($"Player {playerName} already in list, not adding again");
-            return;
-        }
-        
-        PlayerInfo newPlayer = new PlayerInfo(playerId, playerName);
-        players.Add(newPlayer);
-        Debug.Log($"Added player {playerName} to list, total players: {players.Count}");
-    }
-
-    public void RemovePlayer(string playerId)
-    {
-        players.RemoveAll(p => p.PlayerId == playerId);
-    }
-
-    public void SetPlayerReady(string playerId, bool isReady)
-    {
-        PlayerInfo player = players.Find(p => p.PlayerId == playerId);
-        if (player != null)
-        {
-            player.IsReady = isReady;
-            if (lobbyManager != null)
+            startScreenInstance = Instantiate(startScreenCanvasPrefab);
+            connectButton = startScreenInstance.transform.Find("ConnectButton")?.GetComponent<Button>();
+            if (connectButton != null)
             {
-                lobbyManager.UpdatePlayerReadyStatus(playerId, isReady);
+                connectButton.onClick.AddListener(ConnectToPhoton);
             }
+            else Debug.LogError("ConnectButton not found in StartScreenCanvasPrefab!");
+        }
+        else Debug.LogError("StartScreenCanvasPrefab is not assigned!");
+
+        // Initially hide Lobby & Combat (will be instantiated when needed)
+    }
+
+    #endregion
+
+    #region Photon Connection & Room Logic
+
+    private void ConnectToPhoton()
+    {
+        Debug.Log("Connecting to Photon...");
+        if(connectButton) connectButton.interactable = false;
+        PhotonNetwork.NickName = "Player_" + Random.Range(1000, 9999);
+        PhotonNetwork.ConnectUsingSettings();
+    }
+
+    public override void OnConnectedToMaster()
+    {
+        Debug.Log($"Connected to Master Server. Player Nickname: {PhotonNetwork.NickName}");
+        RoomOptions roomOptions = new RoomOptions { MaxPlayers = 4 }; // Allow up to 4 for future use
+        PhotonNetwork.JoinOrCreateRoom("asd", roomOptions, TypedLobby.Default);
+    }
+
+    public override void OnJoinedRoom()
+    {
+        Debug.Log($"Joined Room: {PhotonNetwork.CurrentRoom.Name}");
+        if (startScreenInstance != null) startScreenInstance.SetActive(false);
+        if (combatInstance != null) combatInstance.SetActive(false); // Ensure combat is hidden
+        ShowLobbyScreen();
+        UpdatePlayerList();
+        SetPlayerReady(false);
+    }
+
+    public override void OnLeftRoom()
+    {
+        Debug.Log("Left Room");
+        if (lobbyInstance != null) Destroy(lobbyInstance); // Clean up instantiated lobby
+        if (combatInstance != null) Destroy(combatInstance); // Clean up instantiated combat
+
+        if (startScreenInstance != null)
+        {
+            startScreenInstance.SetActive(true);
+            if (connectButton != null) connectButton.interactable = true;
+        }
+        // Reset state if necessary
+    }
+
+    public override void OnJoinRoomFailed(short returnCode, string message)
+    {
+        Debug.LogError($"Join Room Failed: ({returnCode}) {message}");
+        if (connectButton != null) connectButton.interactable = true;
+    }
+
+    public override void OnCreateRoomFailed(short returnCode, string message)
+    {
+        Debug.LogError($"Create Room Failed: ({returnCode}) {message}");
+        if (connectButton != null) connectButton.interactable = true;
+    }
+
+    public override void OnPlayerEnteredRoom(Player newPlayer)
+    {
+        Debug.Log($"Player {newPlayer.NickName} entered room.");
+        if (lobbyInstance != null && lobbyInstance.activeSelf) // Only update if in lobby
+        {
+             UpdatePlayerList();
         }
     }
 
-    public bool AreAllPlayersReady()
+    public override void OnPlayerLeftRoom(Player otherPlayer)
     {
-        if (players.Count == 0) return false;
-        return players.TrueForAll(p => p.IsReady);
-    }
-
-    public List<PlayerInfo> GetAllPlayers()
-    {
-        return new List<PlayerInfo>(players);
-    }
-
-    // Start the game when all players are ready
-    public void StartGame()
-    {
-        Debug.Log("StartGame called. IsMasterClient: " + PhotonNetwork.IsMasterClient + ", AreAllPlayersReady: " + AreAllPlayersReady());
-        
-        if (PhotonNetwork.IsMasterClient && AreAllPlayersReady())
+        Debug.Log($"Player {otherPlayer.NickName} left room.");
+        if (lobbyInstance != null && lobbyInstance.activeSelf) // Only update if in lobby
         {
-            // Make sure we have a GameplayManager
-            if (gameplayManager == null && !gameplayManagerSpawned)
+            UpdatePlayerList();
+        }
+        // Handle player leaving during combat later
+    }
+
+    public override void OnPlayerPropertiesUpdate(Player targetPlayer, ExitGames.Client.Photon.Hashtable changedProps)
+    {
+        Debug.Log($"Player {targetPlayer.NickName} properties updated.");
+        if (lobbyInstance != null && lobbyInstance.activeSelf && changedProps.ContainsKey(PLAYER_READY_PROPERTY))
+        {
+            UpdatePlayerList();
+        }
+        // Handle property changes during combat later (e.g., health sync)
+    }
+
+    public override void OnMasterClientSwitched(Player newMasterClient)
+    {
+        Debug.Log($"New Master Client: {newMasterClient.NickName}");
+        if (lobbyInstance != null && lobbyInstance.activeSelf)
+        {
+             UpdateLobbyControls();
+        }
+    }
+
+    #endregion
+
+    #region Lobby UI Logic
+
+    private void ShowLobbyScreen()
+    {
+        if (lobbyInstance == null)
+        {
+            if (lobbyCanvasPrefab != null)
             {
-                Debug.Log("Creating GameplayManager before starting game");
-                InstantiateNetworkedGameplayManager();
+                lobbyInstance = Instantiate(lobbyCanvasPrefab);
+                // Find Lobby elements
+                Transform panelTransform = lobbyInstance.transform.Find("PlayerListPanel");
+                playerListPanel = panelTransform?.gameObject;
+                playerEntryTemplate = panelTransform?.Find("PlayerEntryTemplate")?.gameObject;
+                readyButton = lobbyInstance.transform.Find("ReadyButton")?.GetComponent<Button>();
+                leaveButton = lobbyInstance.transform.Find("LeaveButton")?.GetComponent<Button>();
+                startGameButton = lobbyInstance.transform.Find("StartGameButton")?.GetComponent<Button>();
+
+                // Assign listeners
+                readyButton?.onClick.AddListener(ToggleReadyStatus);
+                leaveButton?.onClick.AddListener(LeaveRoom);
+                startGameButton?.onClick.AddListener(StartGame); // Master client calls this
+
+                if (playerListPanel == null || playerEntryTemplate == null || readyButton == null || leaveButton == null || startGameButton == null)
+                     Debug.LogError("One or more Lobby UI elements not found in LobbyCanvasPrefab!");
                 
-                // Give a moment for network synchronization
-                StartCoroutine(DelayedGameStart());
+                playerEntryTemplate?.SetActive(false);
             }
             else
             {
-                // GameplayManager already exists, go straight to battle
-                SetState(GameState.Battle);
+                Debug.LogError("LobbyCanvasPrefab is not assigned!");
+                return;
             }
         }
+        lobbyInstance.SetActive(true);
+        UpdateLobbyControls();
     }
-    
-    private IEnumerator DelayedGameStart()
+
+    private void UpdatePlayerList()
     {
-        // Wait for GameplayManager to be synchronized across clients
-        yield return new WaitForSeconds(1.0f);
-        
-        // Set game state to battle
-        SetState(GameState.Battle);
-    }
-    
-    // Called when a new networked object is created
-    public void RegisterNetworkedGameplayManager(GameplayManager manager)
-    {
-        Debug.Log("RegisterNetworkedGameplayManager called with manager: " + (manager != null ? manager.name : "null"));
-        
-        // Only set if we don't already have one
-        if (gameplayManager == null)
+        if (playerListPanel == null || playerEntryTemplate == null) return;
+
+        foreach (GameObject entry in playerListEntries) Destroy(entry);
+        playerListEntries.Clear();
+
+        foreach (Player player in PhotonNetwork.PlayerList.OrderBy(p => p.ActorNumber))
         {
-            gameplayManager = manager;
-            Debug.Log("GameplayManager reference updated");
+            GameObject newEntry = Instantiate(playerEntryTemplate, playerListPanel.transform);
+            TextMeshProUGUI textComponent = newEntry.GetComponent<TextMeshProUGUI>();
+            string readyStatus = "";
+            if (player.CustomProperties.TryGetValue(PLAYER_READY_PROPERTY, out object isReadyStatus))
+                readyStatus = (bool)isReadyStatus ? " <color=green>(Ready)</color>" : "";
+            
+            textComponent.text = $"{player.NickName}{(player.IsMasterClient ? " (Host)" : "")}{readyStatus}";
+            newEntry.SetActive(true);
+            playerListEntries.Add(newEntry);
+        }
+        UpdateLobbyControls();
+    }
+
+    private void UpdateLobbyControls()
+    {
+        if (lobbyInstance == null) return;
+        bool allReady = PhotonNetwork.PlayerList.Length > 1 && // Need at least 2 players
+                        PhotonNetwork.PlayerList.All(p => 
+                            p.CustomProperties.TryGetValue(PLAYER_READY_PROPERTY, out object isReady) && (bool)isReady);
+        
+        startGameButton?.gameObject.SetActive(PhotonNetwork.IsMasterClient);
+        if (startGameButton != null) startGameButton.interactable = PhotonNetwork.IsMasterClient && allReady;
+    }
+
+    private void ToggleReadyStatus()
+    {
+        bool currentStatus = false;
+        if (PhotonNetwork.LocalPlayer.CustomProperties.TryGetValue(PLAYER_READY_PROPERTY, out object isReadyStatus))
+            currentStatus = (bool)isReadyStatus;
+        SetPlayerReady(!currentStatus);
+    }
+
+    private void SetPlayerReady(bool isReady)
+    {
+        ExitGames.Client.Photon.Hashtable props = new ExitGames.Client.Photon.Hashtable {{ PLAYER_READY_PROPERTY, isReady }};
+        PhotonNetwork.LocalPlayer.SetCustomProperties(props);
+    }
+
+    private void LeaveRoom()
+    {
+        Debug.Log("Leave Button Clicked");
+        PhotonNetwork.LeaveRoom();
+    }
+
+    #endregion
+
+    #region Game Start & Combat Transition
+
+    private void StartGame()
+    {
+        // Only Master Client can initiate
+        if (!PhotonNetwork.IsMasterClient) return;
+
+        // Check if all players are ready
+        if (!PhotonNetwork.PlayerList.All(p => p.CustomProperties.TryGetValue(PLAYER_READY_PROPERTY, out object isReady) && (bool)isReady))
+        {
+            Debug.LogWarning("Cannot start game, not all players are ready.");
+            return;
+        }
+        // Ensure minimum player count if desired (e.g., 2)
+        if (PhotonNetwork.PlayerList.Length < 2)
+        {
+             Debug.LogWarning("Cannot start game, need at least 2 players.");
+             return;
+        }
+
+        Debug.Log("Master Client is Starting Game...");
+
+        // Prevent others from joining
+        PhotonNetwork.CurrentRoom.IsOpen = false;
+        PhotonNetwork.CurrentRoom.IsVisible = false;
+
+        // Tell all clients to start combat setup via RPC
+        photonView.RPC("RpcStartCombat", RpcTarget.All);
+    }
+
+    [PunRPC]
+    private void RpcStartCombat()
+    {
+        Debug.Log($"RPC: Starting Combat Setup for {PhotonNetwork.LocalPlayer.NickName}");
+
+        // Disable Lobby
+        if (lobbyInstance != null) lobbyInstance.SetActive(false);
+
+        // Enable Combat Screen
+        ShowCombatScreen();
+
+        // Initialize combat state for this player
+        InitializeCombatState();
+    }
+
+    private void ShowCombatScreen()
+    {
+         if (combatInstance == null)
+        {
+            if (combatCanvasPrefab != null)
+            {
+                combatInstance = Instantiate(combatCanvasPrefab);
+                // --- Find Combat UI Elements (Revised for more direct finding) --- 
+                
+                // Find Top-Level Containers
+                Transform topArea = combatInstance.transform.Find("TopArea");
+                Transform playerArea = combatInstance.transform.Find("PlayerArea");
+
+                if (topArea == null || playerArea == null)
+                {
+                    Debug.LogError("Could not find TopArea or PlayerArea in CombatCanvas!");
+                    return;
+                }
+
+                // Find elements within TopArea
+                scoreText = topArea.Find("ScoreText")?.GetComponent<TextMeshProUGUI>();
+                Transform opponentArea = topArea.Find("OpponentPetArea");
+                opponentPetNameText = opponentArea?.Find("OpponentPetNameText")?.GetComponent<TextMeshProUGUI>();
+                opponentPetHealthSlider = opponentArea?.Find("OpponentPetHealthSlider")?.GetComponent<Slider>();
+                opponentPetHealthText = opponentArea?.Find("OpponentPetHealthText")?.GetComponent<TextMeshProUGUI>();
+                opponentPetIntentText = opponentArea?.Find("OpponentPetIntentText")?.GetComponent<TextMeshProUGUI>();
+                
+                Transform ownPetArea = topArea.Find("OwnPetArea");
+                ownPetNameText = ownPetArea?.Find("OwnPetNameText")?.GetComponent<TextMeshProUGUI>();
+                ownPetHealthSlider = ownPetArea?.Find("OwnPetHealthSlider")?.GetComponent<Slider>();
+                ownPetHealthText = ownPetArea?.Find("OwnPetHealthText")?.GetComponent<TextMeshProUGUI>();
+
+                Transform othersAreaTransform = topArea.Find("OthersStatusArea");
+                othersStatusArea = othersAreaTransform?.gameObject;
+                otherPlayerStatusTemplate = othersAreaTransform?.Find("OtherPlayerStatusTemplate")?.gameObject;
+
+                // Find elements within PlayerArea
+                Transform statsRow = playerArea.Find("StatsRow");
+                playerNameText = statsRow?.Find("PlayerNameText")?.GetComponent<TextMeshProUGUI>();
+                playerHealthSlider = statsRow?.Find("PlayerHealthSlider")?.GetComponent<Slider>();
+                playerHealthText = statsRow?.Find("PlayerHealthText")?.GetComponent<TextMeshProUGUI>();
+                
+                Transform handPanelTransform = playerArea.Find("PlayerHandPanel");
+                playerHandPanel = handPanelTransform?.gameObject;
+                cardTemplate = handPanelTransform?.Find("CardTemplate")?.gameObject;
+                
+                Transform bottomBar = playerArea.Find("BottomBar");
+                deckCountText = bottomBar?.Find("DeckCountText")?.GetComponent<TextMeshProUGUI>();
+                discardCountText = bottomBar?.Find("DiscardCountText")?.GetComponent<TextMeshProUGUI>();
+                endTurnButton = bottomBar?.Find("EndTurnButton")?.GetComponent<Button>();
+                
+                // Assign listeners
+                endTurnButton?.onClick.AddListener(EndTurn); 
+
+                 // Validate critical findings 
+                if (playerHandPanel == null || opponentPetNameText == null || endTurnButton == null || cardTemplate == null || scoreText == null)
+                     Debug.LogError("One or more critical Combat UI elements not found in CombatCanvasPrefab!");
+                else 
+                     Debug.Log("Successfully found critical combat UI elements.");
+
+                
+                cardTemplate?.SetActive(false);
+                otherPlayerStatusTemplate?.SetActive(false);
+                othersStatusArea?.SetActive(PhotonNetwork.PlayerList.Length > 2); // Only show for >2 players
+            }
+            else
+            {
+                Debug.LogError("CombatCanvasPrefab is not assigned!");
+                return;
+            }
+        }
+        combatInstance.SetActive(true);
+    }
+
+    private void InitializeCombatState()
+    {
+        Debug.Log("Initializing Combat State...");
+        
+        // Reset scores (example)
+        player1Score = 0;
+        player2Score = 0;
+        UpdateScoreUI();
+
+        // Determine opponent (Simple 2-player logic)
+        opponentPlayer = null;
+        foreach (Player p in PhotonNetwork.PlayerList)
+        {
+            if (p != PhotonNetwork.LocalPlayer)
+            {
+                opponentPlayer = p;
+                break;
+            }
+        }
+
+        if (opponentPlayer == null && PhotonNetwork.PlayerList.Length > 1)
+        {
+            Debug.LogError("Could not determine opponent!");
+            // Fallback or error handling
+        }
+
+        // Initialize Health
+        localPlayerHealth = startingPlayerHealth;
+        localPetHealth = startingPetHealth;
+        opponentPetHealth = startingPetHealth; // Assuming opponent pet has same starting health
+
+        // Setup Initial UI
+        if(playerNameText) playerNameText.text = PhotonNetwork.LocalPlayer.NickName;
+        UpdateHealthUI(); // Call helper to update all health displays
+
+        if (opponentPetNameText) opponentPetNameText.text = opponentPlayer != null ? $"{opponentPlayer.NickName}'s Pet" : "Opponent Pet";
+        if (ownPetNameText) ownPetNameText.text = "Your Pet";
+
+        // Initialize Deck
+        deck = new List<CardData>(starterDeck); // Copy starter deck
+        ShuffleDeck();
+        hand.Clear();
+        discardPile.Clear();
+        UpdateDeckCountUI();
+
+        // Start the first turn
+        StartTurn();
+    }
+
+    #endregion
+
+    #region Combat Turn Logic
+
+    private void StartTurn()
+    {
+        Debug.Log("Starting Player Turn");
+        currentEnergy = startingEnergy;
+        // TODO: Update Energy UI
+
+        DrawHand();
+        UpdateHandUI();
+        UpdateDeckCountUI();
+
+        // TODO: Determine and display opponent pet's intent
+        if(opponentPetIntentText) opponentPetIntentText.text = "Intent: Attack 5"; // Placeholder
+
+        // Make cards playable, etc.
+        if (endTurnButton) endTurnButton.interactable = true;
+    }
+
+    private void EndTurn()
+    {
+        Debug.Log("Ending Player Turn");
+        if (endTurnButton) endTurnButton.interactable = false; // Prevent double clicks
+
+        // 1. Discard Hand
+        DiscardHand();
+        UpdateHandUI(); // Clear hand display
+        UpdateDeckCountUI();
+
+        // 2. Opponent Pet Acts (Placeholder)
+        Debug.Log("Opponent Pet acts...");
+        // --- TODO: Implement Pet AI based on intent --- 
+        // Example: Apply damage to player
+        // localPlayerHealth -= 5; 
+        // UpdateHealthUI();
+
+        // 3. Check End Conditions (Placeholders)
+        // if (opponentPetHealth <= 0) { HandleCombatVictory(); return; } 
+        // if (localPlayerHealth <= 0) { HandleCombatDefeat(); return; }
+
+        // 4. Start Next Player Turn
+        StartTurn();
+    }
+
+    private void DrawHand()
+    {
+        hand.Clear();
+        for (int i = 0; i < cardsToDraw; i++)
+        {
+            DrawCard();
         }
     }
-    
-    // Override OnJoinedRoom to handle room joining logic
-    public override void OnJoinedRoom()
+
+    private void DrawCard()
     {
-        Debug.Log("GameManager.OnJoinedRoom called");
-        
-        // If we're the master client (room creator), we'll create GameplayManager when all players are ready
-        if (PhotonNetwork.IsMasterClient)
+        if (deck.Count == 0)
         {
-            Debug.Log("I am master client, will create GameplayManager when game starts");
+            if (discardPile.Count == 0)
+            {
+                Debug.Log("No cards left to draw!");
+                return; // Out of cards
+            }
+            ReshuffleDiscardPile();
         }
-        
-        base.OnJoinedRoom();
-    }
-    
-    // Helper methods to access managers
-    public NetworkManager GetNetworkManager()
-    {
-        return networkManager;
-    }
-    
-    public UIManager GetUIManager()
-    {
-        return uiManager;
-    }
-    
-    public LobbyManager GetLobbyManager()
-    {
-        return lobbyManager;
-    }
-    
-    public GameplayManager GetGameplayManager()
-    {
-        return gameplayManager;
-    }
-}
 
-// Class to store player information
-public class PlayerInfo
-{
-    public string PlayerId { get; private set; }
-    public string PlayerName { get; private set; }
-    public bool IsReady { get; set; }
-
-    public PlayerInfo(string id, string name)
-    {
-        PlayerId = id;
-        PlayerName = name;
-        IsReady = false;
+        CardData drawnCard = deck[0];
+        deck.RemoveAt(0);
+        hand.Add(drawnCard);
     }
-}
+
+    private void DiscardHand()
+    {
+        discardPile.AddRange(hand);
+        hand.Clear();
+    }
+
+    private void ReshuffleDiscardPile()
+    {
+        Debug.Log("Reshuffling discard pile into deck.");
+        deck.AddRange(discardPile);
+        discardPile.Clear();
+        ShuffleDeck();
+    }
+
+    private void ShuffleDeck()
+    {
+        System.Random rng = new System.Random();
+        int n = deck.Count;
+        while (n > 1)
+        {
+            n--;
+            int k = rng.Next(n + 1);
+            CardData value = deck[k];
+            deck[k] = deck[n];
+            deck[n] = value;
+        }
+        Debug.Log("Deck shuffled.");
+    }
+
+    // --- TODO: Implement Card Playing Logic --- 
+    // void PlayCard(CardData card) { ... }
+
+    #endregion
+
+    #region Combat UI Updates
+
+    private void UpdateHealthUI()
+    {
+        // Player Health
+        if (playerHealthSlider) playerHealthSlider.value = (float)localPlayerHealth / startingPlayerHealth;
+        if (playerHealthText) playerHealthText.text = $"{localPlayerHealth} / {startingPlayerHealth}";
+
+        // Own Pet Health
+        if (ownPetHealthSlider) ownPetHealthSlider.value = (float)localPetHealth / startingPetHealth;
+        if (ownPetHealthText) ownPetHealthText.text = $"{localPetHealth} / {startingPetHealth}";
+
+        // Opponent Pet Health
+        if (opponentPetHealthSlider) opponentPetHealthSlider.value = (float)opponentPetHealth / startingPetHealth;
+        if (opponentPetHealthText) opponentPetHealthText.text = $"{opponentPetHealth} / {startingPetHealth}";
+
+        // --- TODO: Update Other Players Status UI (if > 2 players) --- 
+    }
+
+    private void UpdateScoreUI()
+    {
+        if (scoreText)
+        {
+            // Basic 2-player score display
+            scoreText.text = $"Score: You: {player1Score} / Opp: {player2Score}"; // Adjust based on who is P1/P2
+        }
+    }
+
+    private void UpdateHandUI()
+    {
+        if (playerHandPanel == null || cardTemplate == null) return;
+
+        // Clear existing card visuals
+        foreach (Transform child in playerHandPanel.transform)
+        {
+            if (child.gameObject != cardTemplate) // Don't destroy the template itself
+            { 
+                Destroy(child.gameObject);
+            }
+        }
+
+        // Instantiate new card visuals for cards in hand
+        foreach (CardData card in hand)
+        {
+            GameObject cardGO = Instantiate(cardTemplate, playerHandPanel.transform);
+            
+            // --- Populate Card Visuals (Updated for new structure) --- 
+            Transform headerPanel = cardGO.transform.Find("HeaderPanel");
+            Transform descPanel = cardGO.transform.Find("DescPanel");
+            Transform artPanel = cardGO.transform.Find("ArtPanel"); // Optional
+
+            TextMeshProUGUI nameText = headerPanel?.Find("CardNameText")?.GetComponent<TextMeshProUGUI>();
+            TextMeshProUGUI costText = headerPanel?.Find("CostText")?.GetComponent<TextMeshProUGUI>();
+            TextMeshProUGUI descText = descPanel?.Find("CardDescText")?.GetComponent<TextMeshProUGUI>();
+            Image artImage = artPanel?.GetComponent<Image>(); // Optional
+
+            if (nameText != null) nameText.text = card.cardName;
+            if (costText != null) costText.text = card.cost.ToString();
+            if (descText != null) descText.text = card.description;
+            // if (artImage != null) { /* Load/assign art here... */ }
+            
+            // TODO: Add Button listener for playing the card (pass 'card' data)
+            // Button cardButton = cardGO.GetComponent<Button>(); 
+            // if (cardButton != null) cardButton.onClick.AddListener(() => PlayCard(card));
+
+            cardGO.SetActive(true);
+        }
+    }
+
+    private void UpdateDeckCountUI()
+    {
+         if(deckCountText) deckCountText.text = $"Deck: {deck.Count}";
+         if(discardCountText) discardCountText.text = $"Discard: {discardPile.Count}";
+    }
+
+    #endregion
+} 

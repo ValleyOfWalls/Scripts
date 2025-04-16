@@ -1,0 +1,64 @@
+Scene: SampleScene
+--------------------
+- Main Camera
+- EventSystem
+- GameManager
+- CombatCanvas
+    - ScoreText
+    - PlayerArea
+        - PlayerNameText
+        - PlayerHealthSlider
+            - Background
+            - Fill Area
+                - Fill
+            - Handle Slide Area
+                - Handle
+        - PlayerHealthText
+        - PlayerHandPanel
+            - CardTemplate
+                - CardNameText
+        - DeckCountText
+        - DiscardCountText
+        - EndTurnButton
+            - Text (TMP)
+    - OpponentPetArea
+        - OpponentPetNameText
+        - OpponentPetHealthSlider
+            - Background
+            - Fill Area
+                - Fill
+            - Handle Slide Area
+                - Handle
+        - OpponentPetHealthText
+        - OpponentPetIntentText
+    - OwnPetArea
+        - OwnPetNameText
+        - OwnPetHealthSlider
+            - Background
+            - Fill Area
+                - Fill
+            - Handle Slide Area
+                - Handle
+        - OwnPetHealthText
+    - OthersStatusArea
+        - OtherStatusTitle
+        - OtherPlayerStatusTemplate
+- DraftCanvas
+    - DraftTitleText
+    - DraftOptionsPanel
+        - OptionTemplate
+            - Text (TMP)
+            - OptionText
+    - TimerText
+- LobbyCanvas
+    - LobbyTitleText
+    - PlayerListPanel
+        - PlayerEntryTemplate
+    - ReadyButton
+        - Text (TMP)
+    - StartGameButton
+        - Text (TMP)
+- StartScreenCanvas
+    - TitleText
+    - ConnectButton
+        - Text (TMP)

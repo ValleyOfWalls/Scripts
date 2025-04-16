@@ -1,0 +1,85 @@
+Prefab Details Export
+=====================
+Search Folders: Assets/Prefabs
+
+--- Prefab: Assets/Prefabs/CardPrefab.prefab ---
+- CardPrefab
+    - Visual (Components: MeshFilter, BoxCollider, MeshRenderer)
+
+--- Prefab: Assets/Prefabs/PetPrefab.prefab ---
+- PetPrefab (Components: PhotonView)
+    - Visual (Components: MeshFilter, BoxCollider, MeshRenderer)
+
+--- Prefab: Assets/Prefabs/PlayerPrefab.prefab ---
+- PlayerPrefab (Components: PhotonView)
+    - Visual (Components: MeshFilter, BoxCollider, MeshRenderer)
+
+--- Prefab: Assets/Prefabs/UI/CombatCanvas.prefab ---
+- CombatCanvas (Components: Canvas, CanvasScaler, GraphicRaycaster)
+    - ScoreText (Components: CanvasRenderer, TextMeshProUGUI)
+    - PlayerArea (Components: CanvasRenderer, Image)
+        - PlayerNameText (Components: CanvasRenderer, TextMeshProUGUI)
+        - PlayerHealthSlider (Components: Slider)
+            - Background (Components: CanvasRenderer, Image)
+            - Fill Area
+                - Fill (Components: CanvasRenderer, Image)
+            - Handle Slide Area
+                - Handle (Components: CanvasRenderer, Image)
+        - PlayerHealthText (Components: CanvasRenderer, TextMeshProUGUI)
+        - PlayerHandPanel (Components: CanvasRenderer, Image, HorizontalLayoutGroup)
+            - CardTemplate (Components: CanvasRenderer, Image)
+                - CardNameText (Components: CanvasRenderer, TextMeshProUGUI)
+        - DeckCountText (Components: CanvasRenderer, TextMeshProUGUI)
+        - DiscardCountText (Components: CanvasRenderer, TextMeshProUGUI)
+        - EndTurnButton (Components: CanvasRenderer, Image, Button)
+            - Text (TMP) (Components: CanvasRenderer, TextMeshProUGUI)
+    - OpponentPetArea (Components: CanvasRenderer, Image)
+        - OpponentPetNameText (Components: CanvasRenderer, TextMeshProUGUI)
+        - OpponentPetHealthSlider (Components: Slider)
+            - Background (Components: CanvasRenderer, Image)
+            - Fill Area
+                - Fill (Components: CanvasRenderer, Image)
+            - Handle Slide Area
+                - Handle (Components: CanvasRenderer, Image)
+        - OpponentPetHealthText (Components: CanvasRenderer, TextMeshProUGUI)
+        - OpponentPetIntentText (Components: CanvasRenderer, TextMeshProUGUI)
+    - OwnPetArea (Components: CanvasRenderer, Image)
+        - OwnPetNameText (Components: CanvasRenderer, TextMeshProUGUI)
+        - OwnPetHealthSlider (Components: Slider)
+            - Background (Components: CanvasRenderer, Image)
+            - Fill Area
+                - Fill (Components: CanvasRenderer, Image)
+            - Handle Slide Area
+                - Handle (Components: CanvasRenderer, Image)
+        - OwnPetHealthText (Components: CanvasRenderer, TextMeshProUGUI)
+    - OthersStatusArea (Components: CanvasRenderer, Image, VerticalLayoutGroup)
+        - OtherStatusTitle (Components: CanvasRenderer, TextMeshProUGUI)
+        - OtherPlayerStatusTemplate (Components: CanvasRenderer, TextMeshProUGUI)
+
+--- Prefab: Assets/Prefabs/UI/DraftCanvas.prefab ---
+- DraftCanvas (Components: Canvas, CanvasScaler, GraphicRaycaster)
+    - DraftTitleText (Components: CanvasRenderer, TextMeshProUGUI)
+    - DraftOptionsPanel (Components: CanvasRenderer, Image, GridLayoutGroup)
+        - OptionTemplate (Components: CanvasRenderer, Image, Button)
+            - Text (TMP) (Components: CanvasRenderer, TextMeshProUGUI)
+            - OptionText (Components: CanvasRenderer, TextMeshProUGUI)
+    - TimerText (Components: CanvasRenderer, TextMeshProUGUI)
+
+--- Prefab: Assets/Prefabs/UI/LobbyCanvas.prefab ---
+- LobbyCanvas (Components: Canvas, CanvasScaler, GraphicRaycaster)
+    - LobbyTitleText (Components: CanvasRenderer, TextMeshProUGUI)
+    - PlayerListPanel (Components: CanvasRenderer, Image, VerticalLayoutGroup, ContentSizeFitter)
+        - PlayerEntryTemplate (Components: CanvasRenderer, TextMeshProUGUI)
+    - ReadyButton (Components: CanvasRenderer, Image, Button)
+        - Text (TMP) (Components: CanvasRenderer, TextMeshProUGUI)
+    - StartGameButton (Components: CanvasRenderer, Image, Button)
+        - Text (TMP) (Components: CanvasRenderer, TextMeshProUGUI)
+    - LeaveButton (Components: CanvasRenderer, Image, Button)
+        - Text (TMP) (Components: CanvasRenderer, TextMeshProUGUI)
+
+--- Prefab: Assets/Prefabs/UI/StartScreenCanvas.prefab ---
+- StartScreenCanvas (Components: Canvas, CanvasScaler, GraphicRaycaster)
+    - TitleText (Components: CanvasRenderer, TextMeshProUGUI)
+    - ConnectButton (Components: CanvasRenderer, Image, Button)
+        - Text (TMP) (Components: CanvasRenderer, TextMeshProUGUI)
+
