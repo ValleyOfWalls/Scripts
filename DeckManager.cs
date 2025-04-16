@@ -7,7 +7,7 @@ public class DeckManager : MonoBehaviourPunCallbacks
 {
     // References to related managers
     private GameplayManager gameplayManager;
-    private UIManager uiManager;
+    private CardUIManager cardUIManager;
     
     // Player deck tracking
     private Dictionary<int, List<Card>> playerDecks = new Dictionary<int, List<Card>>();
@@ -15,7 +15,6 @@ public class DeckManager : MonoBehaviourPunCallbacks
     private void Start()
     {
         gameplayManager = FindObjectOfType<GameplayManager>();
-        uiManager = FindObjectOfType<UIManager>();
     }
     
     public void RegisterPlayerDeck(int playerId, List<Card> initialDeck)
@@ -43,9 +42,8 @@ public class DeckManager : MonoBehaviourPunCallbacks
         }
     }
     
-    // This method has been updated to use UIManager instead of CardUIManager
-    public void SetupUIManager(UIManager uiMgr)
+    public void SetupCardUIManager(CardUIManager cardUIMgr)
     {
-        uiManager = uiMgr;
+        cardUIManager = cardUIMgr;
     }
 }

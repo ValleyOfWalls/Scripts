@@ -13,7 +13,6 @@ public class MonsterController : MonoBehaviourPunCallbacks, IPunObservable
     // References
     [Header("References")]
     private GameplayManager gameplayManager;
-    private UIManager uiManager;
     private GameObject monsterUICanvas;
     private PlayerController owningPlayer;
     
@@ -87,9 +86,6 @@ public class MonsterController : MonoBehaviourPunCallbacks, IPunObservable
         
         // Try to find required objects with multiple fallbacks
         TryGetGameplayManager();
-        
-        // Find UIManager
-        uiManager = FindObjectOfType<UIManager>();
         
         // Generate a unique name if not set
         if (string.IsNullOrEmpty(monsterName) || monsterName == "Pet Monster")
@@ -407,67 +403,70 @@ public class MonsterController : MonoBehaviourPunCallbacks, IPunObservable
     }
     
     [PunRPC]
-    public void TakeDamage(int damage, string sourceId)
+public void TakeDamage(int damage, string sourceId)
+{
+    // Calculate actual damage after block and modifiers
+    int actualDamage = Mathf.Max(0, damage - block);
+    
+    // Reduce block
+    block = Mathf.Max(0, block - damage);
+    
+    // Apply damage to health
+    currentHealth = Mathf.Max(0, currentHealth - actualDamage);
+    
+    // Check if monster is defeated
+    if (currentHealth <= 0)
     {
-        // Calculate actual damage after block and modifiers
-        int actualDamage = Mathf.Max(0, damage - block);
-        
-        // Reduce block
-        block = Mathf.Max(0, block - damage);
-        
-        // Apply damage to health
-        currentHealth = Mathf.Max(0, currentHealth - actualDamage);
-        
-        // Check if monster is defeated
-        if (currentHealth <= 0)
-        {
-            photonView.RPC("RPC_MonsterDefeated", RpcTarget.All);
-        }
-        
-        // Update UI
-        UpdateUI();
-        
-        // Force UI update across the network for battle overview
-        if (uiManager != null)
-        {
-            uiManager.UpdateBattleCard(photonView.Owner.ActorNumber, false, currentHealth, maxHealth);
-        }
-        
-        // Also update UI if it exists
+        photonView.RPC("RPC_MonsterDefeated", RpcTarget.All);
+    }
+    
+    // Update UI
+    UpdateUI();
+    
+    // Force UI update across the network for battle overview
+    BattleUIManager battleUIManager = FindObjectOfType<BattleUIManager>();
+    if (battleUIManager != null)
+    {
+        battleUIManager.UpdateBattleCard(photonView.Owner.ActorNumber, false, currentHealth, maxHealth);
+    }
+    
+    // Also update BattleUI if it exists
+    BattleUI battleUI = FindObjectOfType<BattleUI>();
+    if (battleUI != null)
+    {
         // This will update UI for all players who have this monster as opponent
         photonView.RPC("RPC_UpdateMonsterUI", RpcTarget.All, currentHealth, maxHealth);
     }
+}
     
-    [PunRPC]
-    public void RPC_UpdateMonsterUI(int health, int maxHealth)
+[PunRPC]
+public void RPC_UpdateMonsterUI(int health, int maxHealth)
+{
+    // This ensures all clients update their UI representation of this monster
+    BattleUI battleUI = FindObjectOfType<BattleUI>();
+    if (battleUI != null)
     {
-        // This ensures all clients update their UI representation of this monster
-        if (uiManager != null)
+        // Check if this is the opponent monster for the local player
+        PlayerController localPlayer = null;
+        foreach (PlayerController player in FindObjectsOfType<PlayerController>())
         {
-            // Check if this is the opponent monster for the local player
-            PlayerController localPlayer = null;
-            foreach (PlayerController player in FindObjectsOfType<PlayerController>())
+            if (player.photonView.IsMine)
             {
-                if (player.photonView.IsMine)
-                {
-                    localPlayer = player;
-                    break;
-                }
-            }
-            
-            if (localPlayer != null)
-            {
-                if (localPlayer.GetOpponentMonster() == this)
-                {
-                    uiManager.UpdateMonsterStats(this);
-                }
-                else if (localPlayer.GetPetMonster() == this)
-                {
-                    uiManager.UpdatePetStats(this);
-                }
+                localPlayer = player;
+                break;
             }
         }
+        
+        if (localPlayer != null && localPlayer.GetOpponentMonster() == this)
+        {
+            battleUI.UpdateMonsterStats(this);
+        }
+        else if (localPlayer != null && localPlayer.GetPetMonster() == this)
+        {
+            battleUI.UpdatePetStats(this);
+        }
     }
+}
 
     [PunRPC]
     public void Heal(int amount)
@@ -509,33 +508,35 @@ public class MonsterController : MonoBehaviourPunCallbacks, IPunObservable
     }
 
     // Add this method to MonsterController.cs
-    public void ApplyDamage(int damage, string sourceId)
-    {
-        // Call RPC to ensure damage is applied on all clients
-        photonView.RPC("TakeDamage", RpcTarget.All, damage, sourceId);
-        
-        Debug.Log($"ApplyDamage called on {MonsterName} for {damage} damage from source {sourceId}");
-    }
+public void ApplyDamage(int damage, string sourceId)
+{
+    // Call RPC to ensure damage is applied on all clients
+    photonView.RPC("TakeDamage", RpcTarget.All, damage, sourceId);
+    
+    Debug.Log($"ApplyDamage called on {MonsterName} for {damage} damage from source {sourceId}");
+}
+
     
     public void TakeTurn()
-    {
-        if (!photonView.IsMine || !isInCombat || opponentPlayer == null) return;
-        
-        Debug.Log($"Monster {MonsterName} taking turn against player {opponentPlayer.PlayerName}");
-        
-        // Execute the next action
-        ExecuteAction(nextAction);
-        
-        // Decide on the next action for the next turn
-        DecideNextAction();
-        
-        // Reset block at end of turn
-        block = 0;
-        
-        // Notify game manager that our turn is over
-        if (gameplayManager != null)
-            gameplayManager.MonsterEndedTurn();
-    }
+{
+    if (!photonView.IsMine || !isInCombat || opponentPlayer == null) return;
+    
+    Debug.Log($"Monster {MonsterName} taking turn against player {opponentPlayer.PlayerName}");
+    
+    // Execute the next action
+    ExecuteAction(nextAction);
+    
+    // Decide on the next action for the next turn
+    DecideNextAction();
+    
+    // Reset block at end of turn
+    block = 0;
+    
+    // Notify game manager that our turn is over
+    if (gameplayManager != null)
+        gameplayManager.MonsterEndedTurn();
+}
+
     
     #endregion
     

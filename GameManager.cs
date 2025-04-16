@@ -12,11 +12,12 @@ public class GameManager : MonoBehaviourPunCallbacks
     // References to other managers
     [SerializeField] private NetworkManager networkManager;
     [SerializeField] private UIManager uiManager;
+    [SerializeField] private LobbyManager lobbyManager;
     [SerializeField] private GameplayManager gameplayManager;
-    [SerializeField] private DeckManager deckManager;
+    [SerializeField] private BattleUIManager battleUIManager;
 
     // Game state
-    public enum GameState { MainMenu, Connecting, Lobby, Draft, Battle }
+    public enum GameState { Connecting, Lobby, Draft, Battle }
     private GameState currentState;
 
     // Player information
@@ -58,14 +59,21 @@ public class GameManager : MonoBehaviourPunCallbacks
             uiManager = uiObj.AddComponent<UIManager>();
         }
         
-        if (deckManager == null)
+        if (lobbyManager == null)
         {
-            GameObject deckManagerObj = new GameObject("DeckManager");
-            deckManagerObj.transform.SetParent(transform);
-            deckManager = deckManagerObj.AddComponent<DeckManager>();
+            GameObject lobbyObj = new GameObject("LobbyManager");
+            lobbyObj.transform.SetParent(transform);
+            lobbyManager = lobbyObj.AddComponent<LobbyManager>();
         }
 
-        // Set initial game state to MainMenu
+        if (battleUIManager == null)
+        {
+            GameObject battleUIMgrObj = new GameObject("BattleUIManager");
+            battleUIMgrObj.transform.SetParent(transform);
+            battleUIManager = battleUIMgrObj.AddComponent<BattleUIManager>();
+        }
+
+        // Set initial game state
         StartCoroutine(DelayedStateChange());
     }
 
@@ -75,7 +83,7 @@ public class GameManager : MonoBehaviourPunCallbacks
         yield return null;
         
         // Set initial game state
-        SetState(GameState.MainMenu);
+        SetState(GameState.Connecting);
     }
 
     public void SetState(GameState newState)
@@ -85,13 +93,6 @@ public class GameManager : MonoBehaviourPunCallbacks
         
         switch (currentState)
         {
-            case GameState.MainMenu:
-                if (uiManager != null)
-                {
-                    uiManager.ShowMainMenuUI();
-                }
-                break;
-                
             case GameState.Connecting:
                 if (networkManager != null)
                 {
@@ -100,9 +101,9 @@ public class GameManager : MonoBehaviourPunCallbacks
                 break;
                 
             case GameState.Lobby:
-                if (uiManager != null)
+                if (lobbyManager != null)
                 {
-                    uiManager.ShowLobbyUI();
+                    lobbyManager.InitializeLobby();
                 }
                 break;
                 
@@ -188,9 +189,9 @@ public class GameManager : MonoBehaviourPunCallbacks
         if (player != null)
         {
             player.IsReady = isReady;
-            if (uiManager != null)
+            if (lobbyManager != null)
             {
-                uiManager.UpdatePlayerReadyStatus(playerId, isReady);
+                lobbyManager.UpdatePlayerReadyStatus(playerId, isReady);
             }
         }
     }
@@ -277,20 +278,14 @@ public class GameManager : MonoBehaviourPunCallbacks
         return uiManager;
     }
     
+    public LobbyManager GetLobbyManager()
+    {
+        return lobbyManager;
+    }
+    
     public GameplayManager GetGameplayManager()
     {
         return gameplayManager;
-    }
-    
-    public DeckManager GetDeckManager()
-    {
-        return deckManager;
-    }
-    
-    // Method to initiate connection to Photon
-    public void StartConnection()
-    {
-        SetState(GameState.Connecting);
     }
 }
 
