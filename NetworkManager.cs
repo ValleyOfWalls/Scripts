@@ -15,6 +15,12 @@ public class NetworkManager : MonoBehaviourPunCallbacks
     // Flag to check if connection is in progress
     private bool isConnecting = false;
 
+    // Fields for deferred room creation
+    private bool _shouldCreateRoomAfterConnect = false;
+    private string _pendingRoomName;
+    private string _pendingPlayerName;
+    private RoomOptions _pendingRoomOptions;
+
     private void Start()
     {
         // Make sure we have references
@@ -94,7 +100,7 @@ public class NetworkManager : MonoBehaviourPunCallbacks
             roomName = "Room" + Random.Range(1000, 9999); // Random room name
         }
 
-        // Set player nickname
+        // Set player nickname - Do this regardless of connection state
         PhotonNetwork.NickName = playerName;
 
         // Create room options
@@ -107,7 +113,30 @@ public class NetworkManager : MonoBehaviourPunCallbacks
             PublishUserId = true
         };
 
-        // Create the room
+        // Check if connected and ready
+        if (!PhotonNetwork.IsConnectedAndReady)
+        {
+            Debug.LogWarning("Not connected to Master Server yet. Will create room after connecting.");
+            _shouldCreateRoomAfterConnect = true;
+            _pendingRoomName = roomName;
+            _pendingPlayerName = playerName; // NickName is already set, but store for clarity/logging if needed
+            _pendingRoomOptions = roomOptions;
+
+            // If not even connected initially, start the connection process
+            if (!PhotonNetwork.IsConnected && !isConnecting)
+            {
+                Connect(); // Assuming Connect handles the UI updates
+            }
+            // If connecting or connected but not ready, show appropriate UI
+            else if (uiManager != null)
+            {
+                 uiManager.ShowConnectingUI("Connecting to Master...");
+            }
+            return; // Wait for OnConnectedToMaster callback
+        }
+
+
+        // Create the room directly if already connected and ready
         Debug.Log($"Creating room: {roomName}");
         PhotonNetwork.CreateRoom(roomName, roomOptions);
         
@@ -164,14 +193,36 @@ public class NetworkManager : MonoBehaviourPunCallbacks
         Debug.Log("Connected to Master Server");
         isConnecting = false;
         
-        // Go to main menu after connection - Changed to maintain proper flow
-        if (GameManager.Instance != null)
+        // Check if we need to create a room
+        if (_shouldCreateRoomAfterConnect)
         {
-            GameManager.Instance.SetState(GameManager.GameState.MainMenu);
+            Debug.Log($"Connected to Master. Proceeding to create room: {_pendingRoomName}");
+            PhotonNetwork.CreateRoom(_pendingRoomName, _pendingRoomOptions);
+            _shouldCreateRoomAfterConnect = false; // Reset flag
+
+            if (uiManager != null)
+            {
+                 uiManager.ShowConnectingUI("Creating room..."); // Update UI
+            }
         }
         else
         {
-            Debug.LogError("GameManager.Instance is null in OnConnectedToMaster");
+            // Original behavior: Go to main menu if not creating a room
+            if (GameManager.Instance != null)
+            {
+                 // Check current state? Or always go to main menu? Let's assume main menu for now.
+                 // If the user was trying to JOIN, we'd need different logic here.
+                 // For now, creating a room implies starting from the main menu flow.
+                GameManager.Instance.SetState(GameManager.GameState.MainMenu);
+                if (uiManager != null)
+                {
+                    uiManager.ShowMainMenuUI(); // Ensure correct UI is shown
+                }
+            }
+            else
+            {
+                Debug.LogError("GameManager.Instance is null in OnConnectedToMaster");
+            }
         }
     }
 
@@ -321,16 +372,13 @@ public class NetworkManager : MonoBehaviourPunCallbacks
 
     public override void OnCreateRoomFailed(short returnCode, string message)
     {
-        Debug.LogError($"Room creation failed: {message}");
-        
+        Debug.LogError($"Create Room Failed: {message} (Code: {returnCode})");
+        isConnecting = false; // Should reset connecting flags here too potentially
+        _shouldCreateRoomAfterConnect = false; // Reset flag on failure
+
         if (uiManager != null)
         {
-            uiManager.ShowErrorUI($"Room creation failed: {message}");
-        }
-        
-        if (GameManager.Instance != null)
-        {
-            GameManager.Instance.SetState(GameManager.GameState.MainMenu);
+            uiManager.ShowErrorUI($"Failed to create room: {message}");
         }
     }
 

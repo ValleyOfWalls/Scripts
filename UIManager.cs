@@ -579,23 +579,11 @@ public class UIManager : MonoBehaviour
         }
         
         string playerName = nameInput != null ? nameInput.text : GenerateRandomName();
-        string roomCode = roomInput != null ? roomInput.text : "asd";
+        string roomCode = roomInput != null ? roomInput.text : ""; // Default to empty for CreateRoom
         
-        // Check if connected first, if not, connect
-        if (!networkManager.IsConnected())
-        {
-            // Start connection first, then create room when connected
-            if (GameManager.Instance != null)
-            {
-                GameManager.Instance.StartConnection();
-                StartCoroutine(CreateRoomWhenConnected(roomCode, playerName));
-            }
-        }
-        else
-        {
-            // Already connected, create directly
-            networkManager.CreateRoom(roomCode, playerName);
-        }
+        // Directly call NetworkManager.CreateRoom
+        // NetworkManager will handle the connection state check and deferred creation
+        networkManager.CreateRoom(roomCode, playerName);
     });
 }
 
@@ -612,22 +600,6 @@ public class UIManager : MonoBehaviour
     if (networkManager != null && PhotonNetwork.IsConnectedAndReady)
     {
         networkManager.JoinRoom(roomCode, playerName);
-    }
-}
-
-private IEnumerator CreateRoomWhenConnected(string roomCode, string playerName)
-{
-    // Wait until connected to Master Server specifically
-    while (networkManager != null && 
-          (!networkManager.IsConnected() || !PhotonNetwork.IsConnectedAndReady))
-    {
-        yield return new WaitForSeconds(0.5f);
-    }
-    
-    // Create room when connected to Master
-    if (networkManager != null && PhotonNetwork.IsConnectedAndReady)
-    {
-        networkManager.CreateRoom(roomCode, playerName);
     }
 }
 
@@ -1167,19 +1139,23 @@ private IEnumerator CreateRoomWhenConnected(string roomCode, string playerName)
     
     public void ShowLobbyUI()
     {
-        Debug.Log("Showing Lobby UI");
         HideAllPanels();
-        
-        // Make sure LobbyManager has initialized the lobby panel
-        if (lobbyPanel == null || playerListContent == null)
-        {
-            CreateLobbyUI();
-        }
-        
         if (lobbyPanel != null)
         {
             lobbyPanel.SetActive(true);
             UpdateLobbyUI();
+
+            // Ensure gameplay related canvases (if they exist and are known) are off
+            // Assuming PlayerUICanvas and MonsterUICanvas are fields in UIManager or accessible
+            // You might need to add references to these if they aren't already present
+            // Example: Assuming 'gameplayPanel' holds these UI elements or they are separate GameObjects
+            if (gameplayPanel != null) gameplayPanel.SetActive(false); // Hide the main gameplay container
+            if (battlePanel != null) battlePanel.SetActive(false); // Hide the specific battle UI container
+            // If PlayerUICanvas and MonsterUICanvas are separate top-level objects, find and disable them:
+            // GameObject playerUICanvas = GameObject.Find("PlayerUICanvas"); // Example find logic
+            // if (playerUICanvas != null) playerUICanvas.SetActive(false);
+            // GameObject monsterUICanvas = GameObject.Find("MonsterUICanvas"); // Example find logic
+            // if (monsterUICanvas != null) monsterUICanvas.SetActive(false);
         }
         else
         {
