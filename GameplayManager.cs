@@ -38,22 +38,11 @@ public class GameplayManager : MonoBehaviourPunCallbacks, IPunObservable
     private Dictionary<int, List<Upgrade>> draftQueues = new Dictionary<int, List<Upgrade>>();
     private List<int> playersFinishedDraft = new List<int>();
     
-    // UI references
-    [Header("UI References")]
-    private GameObject phaseAnnouncementPanel;
-    private TextMeshProUGUI phaseAnnouncementText;
-    private GameObject gameOverPanel;
-    private TextMeshProUGUI winnerText;
-    private GameObject draftPanel;
-    
     // References to other managers
     [Header("Managers")]
     private UIManager uiManager;
     private NetworkManager networkManager;
     private DeckManager deckManager;
-    private CardUIManager cardUIManager;
-    private BattleUIManager battleUIManager;
-    private BattleUI battleUI;
     
     // Flag to track prefab spawning
     private bool hasSpawnedPrefabs = false;
@@ -76,73 +65,42 @@ public class GameplayManager : MonoBehaviourPunCallbacks, IPunObservable
     #region Unity and Photon Callbacks
     
     private void Awake()
-{
-    // Verify that we have a PhotonView component
-    PhotonView photonView = GetComponent<PhotonView>();
-    if (photonView == null)
     {
-        Debug.LogError("GameplayManager prefab missing PhotonView component!");
-        return;
+        // Verify that we have a PhotonView component
+        PhotonView photonView = GetComponent<PhotonView>();
+        if (photonView == null)
+        {
+            Debug.LogError("GameplayManager prefab missing PhotonView component!");
+            return;
+        }
+        
+        Debug.Log("GameplayManager initialized with PhotonView ID: " + photonView.ViewID);
+        
+        // Register this GameplayManager with the GameManager
+        if (GameManager.Instance != null)
+        {
+            GameManager.Instance.RegisterNetworkedGameplayManager(this);
+        }
+        else
+        {
+            Debug.LogError("GameManager.Instance is null in GameplayManager.Awake");
+        }
+        
+        // Get references to other managers
+        uiManager = FindObjectOfType<UIManager>();
+        networkManager = FindObjectOfType<NetworkManager>();
+        
+        // Create required managers if they don't exist
+        if (deckManager == null)
+        {
+            GameObject deckMgrObj = new GameObject("DeckManager");
+            deckMgrObj.transform.SetParent(transform);
+            deckManager = deckMgrObj.AddComponent<DeckManager>();
+        }
     }
-    
-    Debug.Log("GameplayManager initialized with PhotonView ID: " + photonView.ViewID);
-    
-    // Register this GameplayManager with the GameManager
-    if (GameManager.Instance != null)
-    {
-        GameManager.Instance.RegisterNetworkedGameplayManager(this);
-    }
-    else
-    {
-        Debug.LogError("GameManager.Instance is null in GameplayManager.Awake");
-    }
-    
-    // Get references to other managers
-    uiManager = FindObjectOfType<UIManager>();
-    networkManager = FindObjectOfType<NetworkManager>();
-    
-    // Create required managers if they don't exist
-    if (deckManager == null)
-    {
-        GameObject deckMgrObj = new GameObject("DeckManager");
-        deckMgrObj.transform.SetParent(transform);
-        deckManager = deckMgrObj.AddComponent<DeckManager>();
-    }
-    
-    if (cardUIManager == null)
-    {
-        GameObject cardUIMgrObj = new GameObject("CardUIManager");
-        cardUIMgrObj.transform.SetParent(transform);
-        cardUIManager = cardUIMgrObj.AddComponent<CardUIManager>();
-    }
-    
-    if (battleUIManager == null)
-    {
-        GameObject battleUIMgrObj = new GameObject("BattleUIManager");
-        battleUIMgrObj.transform.SetParent(transform);
-        battleUIManager = battleUIMgrObj.AddComponent<BattleUIManager>();
-    }
-    
-    // Create BattleUI
-    GameObject battleUIObj = new GameObject("BattleUI");
-    battleUIObj.transform.SetParent(transform);
-    battleUI = battleUIObj.AddComponent<BattleUI>();
-    
-    // Setup cross-references
-    deckManager.SetupCardUIManager(cardUIManager);
-    
-    // Create UI elements
-    CreateGameplayUI();
-}
     
     private void Start()
     {
-        // Initialize BattleUI
-        if (battleUI != null)
-        {
-            battleUI.Initialize();
-        }
-        
         if (PhotonNetwork.IsMasterClient)
         {
             // Initialize the game when all players are ready
@@ -188,7 +146,10 @@ public class GameplayManager : MonoBehaviourPunCallbacks, IPunObservable
         SetGamePhase(GamePhase.Setup);
         
         // Show phase announcement
-        ShowPhaseAnnouncement("Game Starting - Round 1");
+        if (uiManager != null)
+        {
+            uiManager.ShowPhaseAnnouncement("Game Starting - Round 1");
+        }
         
         // Start the first round setup
         StartCoroutine(SetupRound());
@@ -223,11 +184,17 @@ public class GameplayManager : MonoBehaviourPunCallbacks, IPunObservable
                 {
                     // Declare remaining player as winner
                     string winnerName = PhotonNetwork.CurrentRoom.GetPlayer(activePlayers[0]).NickName;
-                    ShowWinner(winnerName);
+                    if (uiManager != null)
+                    {
+                        uiManager.ShowGameOver(winnerName);
+                    }
                 }
                 else
                 {
-                    ShowWinner("Nobody - All players left!");
+                    if (uiManager != null)
+                    {
+                        uiManager.ShowGameOver("Nobody - All players left!");
+                    }
                 }
             }
         }
@@ -281,16 +248,16 @@ public class GameplayManager : MonoBehaviourPunCallbacks, IPunObservable
             
             Debug.Log($"Player registered: {player.photonView.Owner.NickName} (ActorNumber: {actorNumber})");
             
-            // If this is the local player, set up UI managers
+            // If this is the local player, set up managers
             if (player.photonView.IsMine)
             {
                 player.SetupDeckManager(deckManager);
-                player.SetupCardUIManager(cardUIManager);
+                player.SetupCardUIManager(uiManager);
                 
-                // Update BattleUI with player stats
-                if (battleUI != null)
+                // Update UI with player stats
+                if (uiManager != null)
                 {
-                    battleUI.UpdatePlayerStats(player);
+                    uiManager.UpdatePlayerStats(player);
                 }
             }
             
@@ -298,7 +265,10 @@ public class GameplayManager : MonoBehaviourPunCallbacks, IPunObservable
             if (currentPhase == GamePhase.Battle && hasSpawnedPrefabs)
             {
                 // If we're already in battle phase, update UI and initialize relationships
-                UpdateBattleUI();
+                if (uiManager != null)
+                {
+                    uiManager.ShowBattleUI();
+                }
                 
                 // Initialize battle relationships if master client
                 if (PhotonNetwork.IsMasterClient && playerMonsterPairs.Count == 0)
@@ -333,7 +303,10 @@ public class GameplayManager : MonoBehaviourPunCallbacks, IPunObservable
             if (currentPhase == GamePhase.Battle && hasSpawnedPrefabs)
             {
                 // If we're already in battle phase, update UI
-                UpdateBattleUI();
+                if (uiManager != null)
+                {
+                    uiManager.ShowBattleUI();
+                }
             }
         }
     }
@@ -405,35 +378,32 @@ public class GameplayManager : MonoBehaviourPunCallbacks, IPunObservable
             }
         }
         
-        // Update BattleUI
-        UpdateBattleUI();
-    }
-    
-    private void UpdateBattleUI()
-    {
-        // Update battle UI with the local player and monsters
-        PlayerController localPlayer = GetLocalPlayer();
-        if (localPlayer != null && battleUI != null)
+        // Update Battle UI
+        if (uiManager != null)
         {
-            battleUI.UpdatePlayerStats(localPlayer);
-            
-            // Find opponent monster based on pairings
-            int playerActorNumber = localPlayer.photonView.Owner.ActorNumber;
-            if (playerMonsterPairs.ContainsKey(playerActorNumber))
+            PlayerController localPlayer = GetLocalPlayer();
+            if (localPlayer != null)
             {
-                int monsterOwnerActorNumber = playerMonsterPairs[playerActorNumber];
-                if (monsters.ContainsKey(monsterOwnerActorNumber))
+                uiManager.UpdatePlayerStats(localPlayer);
+                
+                // Find opponent monster based on pairings
+                int playerActorNumber = localPlayer.photonView.Owner.ActorNumber;
+                if (playerMonsterPairs.ContainsKey(playerActorNumber))
                 {
-                    MonsterController opponentMonster = monsters[monsterOwnerActorNumber];
-                    battleUI.UpdateMonsterStats(opponentMonster);
+                    int monsterOwnerActorNumber = playerMonsterPairs[playerActorNumber];
+                    if (monsters.ContainsKey(monsterOwnerActorNumber))
+                    {
+                        MonsterController opponentMonster = monsters[monsterOwnerActorNumber];
+                        uiManager.UpdateMonsterStats(opponentMonster);
+                    }
                 }
-            }
-            
-            // Find player's pet monster
-            if (monsters.ContainsKey(playerActorNumber))
-            {
-                MonsterController petMonster = monsters[playerActorNumber];
-                battleUI.UpdatePetStats(petMonster);
+                
+                // Find player's pet monster
+                if (monsters.ContainsKey(playerActorNumber))
+                {
+                    MonsterController petMonster = monsters[playerActorNumber];
+                    uiManager.UpdatePetStats(petMonster);
+                }
             }
         }
     }
@@ -461,7 +431,10 @@ public class GameplayManager : MonoBehaviourPunCallbacks, IPunObservable
                 break;
                 
             case GamePhase.GameOver:
-                ShowGameOver();
+                if (uiManager != null)
+                {
+                    uiManager.ShowGameOver(""); // Winner name will be set separately
+                }
                 break;
         }
     }
@@ -496,46 +469,43 @@ public class GameplayManager : MonoBehaviourPunCallbacks, IPunObservable
         SetGamePhase(GamePhase.Battle);
     }
     
-// This is a method to replace in the GameplayManager class
-private void AssignMonstersToPlayers()
-{
-    if (!PhotonNetwork.IsMasterClient) return;
-    
-    // Clear previous assignments
-    playerMonsterPairs.Clear();
-    
-    // Get list of player actor numbers
-    List<int> playerActors = new List<int>(players.Keys);
-    
-    if (playerActors.Count < 2)
+    private void AssignMonstersToPlayers()
     {
-        Debug.LogError("Not enough players to assign monsters!");
-        return;
+        if (!PhotonNetwork.IsMasterClient) return;
+        
+        // Clear previous assignments
+        playerMonsterPairs.Clear();
+        
+        // Get list of player actor numbers
+        List<int> playerActors = new List<int>(players.Keys);
+        
+        if (playerActors.Count < 2)
+        {
+            Debug.LogError("Not enough players to assign monsters!");
+            return;
+        }
+        
+        // Sort the players to ensure consistent order
+        playerActors.Sort();
+        
+        // Assign each player to fight another player's pet
+        // Player 1 fights Player 2's pet, Player 2 fights Player 3's pet, etc.
+        // Last player fights Player 1's pet (round-robin)
+        for (int i = 0; i < playerActors.Count; i++)
+        {
+            int playerActor = playerActors[i];
+            int nextPlayerIndex = (i + 1) % playerActors.Count;
+            int opponentPetOwner = playerActors[nextPlayerIndex];
+            
+            // Store the pairing: player -> opponent's pet owner
+            playerMonsterPairs.Add(playerActor, opponentPetOwner);
+            
+            // Send RPC to set up the pairing
+            photonView.RPC("RPC_SetOpponent", RpcTarget.All, playerActor, opponentPetOwner);
+            
+            Debug.Log($"Assigned player {playerActor} to fight pet owned by {opponentPetOwner}");
+        }
     }
-    
-    // Sort the players to ensure consistent order
-    playerActors.Sort();
-    
-    // Assign each player to fight another player's pet
-    // Player 1 fights Player 2's pet, Player 2 fights Player 3's pet, etc.
-    // Last player fights Player 1's pet (round-robin)
-    for (int i = 0; i < playerActors.Count; i++)
-    {
-        int playerActor = playerActors[i];
-        int nextPlayerIndex = (i + 1) % playerActors.Count;
-        int opponentPetOwner = playerActors[nextPlayerIndex];
-        
-        // Store the pairing: player -> opponent's pet owner
-        playerMonsterPairs.Add(playerActor, opponentPetOwner);
-        
-        // Send RPC to set up the pairing
-        photonView.RPC("RPC_SetOpponent", RpcTarget.All, playerActor, opponentPetOwner);
-        
-        Debug.Log($"Assigned player {playerActor} to fight pet owned by {opponentPetOwner}");
-    }
-}
-
-
     
     [PunRPC]
     private void RPC_SetOpponent(int playerActorNumber, int monsterOwnerActorNumber)
@@ -552,9 +522,9 @@ private void AssignMonstersToPlayers()
             Debug.Log($"Set player {playerActorNumber} to fight monster owned by {monsterOwnerActorNumber}");
             
             // Update UI if this is the local player
-            if (player.photonView.IsMine && battleUI != null)
+            if (player.photonView.IsMine && uiManager != null)
             {
-                battleUI.UpdateMonsterStats(monster);
+                uiManager.UpdateMonsterStats(monster);
             }
         }
     }
@@ -590,7 +560,7 @@ private void AssignMonstersToPlayers()
         // Establish player-pet relationships
         EstablishPlayerPetRelationships();
         
-        // IMPORTANT: Force UIManager to hide lobby and show battle UI
+        // Force UIManager to hide lobby and show battle UI
         if (uiManager != null)
         {
             // Ensure all panels are hidden first
@@ -600,29 +570,23 @@ private void AssignMonstersToPlayers()
             uiManager.ShowGameplayUI();
             
             Debug.Log("Forced UI transition to battle UI");
-        }
-        
-        // Show battle UI for all players
-        if (battleUI != null)
-        {
-            battleUI.Show();
             
             // Update player turn status
             PlayerController localPlayer = GetLocalPlayer();
             if (localPlayer != null)
             {
-                battleUI.ShowPlayerTurn(localPlayer.IsMyTurn);
+                uiManager.ShowPlayerTurn(localPlayer.IsMyTurn);
             }
+            
+            // Show battle overview UI if we have pairings
+            if (playerMonsterPairs.Count > 0)
+            {
+                uiManager.ShowBattleOverview(playerMonsterPairs);
+            }
+            
+            // Show phase announcement
+            uiManager.ShowPhaseAnnouncement($"Battle Phase - Round {currentRound}");
         }
-        
-        // Show battle overview UI
-        if (battleUIManager != null && playerMonsterPairs.Count > 0)
-        {
-            battleUIManager.ShowBattleOverview(playerMonsterPairs);
-        }
-        
-        // Show phase announcement
-        ShowPhaseAnnouncement($"Battle Phase - Round {currentRound}");
         
         // Assign monsters to players and start combat turns (master client only)
         if (PhotonNetwork.IsMasterClient)
@@ -635,8 +599,7 @@ private void AssignMonstersToPlayers()
         }
     }
 
-
- [PunRPC]
+    [PunRPC]
     private void RPC_ShowBattleUI()
     {
         // This ensures all clients hide lobby UI and show battle UI
@@ -647,25 +610,19 @@ private void AssignMonstersToPlayers()
         {
             uiManager.HideAllPanels(); // Explicitly hide all panels including lobby
             uiManager.ShowGameplayUI();
-        }
-        
-        // Show battle UI for the local player
-        if (battleUI != null)
-        {
-            battleUI.Show();
             
             // Update player turn status
             PlayerController localPlayer = GetLocalPlayer();
             if (localPlayer != null)
             {
-                battleUI.ShowPlayerTurn(localPlayer.IsMyTurn);
+                uiManager.ShowPlayerTurn(localPlayer.IsMyTurn);
             }
-        }
-        
-        // Show battle overview UI
-        if (battleUIManager != null && playerMonsterPairs.Count > 0)
-        {
-            battleUIManager.ShowBattleOverview(playerMonsterPairs);
+            
+            // Show battle overview UI
+            if (playerMonsterPairs.Count > 0)
+            {
+                uiManager.ShowBattleOverview(playerMonsterPairs);
+            }
         }
     }
     
@@ -685,10 +642,10 @@ private void AssignMonstersToPlayers()
                 // Set the relationship
                 player.SetPetMonster(pet);
                 
-                // Update battle UI if this is the local player
-                if (player.photonView.IsMine && battleUI != null)
+                // Update UI if this is the local player
+                if (player.photonView.IsMine && uiManager != null)
                 {
-                    battleUI.UpdatePetStats(pet);
+                    uiManager.UpdatePetStats(pet);
                 }
             }
         }
@@ -718,32 +675,19 @@ private void AssignMonstersToPlayers()
         }
     }
 
-
- [PunRPC]
+    [PunRPC]
     private void RPC_UpdateBattleUIState()
     {
         Debug.Log("RPC: Updating Battle UI state");
         
-        // Make sure lobby UI is hidden
+        // Make sure lobby UI is hidden and gameplay UI is shown
         if (uiManager != null)
         {
-            // Hide lobby panel explicitly
-            if (uiManager.GetLobbyPanel() != null)
-            {
-                uiManager.GetLobbyPanel().SetActive(false);
-            }
+            // Hide all panels
+            uiManager.HideAllPanels();
             
             // Show gameplay panel
-            if (uiManager.GetGameplayPanel() != null)
-            {
-                uiManager.GetGameplayPanel().SetActive(true);
-            }
-        }
-        
-        // Make sure battle UI is shown
-        if (battleUI != null)
-        {
-            battleUI.Show();
+            uiManager.ShowGameplayUI();
         }
     }
     
@@ -766,9 +710,6 @@ private void AssignMonstersToPlayers()
             AdvanceToNextPlayer();
         }
     }
-
-
-
     
     [PunRPC]
     private void RPC_StartPlayerTurn(int playerActorNumber)
@@ -782,19 +723,17 @@ private void AssignMonstersToPlayers()
             Debug.Log($"Started turn for player {player.PlayerName}");
             
             // Update UI to show whose turn it is for all players
-            if (battleUI != null)
+            if (uiManager != null)
             {
                 // For each client, check if it's their turn
                 bool isMyTurn = player.photonView.IsMine;
-                battleUI.ShowPlayerTurn(isMyTurn);
+                uiManager.ShowPlayerTurn(isMyTurn);
                 
                 // Debug log to track turn status
                 Debug.Log($"Battle UI updated: isMyTurn={isMyTurn} for player {PhotonNetwork.LocalPlayer.NickName}");
             }
         }
     }
-
-
     
     public void PlayerEndedTurn()
     {
@@ -824,7 +763,6 @@ private void AssignMonstersToPlayers()
             AdvanceToNextPlayer();
         }
     }
-
     
     private void StartMonsterTurn(int monsterOwnerActor, int targetPlayerActor)
     {
@@ -871,7 +809,6 @@ private void AssignMonstersToPlayers()
             StartPlayerTurn(activePlayers[currentPlayerTurn]);
         }
     }
-
     
     public void PlayerDefeated(int playerActorNumber)
     {
@@ -948,19 +885,13 @@ private void AssignMonstersToPlayers()
         playersFinishedDraft.Clear();
         
         // Hide battle UI
-        if (battleUI != null)
+        if (uiManager != null)
         {
-            battleUI.Hide();
+            uiManager.HideBattleUI();
+            
+            // Show phase announcement
+            uiManager.ShowPhaseAnnouncement($"Draft Phase - Round {currentRound}");
         }
-        
-        // Hide battle overview if active
-        if (battleUIManager != null)
-        {
-            battleUIManager.HideBattleOverview();
-        }
-        
-        // Show phase announcement
-        ShowPhaseAnnouncement($"Draft Phase - Round {currentRound}");
         
         if (PhotonNetwork.IsMasterClient)
         {
@@ -1140,7 +1071,10 @@ private void AssignMonstersToPlayers()
         {
             if (draftQueues.ContainsKey(playerActorNumber) && draftQueues[playerActorNumber].Count > 0)
             {
-                ShowDraftUI(draftQueues[playerActorNumber]);
+                if (uiManager != null)
+                {
+                    uiManager.ShowDraftUI(draftQueues[playerActorNumber]);
+                }
             }
             else
             {
@@ -1167,29 +1101,8 @@ private void AssignMonstersToPlayers()
         }
     }
     
-    public void PlayerSelectedUpgrade(int upgradeIndex)
-    {
-        int localPlayerActor = PhotonNetwork.LocalPlayer.ActorNumber;
-        
-        if (draftQueues.ContainsKey(localPlayerActor) && upgradeIndex >= 0 && upgradeIndex < draftQueues[localPlayerActor].Count)
-        {
-            // Hide draft UI
-            HideDraftUI();
-            
-            // Tell the server we've made our selection
-            if (PhotonNetwork.IsMasterClient)
-            {
-                PlayerFinishedDraft(localPlayerActor, upgradeIndex);
-            }
-            else
-            {
-                photonView.RPC("RPC_PlayerMadeDraftSelection", RpcTarget.MasterClient, localPlayerActor, upgradeIndex);
-            }
-        }
-    }
-    
     [PunRPC]
-    private void RPC_PlayerMadeDraftSelection(int playerActorNumber, int upgradeIndex)
+    public void RPC_PlayerMadeDraftSelection(int playerActorNumber, int upgradeIndex)
     {
         if (PhotonNetwork.IsMasterClient)
         {
@@ -1379,10 +1292,10 @@ private void AssignMonstersToPlayers()
                 break;
         }
         
-        // Update battle UI if this is for the local player
-        if (player != null && player.photonView.IsMine && battleUI != null)
+        // Update UI if this is for the local player
+        if (player != null && player.photonView.IsMine && uiManager != null)
         {
-            battleUI.UpdatePlayerStats(player);
+            uiManager.UpdatePlayerStats(player);
         }
     }
     
@@ -1514,13 +1427,19 @@ private void AssignMonstersToPlayers()
                 if (winnerActorNumber != -1)
                 {
                     string winnerName = PhotonNetwork.CurrentRoom.GetPlayer(winnerActorNumber).NickName;
-                    ShowWinner(winnerName);
+                    if (uiManager != null)
+                    {
+                        uiManager.ShowGameOver(winnerName);
+                    }
                 }
             }
             else
             {
                 // Start the next round
-                ShowPhaseAnnouncement($"Round {currentRound} Starting");
+                if (uiManager != null)
+                {
+                    uiManager.ShowPhaseAnnouncement($"Round {currentRound} Starting");
+                }
                 StartCoroutine(SetupRound());
             }
         }
@@ -1536,7 +1455,10 @@ private void AssignMonstersToPlayers()
                 SetGamePhase(GamePhase.GameOver);
                 
                 string winnerName = PhotonNetwork.CurrentRoom.GetPlayer(score.Key).NickName;
-                ShowWinner(winnerName);
+                if (uiManager != null)
+                {
+                    uiManager.ShowGameOver(winnerName);
+                }
                 
                 // Notify all players about the winner
                 photonView.RPC("RPC_AnnounceWinner", RpcTarget.All, score.Key, winnerName);
@@ -1549,469 +1471,16 @@ private void AssignMonstersToPlayers()
     private void RPC_AnnounceWinner(int winnerActorNumber, string winnerName)
     {
         // Show game over UI with winner announcement
-        if (winnerText != null)
+        if (uiManager != null)
         {
-            winnerText.text = $"Winner: {winnerName} with {playerScores[winnerActorNumber]} points!";
+            uiManager.ShowGameOver(winnerName);
         }
-        
-        // Show game over panel
-        ShowGameOver();
-    }
-    
-    private void ShowGameOver()
-    {
-        // Display game over UI
-        if (gameOverPanel != null)
-        {
-            gameOverPanel.SetActive(true);
-        }
-        
-        // Hide battle UI
-        if (battleUI != null)
-        {
-            battleUI.Hide();
-        }
-        
-        // Hide battle overview
-        if (battleUIManager != null)
-        {
-            battleUIManager.HideBattleOverview();
-        }
-    }
-    
-    private void ShowWinner(string winnerName)
-    {
-        // Display winner text
-        if (winnerText != null)
-        {
-            winnerText.text = "Winner: " + winnerName;
-        }
-        
-        // Show game over panel
-        ShowGameOver();
     }
     
     #endregion
     
-    #region UI Methods
+    #region Public Utility Methods
     
-    private void CreateGameplayUI()
-    {
-        // Find the main canvas
-        Canvas mainCanvas = FindObjectOfType<Canvas>();
-        if (mainCanvas == null) return;
-        
-        // Create phase announcement panel
-        phaseAnnouncementPanel = new GameObject("PhaseAnnouncementPanel");
-        phaseAnnouncementPanel.transform.SetParent(mainCanvas.transform, false);
-        
-        RectTransform announcementRect = phaseAnnouncementPanel.AddComponent<RectTransform>();
-        announcementRect.anchorMin = new Vector2(0.5f, 0.5f);
-        announcementRect.anchorMax = new Vector2(0.5f, 0.5f);
-        announcementRect.sizeDelta = new Vector2(600, 100);
-        
-        Image announcementBg = phaseAnnouncementPanel.AddComponent<Image>();
-        announcementBg.color = new Color(0, 0, 0, 0.8f);
-        
-        // Create announcement text
-        GameObject textObj = new GameObject("AnnouncementText");
-        textObj.transform.SetParent(phaseAnnouncementPanel.transform, false);
-        
-        phaseAnnouncementText = textObj.AddComponent<TextMeshProUGUI>();
-        phaseAnnouncementText.fontSize = 36;
-        phaseAnnouncementText.alignment = TextAlignmentOptions.Center;
-        phaseAnnouncementText.color = Color.white;
-        
-        RectTransform textRect = textObj.GetComponent<RectTransform>();
-        textRect.anchorMin = Vector2.zero;
-        textRect.anchorMax = Vector2.one;
-        textRect.sizeDelta = Vector2.zero;
-        
-        // Create game over panel
-        gameOverPanel = new GameObject("GameOverPanel");
-        gameOverPanel.transform.SetParent(mainCanvas.transform, false);
-        
-        RectTransform gameOverRect = gameOverPanel.AddComponent<RectTransform>();
-        gameOverRect.anchorMin = Vector2.zero;
-        gameOverRect.anchorMax = Vector2.one;
-        gameOverRect.sizeDelta = Vector2.zero;
-        
-        Image gameOverBg = gameOverPanel.AddComponent<Image>();
-        gameOverBg.color = new Color(0, 0, 0, 0.9f);
-        
-        // Create game over text
-        GameObject gameOverTextObj = new GameObject("GameOverText");
-        gameOverTextObj.transform.SetParent(gameOverPanel.transform, false);
-        
-        TextMeshProUGUI gameOverText = gameOverTextObj.AddComponent<TextMeshProUGUI>();
-        gameOverText.fontSize = 48;
-        gameOverText.alignment = TextAlignmentOptions.Center;
-        gameOverText.color = Color.white;
-        gameOverText.text = "Game Over";
-        
-        RectTransform gameOverTextRect = gameOverTextObj.GetComponent<RectTransform>();
-        gameOverTextRect.anchorMin = new Vector2(0.5f, 0.6f);
-        gameOverTextRect.anchorMax = new Vector2(0.5f, 0.7f);
-        gameOverTextRect.sizeDelta = new Vector2(400, 100);
-        
-        // Create winner text
-        GameObject winnerTextObj = new GameObject("WinnerText");
-        winnerTextObj.transform.SetParent(gameOverPanel.transform, false);
-        
-        winnerText = winnerTextObj.AddComponent<TextMeshProUGUI>();
-        winnerText.fontSize = 36;
-        winnerText.alignment = TextAlignmentOptions.Center;
-        winnerText.color = Color.white;
-        winnerText.text = "Winner: ";
-        
-       RectTransform winnerTextRect = winnerTextObj.GetComponent<RectTransform>();
-        winnerTextRect.anchorMin = new Vector2(0.5f, 0.5f);
-        winnerTextRect.anchorMax = new Vector2(0.5f, 0.6f);
-        winnerTextRect.sizeDelta = new Vector2(600, 80);
-        
-        // Create return to lobby button
-        GameObject returnButtonObj = new GameObject("ReturnButton");
-        returnButtonObj.transform.SetParent(gameOverPanel.transform, false);
-        
-        Button returnButton = returnButtonObj.AddComponent<Button>();
-        Image returnButtonImage = returnButtonObj.AddComponent<Image>();
-        returnButtonImage.color = new Color(0.2f, 0.4f, 0.8f, 1);
-        
-        RectTransform returnButtonRect = returnButtonObj.GetComponent<RectTransform>();
-        returnButtonRect.anchorMin = new Vector2(0.5f, 0.35f);
-        returnButtonRect.anchorMax = new Vector2(0.5f, 0.45f);
-        returnButtonRect.sizeDelta = new Vector2(200, 60);
-        
-        GameObject returnTextObj = new GameObject("ReturnText");
-        returnTextObj.transform.SetParent(returnButtonObj.transform, false);
-        
-        TextMeshProUGUI returnText = returnTextObj.AddComponent<TextMeshProUGUI>();
-        returnText.fontSize = 24;
-        returnText.alignment = TextAlignmentOptions.Center;
-        returnText.color = Color.white;
-        returnText.text = "Return to Lobby";
-        
-        RectTransform returnTextRect = returnTextObj.GetComponent<RectTransform>();
-        returnTextRect.anchorMin = Vector2.zero;
-        returnTextRect.anchorMax = Vector2.one;
-        returnTextRect.sizeDelta = Vector2.zero;
-        
-        // Button action
-        returnButton.onClick.AddListener(() => {
-            if (networkManager != null)
-            {
-                networkManager.LeaveRoom();
-            }
-        });
-        
-        // Create draft panel
-        draftPanel = new GameObject("DraftPanel");
-        draftPanel.transform.SetParent(mainCanvas.transform, false);
-        
-        RectTransform draftRect = draftPanel.AddComponent<RectTransform>();
-        draftRect.anchorMin = new Vector2(0.5f, 0.5f);
-        draftRect.anchorMax = new Vector2(0.5f, 0.5f);
-        draftRect.sizeDelta = new Vector2(800, 500);
-        
-        Image draftBg = draftPanel.AddComponent<Image>();
-        draftBg.color = new Color(0, 0, 0, 0.9f);
-        
-        // Initially hide panels
-        phaseAnnouncementPanel.SetActive(false);
-        gameOverPanel.SetActive(false);
-        draftPanel.SetActive(false);
-    }
-    
-    private void ShowPhaseAnnouncement(string text)
-    {
-        if (phaseAnnouncementPanel != null && phaseAnnouncementText != null)
-        {
-            phaseAnnouncementText.text = text;
-            phaseAnnouncementPanel.SetActive(true);
-            
-            // Hide after delay
-            StartCoroutine(HidePanelAfterDelay(phaseAnnouncementPanel, 2.0f));
-        }
-    }
-    
-    private IEnumerator HidePanelAfterDelay(GameObject panel, float delay)
-    {
-        yield return new WaitForSeconds(delay);
-        if (panel != null)
-        {
-            panel.SetActive(false);
-        }
-    }
-    
-    private void ShowDraftUI(List<Upgrade> upgrades)
-    {
-        if (draftPanel == null) return;
-        
-        // Clear existing UI
-        foreach (Transform child in draftPanel.transform)
-        {
-            Destroy(child.gameObject);
-        }
-        
-        // Add title
-        GameObject titleObj = new GameObject("DraftTitle");
-        titleObj.transform.SetParent(draftPanel.transform, false);
-        
-        TextMeshProUGUI titleText = titleObj.AddComponent<TextMeshProUGUI>();
-        titleText.fontSize = 30;
-        titleText.alignment = TextAlignmentOptions.Center;
-        titleText.color = Color.white;
-        titleText.text = "Select an Upgrade";
-        
-        RectTransform titleRect = titleObj.GetComponent<RectTransform>();
-        titleRect.anchorMin = new Vector2(0, 0.85f);
-        titleRect.anchorMax = new Vector2(1, 1);
-        titleRect.sizeDelta = Vector2.zero;
-        
-        // Add subtitle explaining draft mechanics
-        GameObject subtitleObj = new GameObject("DraftSubtitle");
-        subtitleObj.transform.SetParent(draftPanel.transform, false);
-        
-        TextMeshProUGUI subtitleText = subtitleObj.AddComponent<TextMeshProUGUI>();
-        subtitleText.fontSize = 16;
-        subtitleText.alignment = TextAlignmentOptions.Center;
-        subtitleText.color = new Color(0.8f, 0.8f, 0.8f, 1);
-        subtitleText.text = "Choose one upgrade. Remaining options will be passed to the next player.";
-        
-        RectTransform subtitleRect = subtitleObj.GetComponent<RectTransform>();
-        subtitleRect.anchorMin = new Vector2(0, 0.8f);
-        subtitleRect.anchorMax = new Vector2(1, 0.85f);
-        subtitleRect.sizeDelta = Vector2.zero;
-        
-        // Create upgrade options container with scroll view for many options
-        GameObject scrollViewObj = new GameObject("ScrollView");
-        scrollViewObj.transform.SetParent(draftPanel.transform, false);
-        
-        RectTransform scrollRect = scrollViewObj.AddComponent<RectTransform>();
-        scrollRect.anchorMin = new Vector2(0.05f, 0.1f);
-        scrollRect.anchorMax = new Vector2(0.95f, 0.8f);
-        scrollRect.sizeDelta = Vector2.zero;
-        
-        ScrollRect scrollView = scrollViewObj.AddComponent<ScrollRect>();
-        
-        // Create viewport
-        GameObject viewportObj = new GameObject("Viewport");
-        viewportObj.transform.SetParent(scrollViewObj.transform, false);
-        
-        RectTransform viewportRect = viewportObj.AddComponent<RectTransform>();
-        viewportRect.anchorMin = Vector2.zero;
-        viewportRect.anchorMax = Vector2.one;
-        viewportRect.sizeDelta = Vector2.zero;
-        
-        Image viewportImage = viewportObj.AddComponent<Image>();
-        viewportImage.color = new Color(0.1f, 0.1f, 0.1f, 0.5f);
-        
-        Mask viewportMask = viewportObj.AddComponent<Mask>();
-        viewportMask.showMaskGraphic = false;
-        
-        // Create content container
-        GameObject contentObj = new GameObject("Content");
-        contentObj.transform.SetParent(viewportObj.transform, false);
-        
-        RectTransform contentRect = contentObj.AddComponent<RectTransform>();
-        contentRect.anchorMin = Vector2.zero;
-        contentRect.anchorMax = new Vector2(1, 1);
-        contentRect.sizeDelta = new Vector2(0, Mathf.Max(500, upgrades.Count * 80));
-        
-        // Add grid layout
-        GridLayoutGroup gridLayout = contentObj.AddComponent<GridLayoutGroup>();
-        gridLayout.cellSize = new Vector2(180, 220);
-        gridLayout.spacing = new Vector2(20, 20);
-        gridLayout.padding = new RectOffset(10, 10, 10, 10);
-        gridLayout.constraint = GridLayoutGroup.Constraint.Flexible;
-        
-        // Add upgrade options
-        for (int i = 0; i < upgrades.Count; i++)
-        {
-            CreateUpgradeOption(contentObj, upgrades[i], i);
-        }
-        
-        // Configure scroll view
-        scrollView.content = contentRect;
-        scrollView.viewport = viewportRect;
-        scrollView.horizontal = false;
-        scrollView.vertical = true;
-        
-        // Show panel
-        draftPanel.SetActive(true);
-    }
-    
-    private void CreateUpgradeOption(GameObject parent, Upgrade upgrade, int index)
-    {
-        GameObject optionObj = new GameObject("Option_" + index);
-        optionObj.transform.SetParent(parent.transform, false);
-        
-        Image optionBg = optionObj.AddComponent<Image>();
-        optionBg.color = GetUpgradeColor(upgrade.UpgradeType);
-        
-        Button optionButton = optionObj.AddComponent<Button>();
-        
-        // Set button colors
-        ColorBlock colors = optionButton.colors;
-        colors.normalColor = GetUpgradeColor(upgrade.UpgradeType);
-        colors.highlightedColor = new Color(
-            colors.normalColor.r + 0.1f,
-            colors.normalColor.g + 0.1f,
-            colors.normalColor.b + 0.1f,
-            colors.normalColor.a
-        );
-        colors.pressedColor = new Color(
-            colors.normalColor.r - 0.1f,
-            colors.normalColor.g - 0.1f,
-            colors.normalColor.b - 0.1f,
-            colors.normalColor.a
-        );
-        optionButton.colors = colors;
-        
-        // Set button action
-        int optionIndex = index; // Local copy for closure
-        optionButton.onClick.AddListener(() => PlayerSelectedUpgrade(optionIndex));
-        
-        // Create vertical layout
-        VerticalLayoutGroup vertLayout = optionObj.AddComponent<VerticalLayoutGroup>();
-        vertLayout.padding = new RectOffset(5, 5, 5, 5);
-        vertLayout.spacing = 5;
-        vertLayout.childAlignment = TextAnchor.UpperCenter;
-        vertLayout.childForceExpandWidth = true;
-        vertLayout.childForceExpandHeight = false;
-        
-        // Create icon
-        GameObject iconObj = new GameObject("Icon");
-        iconObj.transform.SetParent(optionObj.transform, false);
-        
-        Image iconImage = iconObj.AddComponent<Image>();
-        iconImage.color = new Color(1, 1, 1, 0.8f);
-        
-        // Set icon based on upgrade type
-        iconImage.sprite = CreateCircleSprite(); // You could create different sprites based on upgrade type
-        
-        RectTransform iconRect = iconObj.GetComponent<RectTransform>();
-        iconRect.sizeDelta = new Vector2(50, 50);
-        
-        // Create title
-        GameObject titleObj = new GameObject("Title");
-        titleObj.transform.SetParent(optionObj.transform, false);
-        
-        TextMeshProUGUI titleText = titleObj.AddComponent<TextMeshProUGUI>();
-        titleText.fontSize = 16;
-        titleText.alignment = TextAlignmentOptions.Center;
-        titleText.color = Color.white;
-        titleText.text = GetUpgradeTitle(upgrade.UpgradeType);
-        
-        RectTransform titleRect = titleObj.GetComponent<RectTransform>();
-        titleRect.sizeDelta = new Vector2(0, 30);
-        
-        // Create description
-        GameObject descObj = new GameObject("Description");
-        descObj.transform.SetParent(optionObj.transform, false);
-        
-        TextMeshProUGUI descText = descObj.AddComponent<TextMeshProUGUI>();
-        descText.fontSize = 14;
-        descText.alignment = TextAlignmentOptions.Center;
-        descText.color = Color.white;
-        descText.text = upgrade.Description;
-        
-        RectTransform descRect = descObj.GetComponent<RectTransform>();
-        descRect.sizeDelta = new Vector2(0, 80);
-    }
-    
-    // Helper method to create a simple circle sprite for icons
-    private Sprite CreateCircleSprite()
-    {
-        int width = 64;
-        int height = 64;
-        Texture2D texture = new Texture2D(width, height);
-        
-        Color[] colors = new Color[width * height];
-        for (int y = 0; y < height; y++)
-        {
-            for (int x = 0; x < width; x++)
-            {
-                float distX = x - width / 2;
-                float distY = y - height / 2;
-                float dist = Mathf.Sqrt(distX * distX + distY * distY);
-                float radius = width / 2;
-                
-                if (dist <= radius)
-                {
-                    colors[y * width + x] = Color.white;
-                }
-                else
-                {
-                    colors[y * width + x] = Color.clear;
-                }
-            }
-        }
-        
-        texture.SetPixels(colors);
-        texture.Apply();
-        
-        return Sprite.Create(texture, new Rect(0, 0, width, height), new Vector2(0.5f, 0.5f));
-    }
-    
-    private Color GetUpgradeColor(UpgradeType type)
-    {
-        switch (type)
-        {
-            case UpgradeType.PlayerMaxHealth:
-            case UpgradeType.PlayerStrength:
-            case UpgradeType.PlayerDexterity:
-            case UpgradeType.PlayerCardAdd:
-                return new Color(0.2f, 0.6f, 0.8f, 1); // Blue for player upgrades
-                
-            case UpgradeType.MonsterMaxHealth:
-            case UpgradeType.MonsterAttack:
-            case UpgradeType.MonsterDefense:
-            case UpgradeType.MonsterAI:
-            case UpgradeType.MonsterCardAdd:
-                return new Color(0.8f, 0.2f, 0.2f, 1); // Red for monster upgrades
-                
-            default:
-                return new Color(0.5f, 0.5f, 0.5f, 1); // Gray for unknown
-        }
-    }
-    
-    private string GetUpgradeTitle(UpgradeType type)
-    {
-        switch (type)
-        {
-            case UpgradeType.PlayerMaxHealth:
-                return "Player Health";
-            case UpgradeType.PlayerStrength:
-                return "Player Strength";
-            case UpgradeType.PlayerDexterity:
-                return "Player Dexterity";
-            case UpgradeType.MonsterMaxHealth:
-                return "Monster Health";
-            case UpgradeType.MonsterAttack:
-                return "Monster Attack";
-            case UpgradeType.MonsterDefense:
-                return "Monster Defense";
-            case UpgradeType.MonsterAI:
-                return "Monster AI";
-            case UpgradeType.PlayerCardAdd:
-                return "New Player Card";
-            case UpgradeType.MonsterCardAdd:
-                return "New Monster Card";
-            default:
-                return "Unknown";
-        }
-    }
-    
-    private void HideDraftUI()
-    {
-        if (draftPanel != null)
-        {
-            draftPanel.SetActive(false);
-        }
-    }
-    
-    // Public utility methods for access by other managers
     public PlayerController GetPlayerById(int actorNumber)
     {
         if (players.ContainsKey(actorNumber))

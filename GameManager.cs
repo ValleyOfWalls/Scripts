@@ -12,9 +12,8 @@ public class GameManager : MonoBehaviourPunCallbacks
     // References to other managers
     [SerializeField] private NetworkManager networkManager;
     [SerializeField] private UIManager uiManager;
-    [SerializeField] private LobbyManager lobbyManager;
     [SerializeField] private GameplayManager gameplayManager;
-    [SerializeField] private BattleUIManager battleUIManager;
+    [SerializeField] private DeckManager deckManager;
 
     // Game state
     public enum GameState { Connecting, Lobby, Draft, Battle }
@@ -59,18 +58,11 @@ public class GameManager : MonoBehaviourPunCallbacks
             uiManager = uiObj.AddComponent<UIManager>();
         }
         
-        if (lobbyManager == null)
+        if (deckManager == null)
         {
-            GameObject lobbyObj = new GameObject("LobbyManager");
-            lobbyObj.transform.SetParent(transform);
-            lobbyManager = lobbyObj.AddComponent<LobbyManager>();
-        }
-
-        if (battleUIManager == null)
-        {
-            GameObject battleUIMgrObj = new GameObject("BattleUIManager");
-            battleUIMgrObj.transform.SetParent(transform);
-            battleUIManager = battleUIMgrObj.AddComponent<BattleUIManager>();
+            GameObject deckManagerObj = new GameObject("DeckManager");
+            deckManagerObj.transform.SetParent(transform);
+            deckManager = deckManagerObj.AddComponent<DeckManager>();
         }
 
         // Set initial game state
@@ -101,9 +93,9 @@ public class GameManager : MonoBehaviourPunCallbacks
                 break;
                 
             case GameState.Lobby:
-                if (lobbyManager != null)
+                if (uiManager != null)
                 {
-                    lobbyManager.InitializeLobby();
+                    uiManager.ShowLobbyUI();
                 }
                 break;
                 
@@ -189,9 +181,9 @@ public class GameManager : MonoBehaviourPunCallbacks
         if (player != null)
         {
             player.IsReady = isReady;
-            if (lobbyManager != null)
+            if (uiManager != null)
             {
-                lobbyManager.UpdatePlayerReadyStatus(playerId, isReady);
+                uiManager.UpdatePlayerReadyStatus(playerId, isReady);
             }
         }
     }
@@ -278,14 +270,14 @@ public class GameManager : MonoBehaviourPunCallbacks
         return uiManager;
     }
     
-    public LobbyManager GetLobbyManager()
-    {
-        return lobbyManager;
-    }
-    
     public GameplayManager GetGameplayManager()
     {
         return gameplayManager;
+    }
+    
+    public DeckManager GetDeckManager()
+    {
+        return deckManager;
     }
 }
 

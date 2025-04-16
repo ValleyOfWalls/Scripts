@@ -10,7 +10,6 @@ public class NetworkManager : MonoBehaviourPunCallbacks
     private const int MaxPlayersPerRoom = 4;
 
     private UIManager uiManager;
-    private LobbyManager lobbyManager;
     private PrefabSpawner prefabSpawner;
 
     private void Start()
@@ -26,11 +25,6 @@ public class NetworkManager : MonoBehaviourPunCallbacks
         if (uiManager == null && GameManager.Instance != null)
         {
             uiManager = GameManager.Instance.GetUIManager();
-        }
-        
-        if (lobbyManager == null && GameManager.Instance != null)
-        {
-            lobbyManager = GameManager.Instance.GetLobbyManager();
         }
         
         // Initialize prefab spawner
@@ -183,98 +177,89 @@ public class NetworkManager : MonoBehaviourPunCallbacks
     }
 
     public override void OnJoinedRoom()
-{
-    Debug.Log($"Joined room: {PhotonNetwork.CurrentRoom.Name}");
-    
-    // Call base implementation to ensure GameManager creates GameplayManager
-    base.OnJoinedRoom();
-    
-    // Add all players including self to GameManager's player list
-    if (GameManager.Instance != null)
     {
-        // First clear existing players to avoid duplicates
-        GameManager.Instance.ClearPlayers();
+        Debug.Log($"Joined room: {PhotonNetwork.CurrentRoom.Name}");
         
-        // Add self
-        GameManager.Instance.AddPlayer(PhotonNetwork.LocalPlayer.UserId, PhotonNetwork.NickName);
+        // Call base implementation to ensure GameManager creates GameplayManager
+        base.OnJoinedRoom();
         
-        // Add all other players in the room
-        foreach (Player player in PhotonNetwork.CurrentRoom.Players.Values)
+        // Add all players including self to GameManager's player list
+        if (GameManager.Instance != null)
         {
-            if (player.UserId != PhotonNetwork.LocalPlayer.UserId)
+            // First clear existing players to avoid duplicates
+            GameManager.Instance.ClearPlayers();
+            
+            // Add self
+            GameManager.Instance.AddPlayer(PhotonNetwork.LocalPlayer.UserId, PhotonNetwork.NickName);
+            
+            // Add all other players in the room
+            foreach (Player player in PhotonNetwork.CurrentRoom.Players.Values)
             {
-                GameManager.Instance.AddPlayer(player.UserId, player.NickName);
-                
-                // Get and set ready status if it exists
-                if (player.CustomProperties.ContainsKey("IsReady"))
+                if (player.UserId != PhotonNetwork.LocalPlayer.UserId)
                 {
-                    bool isReady = (bool)player.CustomProperties["IsReady"];
-                    GameManager.Instance.SetPlayerReady(player.UserId, isReady);
+                    GameManager.Instance.AddPlayer(player.UserId, player.NickName);
+                    
+                    // Get and set ready status if it exists
+                    if (player.CustomProperties.ContainsKey("IsReady"))
+                    {
+                        bool isReady = (bool)player.CustomProperties["IsReady"];
+                        GameManager.Instance.SetPlayerReady(player.UserId, isReady);
+                    }
                 }
             }
         }
+        
+        // Spawn player and monster prefabs if prefab spawner exists
+        if (prefabSpawner == null)
+        {
+            prefabSpawner = gameObject.AddComponent<PrefabSpawner>();
+        }
+        
+        StartCoroutine(DelayedSpawn());
     }
-    
-    // Spawn player and monster prefabs if prefab spawner exists
-    if (prefabSpawner == null)
-    {
-        prefabSpawner = gameObject.AddComponent<PrefabSpawner>();
-    }
-    
-    StartCoroutine(DelayedSpawn());
-}
     
     private IEnumerator DelayedSpawn()
-{
-    // Wait a short time to ensure everything is properly initialized
-    yield return new WaitForSeconds(0.5f);
-    
-    // If we're the master client, ensure GameplayManager is instantiated before spawning prefabs
-    if (PhotonNetwork.IsMasterClient && GameManager.Instance != null && GameManager.Instance.GetGameplayManager() == null)
     {
-        GameManager.Instance.InstantiateNetworkedGameplayManager();
-        
-        // Wait for GameplayManager to be instantiated
+        // Wait a short time to ensure everything is properly initialized
         yield return new WaitForSeconds(0.5f);
-    }
-    // If not master client, wait a bit longer to make sure we receive the GameplayManager
-    else if (!PhotonNetwork.IsMasterClient)
-    {
-        yield return new WaitForSeconds(1.0f);
-    }
-    
-    // Now spawn player and monster prefabs
-    prefabSpawner.SpawnPlayerAndMonster();
-    
-    // Set the game state to Lobby
-    if (GameManager.Instance != null)
-    {
-        GameManager.Instance.SetState(GameManager.GameState.Lobby);
-    }
-    else
-    {
-        // Fallback if GameManager is not available
-        if (uiManager == null)
+        
+        // If we're the master client, ensure GameplayManager is instantiated before spawning prefabs
+        if (PhotonNetwork.IsMasterClient && GameManager.Instance != null && GameManager.Instance.GetGameplayManager() == null)
         {
-            uiManager = FindObjectOfType<UIManager>();
+            GameManager.Instance.InstantiateNetworkedGameplayManager();
+            
+            // Wait for GameplayManager to be instantiated
+            yield return new WaitForSeconds(0.5f);
+        }
+        // If not master client, wait a bit longer to make sure we receive the GameplayManager
+        else if (!PhotonNetwork.IsMasterClient)
+        {
+            yield return new WaitForSeconds(1.0f);
         }
         
-        if (lobbyManager == null)
-        {
-            lobbyManager = FindObjectOfType<LobbyManager>();
-        }
+        // Now spawn player and monster prefabs
+        prefabSpawner.SpawnPlayerAndMonster();
         
-        if (uiManager != null)
+        // Set the game state to Lobby
+        if (GameManager.Instance != null)
         {
-            uiManager.ShowLobbyUI();
+            GameManager.Instance.SetState(GameManager.GameState.Lobby);
         }
-        
-        if (lobbyManager != null)
+        else
         {
-            lobbyManager.UpdateLobbyUI();
+            // Fallback if GameManager is not available
+            if (uiManager == null)
+            {
+                uiManager = FindObjectOfType<UIManager>();
+            }
+            
+            if (uiManager != null)
+            {
+                uiManager.ShowLobbyUI();
+                uiManager.UpdateLobbyUI();
+            }
         }
     }
-}
 
     public override void OnLeftRoom()
     {
@@ -298,9 +283,9 @@ public class NetworkManager : MonoBehaviourPunCallbacks
         }
         
         // Update lobby UI
-        if (lobbyManager != null)
+        if (uiManager != null)
         {
-            lobbyManager.UpdateLobbyUI();
+            uiManager.UpdateLobbyUI();
         }
     }
 
@@ -315,9 +300,9 @@ public class NetworkManager : MonoBehaviourPunCallbacks
         }
         
         // Update lobby UI
-        if (lobbyManager != null)
+        if (uiManager != null)
         {
-            lobbyManager.UpdateLobbyUI();
+            uiManager.UpdateLobbyUI();
         }
     }
 
