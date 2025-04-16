@@ -5,22 +5,38 @@ using Photon.Pun;
 using Photon.Realtime;
 using System.Collections.Generic;
 using System.Linq;
+using ExitGames.Client.Photon; // Required for Hashtable
+using Newtonsoft.Json; // Using Newtonsoft.Json for easier serialization
+
+public enum GameState
+{
+    Connecting,
+    Lobby,
+    Combat,
+    Drafting,
+    GameOver
+}
 
 public class GameManager : MonoBehaviourPunCallbacks
 {
     [Header("Settings")]
-    [SerializeField] private int startingPlayerHealth = 100;
-    [SerializeField] private int startingPetHealth = 50;
+    [SerializeField] private int startingPlayerHealth = 1;
+    [SerializeField] private int startingPetHealth = 1;
     [SerializeField] private int startingEnergy = 3;
     [SerializeField] private int cardsToDraw = 5;
     [SerializeField] private List<CardData> starterDeck = new List<CardData>(); // Assign starter cards in Inspector
     [SerializeField] private List<CardData> starterPetDeck = new List<CardData>(); // Assign pet starter cards in Inspector
+    [SerializeField] private int optionsPerDraft = 3; // How many options presented at once
+
+    [Header("Card Pools for Draft/Rewards")] // Assign these in Inspector
+    [SerializeField] private List<CardData> allPlayerCardPool = new List<CardData>();
+    [SerializeField] private List<CardData> allPetCardPool = new List<CardData>();
 
     [Header("UI Panels")][Tooltip("Assign from Assets/Prefabs/UI")]
     [SerializeField] private GameObject startScreenCanvasPrefab;
     [SerializeField] private GameObject lobbyCanvasPrefab;
     [SerializeField] private GameObject combatCanvasPrefab; // Assign this prefab
-    // [SerializeField] private GameObject draftCanvasPrefab; // For later
+    [SerializeField] private GameObject draftCanvasPrefab; // TODO: Assign draft canvas prefab
     [SerializeField] private GameObject cardPrefab; // Assign this prefab via UISetup
 
     [Header("Start Screen References")]
@@ -54,13 +70,34 @@ public class GameManager : MonoBehaviourPunCallbacks
     private GameObject otherPlayerStatusTemplate; // Inside Others Status Area
     [SerializeField] private TextMeshProUGUI energyText; // Add Energy Text reference if you have one
 
+    [Header("Draft Screen References")] // TODO: Populate in ShowDraftScreen
+    private GameObject draftOptionsPanel; // Parent for option buttons
+    private TextMeshProUGUI draftTurnText;
+    private GameObject draftOptionButtonTemplate; // Template for option buttons
+
     // Instantiated Canvases
     private GameObject startScreenInstance;
     private GameObject lobbyInstance;
     private GameObject combatInstance;
+    private GameObject draftInstance; // For Draft Canvas
+
+    // Game State
+    private GameState currentState = GameState.Connecting;
 
     // Player Ready Status
     private const string PLAYER_READY_PROPERTY = "IsReady";
+    private const string COMBAT_FINISHED_PROPERTY = "CombatFinished";
+
+    // Draft State Keys (Room Properties)
+    private const string DRAFT_OPTIONS_PROP = "DraftOptions"; // Stores serialized List<SerializableDraftOption>
+    private const string DRAFT_TURN_PROP = "DraftTurn";       // Stores ActorNumber of current picker
+    private const string DRAFT_ORDER_PROP = "DraftOrder";    // Stores List<int> of ActorNumbers
+
+    // Local Draft State Cache
+    private List<SerializableDraftOption> currentDraftOptions = new List<SerializableDraftOption>();
+    private List<int> draftPlayerOrder = new List<int>();
+    private int currentPickerActorNumber = -1;
+    private Dictionary<int, DraftOption> activeOptionMap = new Dictionary<int, DraftOption>(); // Maps OptionId to full DraftOption
 
     // Player List Management
     private List<GameObject> playerListEntries = new List<GameObject>();
@@ -76,8 +113,14 @@ public class GameManager : MonoBehaviourPunCallbacks
     private Player opponentPlayer; // Reference to the opponent player whose pet we fight
     private int player1Score = 0;
     private int player2Score = 0; // Extend later for >2 players
+
+    [Header("Local Pet State")] // State for the pet belonging to the local player
+    private List<CardData> localPetDeck = new List<CardData>();
+    // Note: We don't currently need localPetHand/Discard as the pet doesn't draw/play its own cards in this simulation.
+    // Cards are played *on* the pet by the player, or the pet acts based on opponent actions.
+
     // <<--- ADDED PET STATE START --->>
-    [Header("Opponent Pet Combat State (Local Simulation)")]
+    [Header("Opponent Pet Combat State (Local Simulation)")][Tooltip("Used to simulate the fight player has against opponent's pet")]
     [SerializeField] private int opponentPetEnergy;
     private List<CardData> opponentPetDeck = new List<CardData>();
     private List<CardData> opponentPetHand = new List<CardData>();
@@ -97,6 +140,8 @@ public class GameManager : MonoBehaviourPunCallbacks
             return;
         }
         DontDestroyOnLoad(gameObject); // Keep GameManager across scenes
+
+        currentState = GameState.Connecting; // Initial state
 
         // Instantiate and setup Start Screen
         if (startScreenCanvasPrefab != null)
@@ -136,6 +181,7 @@ public class GameManager : MonoBehaviourPunCallbacks
     public override void OnJoinedRoom()
     {
         Debug.Log($"Joined Room: {PhotonNetwork.CurrentRoom.Name}");
+        currentState = GameState.Lobby; // Transition state
         if (startScreenInstance != null) startScreenInstance.SetActive(false);
         if (combatInstance != null) combatInstance.SetActive(false); // Ensure combat is hidden
         ShowLobbyScreen();
@@ -146,6 +192,7 @@ public class GameManager : MonoBehaviourPunCallbacks
     public override void OnLeftRoom()
     {
         Debug.Log("Left Room");
+        currentState = GameState.Connecting; // Transition state back
         if (lobbyInstance != null) Destroy(lobbyInstance); // Clean up instantiated lobby
         if (combatInstance != null) Destroy(combatInstance); // Clean up instantiated combat
 
@@ -188,14 +235,145 @@ public class GameManager : MonoBehaviourPunCallbacks
         // Handle player leaving during combat later
     }
 
-    public override void OnPlayerPropertiesUpdate(Player targetPlayer, ExitGames.Client.Photon.Hashtable changedProps)
+    public override void OnPlayerPropertiesUpdate(Player targetPlayer, Hashtable changedProps)
     {
-        Debug.Log($"Player {targetPlayer.NickName} properties updated.");
-        if (lobbyInstance != null && lobbyInstance.activeSelf && changedProps.ContainsKey(PLAYER_READY_PROPERTY))
+        Debug.Log($"Player {targetPlayer.NickName} properties updated. CurrentState: {currentState}");
+        if (currentState == GameState.Lobby && changedProps.ContainsKey(PLAYER_READY_PROPERTY))
         {
-            UpdatePlayerList();
+            if (lobbyInstance != null && lobbyInstance.activeSelf) UpdatePlayerList();
         }
-        // Handle property changes during combat later (e.g., health sync)
+        else if (currentState == GameState.Combat && changedProps.ContainsKey(COMBAT_FINISHED_PROPERTY))
+        {
+            Debug.Log($"Property update for {COMBAT_FINISHED_PROPERTY} received from {targetPlayer.NickName}");
+            if (PhotonNetwork.IsMasterClient)
+            {
+                CheckForAllPlayersFinishedCombat();
+            }
+        }
+        // Note: We now handle draft state changes in OnRoomPropertiesUpdate
+    }
+
+    public override void OnRoomPropertiesUpdate(Hashtable propertiesThatChanged)
+    {
+        Debug.Log($"Room properties updated. CurrentState: {currentState}");
+        if (currentState == GameState.Drafting)
+        {
+            bool draftStateUpdated = false;
+            if (propertiesThatChanged.ContainsKey(DRAFT_OPTIONS_PROP))
+            {
+                Debug.Log("Draft options updated in room properties.");
+                UpdateLocalDraftOptionsFromRoomProps();
+                draftStateUpdated = true;
+            }
+            if (propertiesThatChanged.ContainsKey(DRAFT_TURN_PROP))
+            {
+                Debug.Log("Draft turn updated in room properties.");
+                UpdateLocalDraftTurnFromRoomProps();
+                draftStateUpdated = true;
+            }
+            // Draft order typically set once at start, but handle if needed
+            if (propertiesThatChanged.ContainsKey(DRAFT_ORDER_PROP))
+            {
+                 UpdateLocalDraftOrderFromRoomProps();
+                 // May not need UI update just for this
+            }
+
+            if (draftStateUpdated)
+            {
+                Debug.Log("Updating Draft UI due to room property change.");
+                UpdateDraftUI(); // Refresh UI based on new state
+
+                // Check if draft ended
+                if (currentDraftOptions.Count == 0 && currentPickerActorNumber != -1) // Ensure it wasn't just initialized empty
+                {
+                    Debug.Log("Draft options empty, ending draft phase.");
+                    EndDraftPhase();
+                }
+            }
+        }
+        // Handle other room property updates if necessary
+    }
+
+    // Helper methods to update local state from Room Properties
+    private void UpdateLocalDraftOptionsFromRoomProps()
+    {
+        if (PhotonNetwork.CurrentRoom.CustomProperties.TryGetValue(DRAFT_OPTIONS_PROP, out object optionsObj))
+        {
+            try
+            {
+                string optionsJson = optionsObj as string;
+                currentDraftOptions = JsonConvert.DeserializeObject<List<SerializableDraftOption>>(optionsJson) ?? new List<SerializableDraftOption>();
+                RebuildActiveOptionMap(); // Rebuild the lookup map
+                 Debug.Log($"Successfully deserialized {currentDraftOptions.Count} draft options.");
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogError($"Failed to deserialize draft options from room properties: {e.Message}");
+                currentDraftOptions = new List<SerializableDraftOption>();
+                activeOptionMap.Clear();
+            }
+        }
+        else
+        {
+            Debug.LogWarning($"Room property {DRAFT_OPTIONS_PROP} not found.");
+            currentDraftOptions = new List<SerializableDraftOption>();
+            activeOptionMap.Clear();
+        }
+    }
+
+    private void UpdateLocalDraftTurnFromRoomProps()
+    {
+         if (PhotonNetwork.CurrentRoom.CustomProperties.TryGetValue(DRAFT_TURN_PROP, out object turnObj))
+        {
+            currentPickerActorNumber = (int)turnObj;
+            Debug.Log($"Current draft picker ActorNumber: {currentPickerActorNumber}");
+        }
+         else
+         {
+             Debug.LogWarning($"Room property {DRAFT_TURN_PROP} not found.");
+            currentPickerActorNumber = -1;
+         }
+    }
+
+     private void UpdateLocalDraftOrderFromRoomProps()
+    {
+         if (PhotonNetwork.CurrentRoom.CustomProperties.TryGetValue(DRAFT_ORDER_PROP, out object orderObj))
+        {
+            try
+            {
+                string orderJson = orderObj as string;
+                draftPlayerOrder = JsonConvert.DeserializeObject<List<int>>(orderJson) ?? new List<int>();
+                Debug.Log($"Successfully deserialized draft order: {string.Join(", ", draftPlayerOrder)}");
+            }
+             catch (System.Exception e)
+            {
+                Debug.LogError($"Failed to deserialize draft order: {e.Message}");
+                draftPlayerOrder = new List<int>();
+            }
+        }
+         else
+         {
+             Debug.LogWarning($"Room property {DRAFT_ORDER_PROP} not found.");
+            draftPlayerOrder = new List<int>();
+         }
+    }
+
+    // Rebuilds the Dict mapping OptionId to full DraftOption based on currentDraftOptions
+    private void RebuildActiveOptionMap()
+    {
+        activeOptionMap.Clear();
+        foreach (var serializableOption in currentDraftOptions)
+        {
+            DraftOption fullOption = serializableOption.ToDraftOption(allPlayerCardPool, allPetCardPool);
+            if (fullOption != null)
+            {
+                activeOptionMap[fullOption.OptionId] = fullOption;
+            }
+            else
+            {
+                 Debug.LogWarning($"Could not fully deserialize option ID {serializableOption.OptionId}, Card maybe missing from pools?");
+            }
+        }
     }
 
     public override void OnMasterClientSwitched(Player newMasterClient)
@@ -335,6 +513,7 @@ public class GameManager : MonoBehaviourPunCallbacks
     private void RpcStartCombat()
     {
         Debug.Log($"RPC: Starting Combat Setup for {PhotonNetwork.LocalPlayer.NickName}");
+        currentState = GameState.Combat; // Transition state
 
         // Disable Lobby
         if (lobbyInstance != null) lobbyInstance.SetActive(false);
@@ -455,13 +634,24 @@ public class GameManager : MonoBehaviourPunCallbacks
         if (opponentPlayer == null && PhotonNetwork.PlayerList.Length > 1)
         {
             Debug.LogError("Could not determine opponent!");
-            // Fallback or error handling
+            // Fallback or error handling? For now, continue, might be single player test?
         }
 
-        // Initialize Health
+        // Initialize Health (Using TEST values)
         localPlayerHealth = startingPlayerHealth;
         localPetHealth = startingPetHealth;
-        opponentPetHealth = startingPetHealth; // Assuming opponent pet has same starting health
+        // Find the opponent's pet health property or use default if not set
+        int opponentStartingPetHealth = startingPetHealth;
+        if (opponentPlayer != null && opponentPlayer.CustomProperties.TryGetValue("PetHealth", out object oppPetHealth))
+        {
+            opponentStartingPetHealth = (int)oppPetHealth; // Use opponent's actual pet health if available later
+        }
+        else
+        {
+             // If opponent or property doesn't exist, use default (which is now 1 for testing)
+             opponentStartingPetHealth = startingPetHealth;
+        }
+        opponentPetHealth = opponentStartingPetHealth;
 
         // Setup Initial UI
         if(playerNameText) playerNameText.text = PhotonNetwork.LocalPlayer.NickName;
@@ -493,6 +683,18 @@ public class GameManager : MonoBehaviourPunCallbacks
         opponentPetDiscard.Clear();
         // Don't necessarily need pet deck/discard count UI, but could add later
         // <<--- INITIALIZE PET DECK END --->>
+
+        // --- Initialize Local Pet Deck ---
+        if (starterPetDeck != null && starterPetDeck.Count > 0)
+        {
+            localPetDeck = new List<CardData>(starterPetDeck);
+            ShuffleLocalPetDeck();
+        }
+        else
+        {
+            Debug.LogWarning("StarterPetDeck is not assigned or empty in GameManager inspector! Local Pet starts with no cards.");
+            localPetDeck = new List<CardData>();
+        }
 
         // Start the first turn
         StartTurn();
@@ -672,6 +874,8 @@ public class GameManager : MonoBehaviourPunCallbacks
 
     #region Opponent Pet Turn Logic (Local Simulation)
 
+    private bool combatEndedForLocalPlayer = false; // Flag to prevent multiple end calls
+
     private void ExecuteOpponentPetTurn()
     {
         Debug.Log("---> Starting Opponent Pet Turn <---");
@@ -712,7 +916,12 @@ public class GameManager : MonoBehaviourPunCallbacks
                     localPlayerHealth -= cardToPlay.damage;
                     Debug.Log($"Opponent Pet dealt {cardToPlay.damage} damage to Local Player. New health: {localPlayerHealth}");
                     UpdateHealthUI(); // Update player health bar
-                    // TODO: Check player defeat condition
+                    // Check player defeat condition
+                    if (localPlayerHealth <= 0)
+                    {
+                        HandleCombatLoss(); // Player defeated
+                        return; // End pet turn early if player is defeated
+                    }
                 }
                 // TODO: Add other pet card effects (block self, apply buffs/debuffs)
                 
@@ -895,25 +1104,23 @@ public class GameManager : MonoBehaviourPunCallbacks
              if (targetType == CardDropZone.TargetType.EnemyPet && cardData.damage > 0)
              {
                  int damageDealt = cardData.damage;
-                 // Apply locally first for immediate feedback
                  opponentPetHealth -= damageDealt;
                  Debug.Log($"Dealt {damageDealt} damage to Opponent Pet. New health: {opponentPetHealth}");
                  UpdateHealthUI();
 
-                 // <<--- SEND RPC START --->>
-                 // Now, tell the actual opponent player to apply the damage to their pet
                  if (opponentPlayer != null)
                  {
                      Debug.Log($"Sending RpcTakePetDamage({damageDealt}) to {opponentPlayer.NickName}");
-                     photonView.RPC("RpcTakePetDamage", opponentPlayer, damageDealt); 
+                     photonView.RPC("RpcTakePetDamage", opponentPlayer, damageDealt);
                  }
-                 else
-                 {
-                     Debug.LogError("Cannot send RpcTakePetDamage: opponentPlayer reference is null!");
-                 }
-                 // <<--- SEND RPC END --->>
+                 else { /* Error logged previously */ }
 
-                 // TODO: NETWORK - Sync opponentPetHealth change to the other player! // This RPC handles it
+                 // Check for opponent pet defeat
+                 if (opponentPetHealth <= 0)
+                 {
+                     HandleCombatWin(); // Player wins
+                     return true; // Stop processing further effects if combat ended
+                 }
              }
              // --- Add other effects below (e.g., targeting OwnPet, PlayerSelf, applying block, buffs) --- 
              // else if (targetType == CardDropZone.TargetType.OwnPet && cardData.block > 0) { ... }
@@ -954,14 +1161,678 @@ public class GameManager : MonoBehaviourPunCallbacks
 
         Debug.Log($"RPC Received: My Pet taking {damageAmount} damage.");
         localPetHealth -= damageAmount;
-        // Ensure health doesn't go below zero visually if needed
-        if (localPetHealth < 0) localPetHealth = 0; 
+        if (localPetHealth < 0) localPetHealth = 0;
 
-        UpdateHealthUI(); 
+        UpdateHealthUI();
 
-        // TODO: Potentially trigger visual effects or animations for taking damage
-        // TODO: Check if pet health reached 0 and handle pet defeat logic for this player
+        // Check if pet health reached 0 and handle pet defeat logic for this player
+        // NOTE: This doesn't necessarily mean the *local player* lost the combat round,
+        // only that their pet was defeated in its own fight. We need a different mechanism
+        // to determine the overall round winner based on objectives (e.g., points).
+        // For now, we'll focus on detecting when THIS player's COMBAT INTERACTION is over.
+        // Let's assume for now that if your pet dies, your fight interaction ends.
+        // OR if the player dies (handled in ExecuteOpponentPetTurn).
+
+        // Let's refine: Combat ends for a player if *either* they die *or* the opponent pet they are fighting dies.
+        // RpcTakePetDamage handles *other* player damaging *my* pet. My pet dying doesn't end *my* fight with the opponent's pet.
+        // Therefore, the check for pet death ending the combat belongs where the damage is applied:
+        // - Player death check in ExecuteOpponentPetTurn (already added)
+        // - Opponent pet death check in AttemptPlayCard (already added)
+
+        // We still might want logic here if the pet dying has other consequences.
+    }
+
+    [PunRPC]
+    private void RpcSelectDraftOption(int chosenOptionId, PhotonMessageInfo info)
+    {
+        // Primarily executed on Master Client, but could be RpcTarget.All if needed
+        Debug.Log($"RPC Received: Player {info.Sender.ActorNumber} selected draft option ID {chosenOptionId}");
+
+        if (!PhotonNetwork.IsMasterClient)
+        {
+            Debug.Log("Non-master client received RpcSelectDraftOption, ignoring.");
+            return;
+        }
+
+        // --- Master Client Validation and Update --- 
+        if (currentState != GameState.Drafting)
+        {
+            Debug.LogWarning("RpcSelectDraftOption received outside of Drafting state.");
+            return;
+        }
+
+        // Validate Turn
+        if (info.Sender.ActorNumber != currentPickerActorNumber)
+        {
+            Debug.LogWarning($"Player {info.Sender.ActorNumber} tried to pick out of turn (Current: {currentPickerActorNumber}).");
+            // Maybe send an error back?
+            return;
+        }
+
+        // Find the option in the *current* list from Room Properties
+        // Important to use the synchronized state, not a potentially stale local cache
+        UpdateLocalDraftOptionsFromRoomProps(); // Ensure we have the latest list
+        SerializableDraftOption selectedOption = currentDraftOptions.FirstOrDefault(opt => opt.OptionId == chosenOptionId);
+
+        if (selectedOption == null)
+        {
+            Debug.LogWarning($"Player {info.Sender.ActorNumber} tried to pick invalid/already taken option ID {chosenOptionId}.");
+            // Option might have been taken by another player just before this RPC arrived
+            return;
+        }
+
+        // --- Update Room Properties --- 
+
+        // 1. Remove chosen option
+        currentDraftOptions.Remove(selectedOption);
+        string newOptionsJson = JsonConvert.SerializeObject(currentDraftOptions);
+
+        // 2. Determine next player
+        int currentPlayerIndex = draftPlayerOrder.IndexOf(currentPickerActorNumber);
+        int nextPlayerIndex = (currentPlayerIndex + 1) % draftPlayerOrder.Count;
+        int nextPickerActorNumber = draftPlayerOrder[nextPlayerIndex];
+
+        // Prepare properties to set
+        Hashtable roomPropsToUpdate = new Hashtable
+        {
+            { DRAFT_OPTIONS_PROP, newOptionsJson },
+            { DRAFT_TURN_PROP, nextPickerActorNumber }
+        };
+
+        Debug.Log($"Master Client updating room props: Removed option {chosenOptionId}, next turn for {nextPickerActorNumber}");
+        PhotonNetwork.CurrentRoom.SetCustomProperties(roomPropsToUpdate);
+
+        // Optionally, send an RPC confirm to the picker? Or just let OnRoomPropertiesUpdate handle it.
+
+        // The Master Client doesn't apply the effect directly, that happens on the client
+        // who made the pick, triggered by OnRoomPropertiesUpdate detecting the change.
     }
 
     #endregion
+
+    #region Combat End Handling
+
+    private void HandleCombatWin()
+    {
+        if (combatEndedForLocalPlayer) return;
+        combatEndedForLocalPlayer = true;
+
+        Debug.Log("COMBAT WIN! Player defeated the opponent's pet.");
+        // Award point (Placeholder)
+        player1Score++; // Assuming local player is P1 for now
+        UpdateScoreUI();
+
+        // Mark this player as finished with combat for this round
+        SetPlayerCombatFinished(true);
+
+        // TODO: Show Win Message / Disable further actions
+        if (endTurnButton) endTurnButton.interactable = false;
+        // Consider disabling card dragging, etc.
+    }
+
+    private void HandleCombatLoss()
+    {
+        if (combatEndedForLocalPlayer) return;
+        combatEndedForLocalPlayer = true;
+
+        Debug.Log("COMBAT LOSS! Player was defeated.");
+        // Opponent gets point (Placeholder)
+        player2Score++; // Assuming opponent is P2 for now
+        UpdateScoreUI();
+
+        // Mark this player as finished with combat for this round
+        SetPlayerCombatFinished(true);
+
+        // TODO: Show Loss Message / Disable further actions
+        if (endTurnButton) endTurnButton.interactable = false;
+        // Consider disabling card dragging, etc.
+    }
+
+    private void SetPlayerCombatFinished(bool finished)
+    {
+        ExitGames.Client.Photon.Hashtable props = new ExitGames.Client.Photon.Hashtable
+        {
+            { COMBAT_FINISHED_PROPERTY, finished }
+        };
+        PhotonNetwork.LocalPlayer.SetCustomProperties(props);
+        Debug.Log($"Set {COMBAT_FINISHED_PROPERTY} to {finished} for local player.");
+
+        // Master client should check if all players are finished
+        if (PhotonNetwork.IsMasterClient)
+        {
+            CheckForAllPlayersFinishedCombat();
+        }
+    }
+
+    // Master Client checks if all players are done
+    private void CheckForAllPlayersFinishedCombat()
+    {
+        if (!PhotonNetwork.IsMasterClient || currentState != GameState.Combat)
+        {
+            return; // Only Master Client checks, and only during combat
+        }
+
+        Debug.Log("Master Client checking if all players finished combat...");
+
+        bool allFinished = true;
+        foreach (Player p in PhotonNetwork.PlayerList)
+        {
+            object finishedStatus;
+            if (p.CustomProperties.TryGetValue(COMBAT_FINISHED_PROPERTY, out finishedStatus))
+            {
+                if (!(bool)finishedStatus)
+                {
+                    allFinished = false;
+                    Debug.Log($"Player {p.NickName} has not finished combat yet.");
+                    break; // No need to check further
+                }
+            }
+            else
+            {
+                // Player hasn't set the property yet
+                allFinished = false;
+                Debug.Log($"Player {p.NickName} property {COMBAT_FINISHED_PROPERTY} not found.");
+                break;
+            }
+        }
+
+        if (allFinished)
+        {
+            Debug.Log("All players have finished combat! Starting Draft Phase.");
+            // Reset flags for next round before starting draft
+            ResetCombatFinishedFlags();
+            // Tell all clients to start the draft phase
+            photonView.RPC("RpcStartDraft", RpcTarget.All);
+        }
+        else
+        {
+            Debug.Log("Not all players finished combat yet.");
+        }
+    }
+
+    // Master Client calls this before starting draft to clear flags for next round
+    private void ResetCombatFinishedFlags()
+    {
+         if (!PhotonNetwork.IsMasterClient) return;
+
+         ExitGames.Client.Photon.Hashtable props = new ExitGames.Client.Photon.Hashtable
+         {
+            { COMBAT_FINISHED_PROPERTY, false }
+         };
+
+         // Reset for all players
+         foreach(Player p in PhotonNetwork.PlayerList)
+         {
+            p.SetCustomProperties(props);
+         }
+         Debug.Log("Reset CombatFinished flags for all players.");
+    }
+
+
+    [PunRPC]
+    private void RpcStartDraft()
+    {
+        Debug.Log("RPC Received: Starting Draft Phase");
+        currentState = GameState.Drafting;
+        combatEndedForLocalPlayer = false; // Reset local flag for the next combat round
+
+        // Hide Combat Screen
+        if (combatInstance != null) combatInstance.SetActive(false);
+
+        // Initialize local draft state cache before showing screen
+        currentDraftOptions.Clear();
+        activeOptionMap.Clear();
+        draftPlayerOrder.Clear();
+        currentPickerActorNumber = -1;
+
+        // Master Client generates and distributes draft options / sets initial state
+        if (PhotonNetwork.IsMasterClient)
+        {
+            GenerateAndDistributeDraftOptions();
+        }
+        else
+        {
+            // Non-master clients need to fetch initial state set by master
+            UpdateLocalDraftOptionsFromRoomProps();
+            UpdateLocalDraftTurnFromRoomProps();
+            UpdateLocalDraftOrderFromRoomProps();
+        }
+
+        // Show Draft Screen (Needs Implementation)
+        ShowDraftScreen();
+         // Update UI after potentially getting initial state
+        UpdateDraftUI();
+    }
+
+    #endregion
+
+    #region Draft Phase Logic
+
+    // --- Draft UI Methods ---
+    private void ShowDraftScreen()
+    {
+        Debug.Log("Showing Draft Screen");
+        if (draftInstance == null)
+        {
+            if (draftCanvasPrefab != null)
+            {
+                draftInstance = Instantiate(draftCanvasPrefab);
+                // Find Draft UI Elements
+                draftOptionsPanel = draftInstance.transform.Find("DraftOptionsPanel")?.gameObject;
+                draftTurnText = draftInstance.transform.Find("DraftTurnText")?.GetComponent<TextMeshProUGUI>();
+                draftOptionButtonTemplate = draftOptionsPanel?.transform.Find("OptionButtonTemplate")?.gameObject;
+
+                if (draftOptionsPanel == null || draftTurnText == null || draftOptionButtonTemplate == null)
+                {
+                    Debug.LogError("One or more Draft UI elements not found in DraftCanvasPrefab!");
+                }
+                else
+                {
+                    draftOptionButtonTemplate.SetActive(false); // Hide template
+                }
+            }
+            else
+            {
+                Debug.LogError("DraftCanvasPrefab is not assigned!");
+                return;
+            }
+        }
+        draftInstance.SetActive(true);
+        // UpdateDraftUI(); // Called after state is potentially loaded in RpcStartDraft
+    }
+
+    private void HideDraftScreen()
+    {
+         Debug.Log("Hiding Draft Screen");
+         if(draftInstance != null) draftInstance.SetActive(false);
+    }
+
+    private void UpdateDraftUI()
+    {
+        if (currentState != GameState.Drafting || draftInstance == null || !draftInstance.activeSelf)
+        {
+             // Don't update if not in draft or UI not ready
+             // Debug.LogWarning("Skipping UpdateDraftUI - Not in Drafting state or UI inactive.");
+             return;
+        }
+
+        if (draftOptionsPanel == null || draftTurnText == null || draftOptionButtonTemplate == null)
+        {
+            Debug.LogError("Cannot update Draft UI - references are missing.");
+            return;
+        }
+
+        // Update Turn Text
+        if (currentPickerActorNumber == -1)
+        {
+            draftTurnText.text = "Waiting for draft to start...";
+        }
+        else
+        {
+            Player picker = PhotonNetwork.CurrentRoom.GetPlayer(currentPickerActorNumber);
+            if (picker != null)
+            {
+                draftTurnText.text = (picker.IsLocal ? "Your Turn to Pick!" : $"Waiting for {picker.NickName} to pick...");
+            }
+            else
+            {
+                 draftTurnText.text = "Waiting for player..."; // Player might have left
+            }
+        }
+
+        // Clear previous option buttons
+        foreach (Transform child in draftOptionsPanel.transform)
+        {
+            if (child.gameObject != draftOptionButtonTemplate) // Don't destroy template
+            {
+                Destroy(child.gameObject);
+            }
+        }
+
+        bool isMyTurn = PhotonNetwork.LocalPlayer.ActorNumber == currentPickerActorNumber;
+
+        // Populate with current options IF it's the local player's turn
+        if (isMyTurn)
+        {
+            if (currentDraftOptions.Count == 0)
+            {
+                 draftTurnText.text = "No options remaining..."; // Or handle end draft
+            }
+            else
+            {
+                foreach (var serializableOption in currentDraftOptions)
+                {
+                    // Use the activeOptionMap which has richer data
+                    if (activeOptionMap.TryGetValue(serializableOption.OptionId, out DraftOption optionData))
+                    {
+                         GameObject optionButtonGO = Instantiate(draftOptionButtonTemplate, draftOptionsPanel.transform);
+                        optionButtonGO.SetActive(true);
+
+                        TextMeshProUGUI buttonText = optionButtonGO.GetComponentInChildren<TextMeshProUGUI>();
+                        if (buttonText != null) buttonText.text = optionData.Description;
+
+                        Button optionButton = optionButtonGO.GetComponent<Button>();
+                        if (optionButton != null)
+                        {
+                            // Make a local copy of the ID for the lambda closure
+                            int optionId = optionData.OptionId; 
+                            optionButton.onClick.RemoveAllListeners(); // Clear previous
+                            optionButton.onClick.AddListener(() => HandleOptionSelected(optionId));
+                            optionButton.interactable = true; // Enable button
+                        }
+                    }
+                    else
+                    {
+                         Debug.LogWarning($"Option ID {serializableOption.OptionId} found in list but not in active map. UI cannot display.");
+                    }
+                }
+            }
+        }
+        else
+        {
+            // Not my turn, maybe show options dimmed or just the turn text
+            // Current implementation just shows empty panel if not my turn
+            Debug.Log("Not local player's turn, not showing draft options.");
+        }
+    }
+
+    private void HandleOptionSelected(int selectedOptionId)
+    {
+        Debug.Log($"Local player selected option ID: {selectedOptionId}");
+
+        // Disable buttons immediately to prevent double-clicks
+        if (draftOptionsPanel != null)
+        {
+            foreach (Transform child in draftOptionsPanel.transform)
+            {
+                Button btn = child.GetComponent<Button>();
+                if (btn != null) btn.interactable = false;
+            }
+        }
+        draftTurnText.text = "Sending choice...";
+
+        // Find the selected option data locally *before* sending RPC
+        // We need this to apply the effect later
+        if (activeOptionMap.TryGetValue(selectedOptionId, out DraftOption chosenOptionData))
+        {   
+            // Apply the effect locally immediately for responsiveness
+            // The state change confirmation will come via OnRoomPropertiesUpdate
+            Debug.Log("Applying draft choice locally BEFORE confirmation."); // Optional immediate apply
+            ApplyDraftChoice(chosenOptionData);
+        }
+        else
+        {
+             Debug.LogError($"Selected option ID {selectedOptionId} not found in local active map when trying to apply! Cannot apply effect.");
+             // Should not happen if UI was populated correctly
+        }
+
+        // Send RPC to Master Client to make the choice official
+        photonView.RPC("RpcSelectDraftOption", RpcTarget.MasterClient, selectedOptionId);
+    }
+
+    // --- Draft Logic Methods ---
+    private void GenerateAndDistributeDraftOptions()
+    {
+         if (!PhotonNetwork.IsMasterClient) return;
+         Debug.Log("Master Client generating draft options...");
+
+        List<SerializableDraftOption> generatedOptions = new List<SerializableDraftOption>();
+        int optionIdCounter = 0; // Simple unique ID for this draft pool
+
+        // Determine number of options to generate (e.g., based on player count)
+        int totalOptionsToGenerate = PhotonNetwork.CurrentRoom.PlayerCount * optionsPerDraft; // Example: 3 options per player
+
+        // Simple generation logic (replace with more sophisticated selection)
+        for (int i = 0; i < totalOptionsToGenerate; i++)
+        {
+            optionIdCounter++;
+            int choiceType = Random.Range(0, 4); // 0: Player Card, 1: Pet Card, 2: Player Stat, 3: Pet Stat
+
+            if (choiceType <= 1 && (allPlayerCardPool.Count > 0 || allPetCardPool.Count > 0)) // Add Card
+            {
+                bool forPet = (choiceType == 1 && allPetCardPool.Count > 0) || allPlayerCardPool.Count == 0;
+                List<CardData> pool = forPet ? allPetCardPool : allPlayerCardPool;
+                if (pool.Count > 0)
+                {
+                    CardData randomCard = pool[Random.Range(0, pool.Count)];
+                    generatedOptions.Add(SerializableDraftOption.FromDraftOption(DraftOption.CreateAddCardOption(optionIdCounter, randomCard, forPet)));
+                }
+                else i--; // Try again if selected pool was empty
+            }
+            else // Upgrade Stat
+            {
+                 bool forPet = (choiceType == 3); // 2=Player, 3=Pet
+                 StatType stat = (StatType)Random.Range(0, System.Enum.GetValues(typeof(StatType)).Length);
+                 int amount = 0;
+                 if (stat == StatType.MaxHealth) amount = Random.Range(5, 11); // e.g., 5-10 health
+                 else if (stat == StatType.StartingEnergy) amount = 1; // Always +1 energy?
+                 // Add other stat amounts
+
+                if (amount > 0)
+                {
+                    generatedOptions.Add(SerializableDraftOption.FromDraftOption(DraftOption.CreateUpgradeStatOption(optionIdCounter, stat, amount, forPet)));
+                }
+                 else i--; // Try again if amount was 0 (e.g., for unhandled stats)
+            }
+        }
+
+        // Shuffle the generated options
+        System.Random rng = new System.Random();
+        generatedOptions = generatedOptions.OrderBy(a => rng.Next()).ToList();
+
+        // Determine player order (simple example: based on ActorNumber)
+        List<int> playerOrder = PhotonNetwork.PlayerList.Select(p => p.ActorNumber).OrderBy(n => n).ToList();
+        string playerOrderJson = JsonConvert.SerializeObject(playerOrder);
+
+        // Serialize options for network
+        string optionsJson = JsonConvert.SerializeObject(generatedOptions);
+
+        // Set initial Room Properties
+        Hashtable initialRoomProps = new Hashtable
+        {
+            { DRAFT_OPTIONS_PROP, optionsJson },
+            { DRAFT_TURN_PROP, playerOrder[0] }, // First player in order starts
+            { DRAFT_ORDER_PROP, playerOrderJson }
+        };
+
+        Debug.Log($"Setting initial draft properties: {generatedOptions.Count} options, first turn {playerOrder[0]}");
+        PhotonNetwork.CurrentRoom.SetCustomProperties(initialRoomProps);
+    }
+
+    private void ApplyDraftChoice(DraftOption choice)
+    {
+        Debug.Log($"Applying draft choice: {choice.Description}");
+        switch (choice.Type)
+        {
+            case DraftOptionType.AddPlayerCard:
+                if (choice.CardToAdd != null)
+                {
+                    deck.Add(choice.CardToAdd); // Add to deck (or maybe a temporary reward list?)
+                    ShuffleDeck(); // Reshuffle after adding
+                    UpdateDeckCountUI();
+                    Debug.Log($"Added {choice.CardToAdd.cardName} to player deck.");
+                }
+                break;
+            case DraftOptionType.AddPetCard:
+                if (choice.CardToAdd != null)
+                {
+                    // TODO: Need a dedicated Pet Deck list for the local player's pet
+                    // For now, adding to opponentPetDeck as placeholder, Needs Fix
+                    // opponentPetDeck.Add(choice.CardToAdd); 
+                    // ShuffleOpponentPetDeck();
+                    localPetDeck.Add(choice.CardToAdd); // CORRECT: Add to the local player's pet deck
+                    ShuffleLocalPetDeck(); // Shuffle after adding
+                    // Debug.LogWarning("Added card to Pet Deck - Placeholder: Needs dedicated pet deck list");
+                    Debug.Log($"Added {choice.CardToAdd.cardName} to local pet deck.");
+                     // Update pet deck UI if exists
+                }
+                break;
+            case DraftOptionType.UpgradePlayerStat:
+                 if (choice.StatToUpgrade == StatType.MaxHealth)
+                 {
+                    startingPlayerHealth += choice.StatIncreaseAmount; // Modify the base for next round
+                    localPlayerHealth += choice.StatIncreaseAmount; // Increase current health too
+                    Debug.Log($"Upgraded Player Max Health by {choice.StatIncreaseAmount}. New base: {startingPlayerHealth}");
+                 }
+                 else if (choice.StatToUpgrade == StatType.StartingEnergy)
+                 {
+                     startingEnergy += choice.StatIncreaseAmount;
+                     currentEnergy += choice.StatIncreaseAmount; // Optionally give energy now?
+                     Debug.Log($"Upgraded Player Starting Energy by {choice.StatIncreaseAmount}. New base: {startingEnergy}");
+                 }
+                 // Update UI relevant to the stat
+                 UpdateHealthUI();
+                 UpdateEnergyUI(); 
+                 break;
+            case DraftOptionType.UpgradePetStat:
+                 if (choice.StatToUpgrade == StatType.MaxHealth)
+                 {
+                    startingPetHealth += choice.StatIncreaseAmount; // Modify the base for next round
+                    localPetHealth += choice.StatIncreaseAmount; // Increase current health too
+                    Debug.Log($"Upgraded Pet Max Health by {choice.StatIncreaseAmount}. New base: {startingPetHealth}");
+                 }
+                 // TODO: Handle Pet Energy if pets have energy?
+                 // Update UI relevant to the stat
+                 UpdateHealthUI();
+                 break;
+
+            // TODO: Implement UpgradePlayerCard / UpgradePetCard
+            case DraftOptionType.UpgradePlayerCard:
+                 Debug.LogWarning("ApplyDraftChoice: UpgradePlayerCard not implemented.");
+                 break;
+            case DraftOptionType.UpgradePetCard:
+                 Debug.LogWarning("ApplyDraftChoice: UpgradePetCard not implemented.");
+                 break;
+        }
+    }
+
+    private void EndDraftPhase()
+    {
+        Debug.Log("Ending Draft Phase. Preparing for next round...");
+        HideDraftScreen();
+
+        // Reset necessary combat states BUT keep upgraded stats/decks
+        // This is similar to InitializeCombatState but without resetting health/energy bases
+        
+        // Maybe transition to a brief "Round Start" screen?
+        // For now, go directly back to combat setup
+
+        // TODO: Check win condition (e.g., score limit reached)
+        int scoreLimit = 10; // Example
+        if (player1Score >= scoreLimit || player2Score >= scoreLimit)
+        { 
+            HandleGameOver();
+        }
+        else
+        {
+             // Start next combat round via RPC
+             // Make sure flags are reset before RpcStartCombat is called again
+            // ResetCombatFinishedFlags(); // Already called by Master before RpcStartDraft
+             photonView.RPC("RpcStartCombat", RpcTarget.All);
+        }
+    }
+
+    private void HandleGameOver()
+    {
+        Debug.Log("GAME OVER!");
+        currentState = GameState.GameOver;
+        HideDraftScreen();
+        HideCombatScreen(); // Make sure combat is hidden too
+
+        // TODO: Show Game Over screen with winner/loser info
+        // Example:
+        // GameObject gameOverScreen = Instantiate(gameOverCanvasPrefab);
+        // TextMeshProUGUI winnerText = gameOverScreen.transform.Find("WinnerText").GetComponent<TextMeshProUGUI>();
+        // winnerText.text = (player1Score > player2Score) ? $"{PhotonNetwork.LocalPlayer.NickName} Wins!" : "Opponent Wins!"; // Basic 2 player
+    }
+
+    private void HideCombatScreen() // Helper added
+    {
+        Debug.Log("Hiding Combat Screen");
+        if(combatInstance != null) combatInstance.SetActive(false);
+    }
+
+    private void ShuffleLocalPetDeck() // New method for local pet
+    {
+        System.Random rng = new System.Random();
+        int n = localPetDeck.Count;
+        while (n > 1)
+        {
+            n--;
+            int k = rng.Next(n + 1);
+            CardData value = localPetDeck[k];
+            localPetDeck[k] = localPetDeck[n];
+            localPetDeck[n] = value;
+        }
+        Debug.Log("Local Pet Deck shuffled.");
+    }
+
+    #endregion
+
+} // End of GameManager Class
+
+
+// Helper class for serializing draft options via JSON for Photon Properties
+[System.Serializable]
+public class SerializableDraftOption
+{
+    public int OptionId;
+    public DraftOptionType Type;
+    public string Description;
+
+    // Store identifiers instead of direct references
+    public string CardName;        // For Add/Upgrade Card
+    public bool IsPetCard;
+    public StatType StatToUpgrade; // For Upgrade Stat
+    public int StatIncreaseAmount; // For Upgrade Stat
+    public bool IsPetStat;
+
+    // Convert from DraftOption to SerializableDraftOption
+    public static SerializableDraftOption FromDraftOption(DraftOption option)
+    {
+        var serializable = new SerializableDraftOption
+        {
+            OptionId = option.OptionId,
+            Type = option.Type,
+            Description = option.Description,
+            StatToUpgrade = option.StatToUpgrade,
+            StatIncreaseAmount = option.StatIncreaseAmount,
+            IsPetStat = (option.Type == DraftOptionType.UpgradePetStat)
+        };
+
+        if (option.Type == DraftOptionType.AddPlayerCard || option.Type == DraftOptionType.AddPetCard)
+        {
+            serializable.CardName = option.CardToAdd?.cardName;
+            serializable.IsPetCard = (option.Type == DraftOptionType.AddPetCard);
+        }
+        // TODO: Handle UpgradePlayerCard / UpgradePetCard serialization (e.g., store CardName of card to upgrade)
+
+        return serializable;
+    }
+
+    // Convert from SerializableDraftOption back to DraftOption
+    public DraftOption ToDraftOption(List<CardData> playerCardPool, List<CardData> petCardPool)
+    {
+        DraftOption option = new DraftOption(this.OptionId)
+        {
+            Type = this.Type,
+            Description = this.Description,
+            StatToUpgrade = this.StatToUpgrade,
+            StatIncreaseAmount = this.StatIncreaseAmount
+        };
+
+        if (this.Type == DraftOptionType.AddPlayerCard || this.Type == DraftOptionType.AddPetCard)
+        {
+            List<CardData> pool = this.IsPetCard ? petCardPool : playerCardPool;
+            option.CardToAdd = pool?.FirstOrDefault(card => card.cardName == this.CardName);
+            if (option.CardToAdd == null && !string.IsNullOrEmpty(this.CardName))
+            {
+                Debug.LogWarning($"Could not find card with name '{this.CardName}' in the corresponding pool during deserialization.");
+                return null; // Indicate failure to deserialize fully
+            }
+        }
+        // TODO: Handle UpgradePlayerCard / UpgradePetCard deserialization
+
+        return option;
+    }
 } 

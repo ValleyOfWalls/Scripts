@@ -26,6 +26,30 @@ public class CardAssetCreator
         EditorUtility.FocusProjectWindow();
     }
     
+    [MenuItem("Tools/Setup/Create Draft Test Card Assets", priority = 101)] // New menu item for draft cards
+    public static void CreateDraftTestCardAssets()
+    {
+        Debug.Log($"Creating draft test card assets in {CardAssetSavePath}...");
+
+        // --- Define Cards for Draft Pools Here --- 
+        // Player Cards
+        CreateOrReplaceCardAsset("Quick Slash", 1, "Deal 4 damage twice.", 4); // Example: Modify damage later if needed for multi-hit
+        CreateOrReplaceCardAsset("Iron Skin", 1, "Gain 7 Block.", 0, 7);
+        CreateOrReplaceCardAsset("Adrenaline Rush", 0, "Draw 2 cards. Gain 1 Energy.", 0, 0); // Needs Draw/Energy effect logic
+        CreateOrReplaceCardAsset("Power Through", 1, "Gain 15 Block. Add 1 Wound to Draw Pile.", 0, 15); // Needs Wound logic
+
+        // Pet Cards
+        CreateOrReplaceCardAsset("Ferocious Bite", 2, "Deal 12 damage.", 12);
+        CreateOrReplaceCardAsset("Protective Growl", 1, "Gain 4 Block. Apply 1 Weak to target.", 0, 4); // Needs Weak logic
+        CreateOrReplaceCardAsset("Go Fetch", 0, "Draw 1 Pet Card.", 0, 0); // Needs Pet Draw logic
+        CreateOrReplaceCardAsset("Thick Hide", 1, "Gain 8 Block.", 0, 8);
+
+        Debug.Log("Finished creating draft test card assets.");
+        AssetDatabase.SaveAssets();
+        AssetDatabase.Refresh();
+        EditorUtility.FocusProjectWindow();
+    }
+    
     // Modified helper to create/replace and populate fields
     private static void CreateOrReplaceCardAsset(string cardName, int cost, string description, int damage = 0, int block = 0 /* Add other params like weak/vulnerable here */)
     {

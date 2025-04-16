@@ -3,6 +3,7 @@ using UnityEngine.UI;
 using UnityEditor;
 using System.IO;
 using TMPro; // Import TextMeshPro
+using System.Collections.Generic; // Needed for FindObjectsOfType
 
 public class UISetup : Editor
 {
@@ -47,8 +48,8 @@ public class UISetup : Editor
         string prefabPath = CreateCanvasPrefab("DraftCanvas", AddDraftScreenElements);
          if (!string.IsNullOrEmpty(prefabPath))
         {
-             // AssignPrefabToGameManager("draftCanvasPrefab", prefabPath); // Uncomment when field exists on GameManager
-             Debug.LogWarning("DraftCanvas created, but no 'draftCanvasPrefab' field found on GameManager to assign to.");
+             AssignPrefabToGameManager("draftCanvasPrefab", prefabPath); // Assign to the GameManager field
+             // Debug.LogWarning("DraftCanvas created, but no 'draftCanvasPrefab' field found on GameManager to assign to.");
         }
     }
 
@@ -426,23 +427,21 @@ public class UISetup : Editor
 
     private static void AddDraftScreenElements(GameObject canvasRoot)
     {
-        CreateText(canvasRoot.transform, "DraftTitleText", "Choose Your Upgrade", 36, TextAlignmentOptions.Top, new Vector2(0, -30));
-        
-        GameObject optionsPanel = CreatePanel(canvasRoot.transform, "DraftOptionsPanel", new Vector2(0, 0), new Vector2(600, 400));
-        GridLayoutGroup gridLayout = optionsPanel.AddComponent<GridLayoutGroup>();
-        gridLayout.padding = new RectOffset(20, 20, 20, 20);
-        gridLayout.cellSize = new Vector2(150, 100);
-        gridLayout.spacing = new Vector2(15, 15);
-        gridLayout.childAlignment = TextAnchor.MiddleCenter;
-        GameObject optionTemplate = CreateButton(optionsPanel.transform, "OptionTemplate", "", Vector2.zero).gameObject;
-        RectTransform optionRect = optionTemplate.GetComponent<RectTransform>();
-        optionRect.anchorMin = Vector2.zero;
-        optionRect.anchorMax = Vector2.one;
-        optionRect.sizeDelta = Vector2.zero;
-        optionRect.anchoredPosition = Vector2.zero;
-        CreateText(optionTemplate.transform, "OptionText", "Option Description Here (e.g., +5 Max HP)", 14, TextAlignmentOptions.Center);
-        optionTemplate.SetActive(false);
-        CreateText(canvasRoot.transform, "TimerText", "Time Left: 30s", 20, TextAlignmentOptions.Bottom, new Vector2(0, 20));
+        // Title Text
+        TextMeshProUGUI draftTitle = CreateText(canvasRoot.transform, "DraftTurnText", "Waiting for draft...", 30, TextAlignmentOptions.Center);
+        ConfigureRectTransform(draftTitle.rectTransform, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0, -50), new Vector2(600, 60));
+
+        // Options Panel (Scrollable? For now, just a panel)
+        GameObject optionsPanel = CreatePanel(canvasRoot.transform, "DraftOptionsPanel");
+        ConfigureRectTransform(optionsPanel.GetComponent<RectTransform>(), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0, 0), new Vector2(500, 400));
+        VerticalLayoutGroup optionsLayout = AddVerticalLayoutGroup(optionsPanel, DefaultPadding, DefaultSpacing, controlChildWidth: true, controlChildHeight: false);
+        optionsLayout.childAlignment = TextAnchor.UpperCenter;
+        optionsLayout.childForceExpandHeight = false;
+
+        // Option Button Template
+        Button optionButtonTemplate = CreateButton(optionsPanel.transform, "OptionButtonTemplate", "Option Description Text");
+        SetLayoutElement(optionButtonTemplate.gameObject, minHeight: 50); // Set a minimum height for the button
+        optionButtonTemplate.gameObject.SetActive(false); // Disable the template
     }
 
     // --- Helper Functions --- 
@@ -506,42 +505,90 @@ public class UISetup : Editor
     // --- NEW HELPER --- 
     private static void AssignPrefabToGameManager(string fieldName, string prefabPath)
     {
-        GameObject prefabAsset = AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
-        if (prefabAsset == null)
+        GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
+        if (prefab == null)
         {
-            Debug.LogError($"AssignPrefab: Failed to load prefab asset at path: {prefabPath}");
+            Debug.LogError($"Failed to load prefab at path {prefabPath} for assignment.");
             return;
         }
 
+        // Find the GameManager component in the scene (requires an active scene with GameManager)
         GameManager gameManager = FindObjectOfType<GameManager>();
         if (gameManager == null)
         {
-            Debug.LogWarning($"AssignPrefab: Could not find GameManager in the current scene to assign '{fieldName}'. Prefab created but not assigned.");
-            return;
+            // Alternative: Find the GameManager prefab if not in scene
+            string[] guids = AssetDatabase.FindAssets("t:Prefab GameManager"); // Search for prefabs named GameManager
+            if (guids.Length > 0)
+            {
+                string path = AssetDatabase.GUIDToAssetPath(guids[0]);
+                GameObject gmPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+                if (gmPrefab != null)
+                {
+                    gameManager = gmPrefab.GetComponent<GameManager>();
+                    if (gameManager == null)
+                    {
+                        Debug.LogError("Found GameManager prefab, but it lacks the GameManager component.");
+                        return;
+                    }
+                    Debug.Log("Found GameManager prefab. Applying assignment to prefab.");
+                }
+                else
+                {
+                    Debug.LogError("Could not load GameManager prefab from found GUID.");
+                    return;
+                }
+            }
+            else
+            {
+                 Debug.LogWarning("GameManager component not found in the current scene or as a prefab. Cannot assign prefab.");
+                 return;
+            }
         }
 
-        SerializedObject so = new SerializedObject(gameManager);
-        SerializedProperty property = so.FindProperty(fieldName);
-
-        if (property == null)
+        try
         {
-            Debug.LogError($"AssignPrefab: Could not find SerializedProperty '{fieldName}' on GameManager. Make sure the field exists and is [SerializeField].");
-            return;
-        }
+            // Use reflection to find the field
+            System.Reflection.FieldInfo field = typeof(GameManager).GetField(fieldName, 
+                System.Reflection.BindingFlags.NonPublic | 
+                System.Reflection.BindingFlags.Instance);
 
-        if (property.propertyType != SerializedPropertyType.ObjectReference)
+            if (field != null)
+            {
+                if (field.FieldType == typeof(GameObject))
+                {
+                    // Use SerializedObject for reliable prefab modification
+                    SerializedObject so = new SerializedObject(gameManager);
+                    SerializedProperty prop = so.FindProperty(fieldName);
+                    if (prop != null)
+                    {
+                        prop.objectReferenceValue = prefab;
+                        so.ApplyModifiedProperties();
+                        Debug.Log($"Assigned prefab '{prefab.name}' to GameManager field '{fieldName}'.");
+                        // Mark the GameManager object as dirty if it's in the scene
+                        if (!PrefabUtility.IsPartOfPrefabAsset(gameManager.gameObject))
+                        {
+                             EditorUtility.SetDirty(gameManager);
+                        }
+                    }
+                    else
+                    {
+                        Debug.LogError($"SerializedProperty '{fieldName}' not found on GameManager.");
+                    }
+                }
+                else
+                {
+                    Debug.LogError($"Field '{fieldName}' on GameManager is not of type GameObject.");
+                }
+            }
+            else
+            {
+                Debug.LogError($"Field '{fieldName}' not found on GameManager script. Make sure it's declared and [SerializeField] if private.");
+            }
+        }
+        catch (System.Exception e)
         {
-             Debug.LogError($"AssignPrefab: Field '{fieldName}' on GameManager is not an Object Reference type.");
-            return;
+            Debug.LogError($"Error assigning prefab to GameManager field '{fieldName}': {e.Message}\n{e.StackTrace}");
         }
-
-        property.objectReferenceValue = prefabAsset;
-        so.ApplyModifiedProperties(); // Apply the change
-
-        // Optional: Mark scene as dirty so the change is saved
-        UnityEditor.SceneManagement.EditorSceneManager.MarkSceneDirty(gameManager.gameObject.scene);
-
-        Debug.Log($"Successfully assigned '{prefabAsset.name}' to GameManager field '{fieldName}'.");
     }
 
     // --- UI Element Creation Helpers ---
