@@ -52,15 +52,112 @@ public class UISetup : Editor
         }
     }
 
+    [MenuItem("Tools/Setup/UI/Create Card Template Prefab")]
+    public static string CreateCardTemplatePrefab()
+    {
+        const string prefabName = "CardTemplate";
+        string fullPrefabPath = Path.Combine(UIPrefabSavePath, prefabName + ".prefab");
+        bool replacing = false;
+
+        if (!Directory.Exists(UIPrefabSavePath))
+        {
+            Directory.CreateDirectory(UIPrefabSavePath);
+            AssetDatabase.Refresh();
+        }
+
+        if (AssetDatabase.LoadAssetAtPath<GameObject>(fullPrefabPath) != null)
+        {
+            if (AssetDatabase.DeleteAsset(fullPrefabPath))
+            {
+                Debug.Log($"Deleted existing card template prefab at {fullPrefabPath} to replace it.");
+                AssetDatabase.Refresh();
+                replacing = true;
+            }
+            else
+            {
+                Debug.LogError($"Failed to delete existing card template prefab at {fullPrefabPath}. Skipping creation.");
+                return null;
+            }
+        }
+
+        GameObject cardRoot = new GameObject(prefabName);
+        string resultPath = null;
+        try
+        {
+            // --- Build Card Hierarchy --- 
+            Image cardImage = cardRoot.AddComponent<Image>();
+            cardImage.color = new Color(0.2f, 0.2f, 0.25f);
+            // Add CanvasGroup for drag-and-drop raycast control
+            CanvasGroup cardCanvasGroup = cardRoot.AddComponent<CanvasGroup>(); 
+            cardCanvasGroup.blocksRaycasts = true; // Initially blocks raycasts
+            LayoutElement rootLayout = cardRoot.AddComponent<LayoutElement>();
+            rootLayout.minWidth = 120; rootLayout.minHeight = 180;
+            rootLayout.preferredWidth = 120; rootLayout.preferredHeight = 180;
+            
+            VerticalLayoutGroup cardLayout = AddVerticalLayoutGroup(cardRoot, 5, 5, controlChildWidth: true, controlChildHeight: false);
+            cardLayout.childAlignment = TextAnchor.UpperCenter;
+            cardLayout.childForceExpandHeight = false;
+            ContentSizeFitter rootFitter = cardRoot.GetComponent<ContentSizeFitter>();
+            if(rootFitter != null) { rootFitter.verticalFit = ContentSizeFitter.FitMode.Unconstrained; rootFitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained; }
+
+            // Header Panel 
+            GameObject headerPanel = CreatePanel(cardRoot.transform, "HeaderPanel", true);
+            SetLayoutElement(headerPanel, minHeight: 30);
+            HorizontalLayoutGroup headerLayout = AddHorizontalLayoutGroup(headerPanel, 5, 5, controlChildHeight: true);
+            headerLayout.childAlignment = TextAnchor.MiddleCenter;
+            ContentSizeFitter headerFitter = headerPanel.GetComponent<ContentSizeFitter>();
+            if(headerFitter != null) { headerFitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained; headerFitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize; }
+            TextMeshProUGUI costText = CreateText(headerPanel.transform, "CostText", "1", 18, TextAlignmentOptions.Center);
+            SetLayoutElement(costText.gameObject, minWidth: 25, minHeight: 25);
+            TextMeshProUGUI cardNameText = CreateText(headerPanel.transform, "CardNameText", "Card Name", 16, TextAlignmentOptions.Left);
+            SetLayoutElement(cardNameText.gameObject, flexibleWidth: 1);
+
+            // Art Panel
+            GameObject artPanel = CreatePanel(cardRoot.transform, "ArtPanel");
+            Image artImage = artPanel.GetComponent<Image>();
+            artImage.color = new Color(0.5f, 0.5f, 0.5f, 0.5f);
+            SetLayoutElement(artPanel, minHeight: 60, flexibleHeight: 1);
+            ContentSizeFitter artFitter = artPanel.GetComponent<ContentSizeFitter>();
+            if(artFitter != null) { artFitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained; artFitter.verticalFit = ContentSizeFitter.FitMode.Unconstrained; } 
+
+            // Description Panel
+            GameObject descPanel = CreatePanel(cardRoot.transform, "DescPanel", true);
+            SetLayoutElement(descPanel, minHeight: 40);
+            VerticalLayoutGroup descLayout = AddVerticalLayoutGroup(descPanel, 5, 2, controlChildHeight: false);
+            descLayout.childAlignment = TextAnchor.UpperCenter;
+            descLayout.childForceExpandHeight = false;
+            ContentSizeFitter descFitter = descPanel.GetComponent<ContentSizeFitter>();
+            if(descFitter != null) { descFitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained; descFitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize; }
+            TextMeshProUGUI cardDescText = CreateText(descPanel.transform, "CardDescText", "Desc...", 12, TextAlignmentOptions.Center);
+            cardDescText.enableWordWrapping = true;
+            SetLayoutElement(cardDescText.gameObject, minHeight: 30); 
+            // --- End Card Hierarchy --- 
+
+            PrefabUtility.SaveAsPrefabAsset(cardRoot, fullPrefabPath);
+            resultPath = fullPrefabPath;
+            Debug.Log($"Successfully {(replacing ? "replaced" : "created")} Card Template prefab at: {fullPrefabPath}");
+        }
+        catch (System.Exception e) { Debug.LogError($"Failed to create Card Template prefab: {e.Message}\n{e.StackTrace}"); }
+        finally { 
+            if (cardRoot != null) DestroyImmediate(cardRoot);
+            AssetDatabase.Refresh();
+        }
+        // Assign to GameManager if the field exists
+        if (!string.IsNullOrEmpty(resultPath))
+            AssignPrefabToGameManager("cardPrefab", resultPath);
+            
+        return resultPath;
+    }
+
     [MenuItem("Tools/Setup/UI/Create ALL UI Prefabs", priority = 50)] 
     public static void CreateAllUIScreens()
     {
         Debug.Log("Creating all UI screen prefabs...");
-        // Call individual methods which now handle assignment
         CreateStartScreen();
         CreateLobbyScreen();
         CreateCombatScreen();
         CreateDraftScreen();
+        CreateCardTemplatePrefab(); // Also create the card template
         Debug.Log("Finished creating all UI screen prefabs.");
     }
 
@@ -118,6 +215,10 @@ public class UISetup : Editor
              new Vector2(0, -DefaultPadding), new Vector2(300, 150));
         VerticalLayoutGroup oppLayout = AddVerticalLayoutGroup(opponentPetArea, DefaultPadding, DefaultSpacing);
         oppLayout.childAlignment = TextAnchor.UpperCenter;
+        // Add CardDropZone for opponent target
+        CardDropZone oppDropZone = opponentPetArea.AddComponent<CardDropZone>();
+        oppDropZone.targetType = DropZoneTargetType.OpponentPet;
+        opponentPetArea.GetComponent<Image>().color = new Color(0.1f, 0.1f, 0.1f, 0.75f); // Ensure Image exists and slightly visible for raycast
         CreateText(opponentPetArea.transform, "OpponentPetNameText", "Opponent Pet", 20, TextAlignmentOptions.Center);
         Slider oppHealthSlider = CreateSlider(opponentPetArea.transform, "OpponentPetHealthSlider", new Vector2(200, 20));
         CreateText(opponentPetArea.transform, "OpponentPetHealthText", "50 / 50", 16, TextAlignmentOptions.Center);
@@ -129,6 +230,10 @@ public class UISetup : Editor
              new Vector2(DefaultPadding, -DefaultPadding), new Vector2(200, 100));
         VerticalLayoutGroup ownPetLayout = AddVerticalLayoutGroup(ownPetArea, DefaultPadding, DefaultSpacing);
         ownPetLayout.childAlignment = TextAnchor.UpperCenter;
+        // Add CardDropZone for own pet target
+        CardDropZone ownDropZone = ownPetArea.AddComponent<CardDropZone>();
+        ownDropZone.targetType = DropZoneTargetType.OwnPet;
+        ownPetArea.GetComponent<Image>().color = new Color(0.1f, 0.1f, 0.1f, 0.75f); // Ensure Image exists and slightly visible for raycast
         CreateText(ownPetArea.transform, "OwnPetNameText", "Your Pet", 18, TextAlignmentOptions.Center);
         Slider ownPetHealthSlider = CreateSlider(ownPetArea.transform, "OwnPetHealthSlider", new Vector2(150, 15));
         CreateText(ownPetArea.transform, "OwnPetHealthText", "50 / 50", 14, TextAlignmentOptions.Center);
@@ -162,6 +267,8 @@ public class UISetup : Editor
         SetLayoutElement(playerHealthSlider.gameObject, minWidth: 200);
         TextMeshProUGUI playerHealthText = CreateText(statsRow.transform, "PlayerHealthText", "100 / 100", 16, TextAlignmentOptions.Left);
         SetLayoutElement(playerHealthText.gameObject, minWidth: 80);
+        TextMeshProUGUI energyText = CreateText(statsRow.transform, "EnergyText", "Energy: 3/3", 18, TextAlignmentOptions.Left);
+        SetLayoutElement(energyText.gameObject, minWidth: 120);
 
         GameObject handPanel = CreatePanel(playerArea.transform, "PlayerHandPanel", true);
         ConfigureRectTransform(handPanel.GetComponent<RectTransform>(),
@@ -174,53 +281,13 @@ public class UISetup : Editor
         handLayout.childForceExpandWidth = false;
         handLayout.childForceExpandHeight = false;
         
-        // --- Card Template (Revised Structure) ---
-        GameObject cardTemplate = CreatePanel(handPanel.transform, "CardTemplate");
-        Image cardImage = cardTemplate.GetComponent<Image>(); // Get existing Image from CreatePanel
-        cardImage.color = new Color(0.2f, 0.2f, 0.25f); // Darker background for the card
-        cardTemplate.AddComponent<CanvasGroup>(); // For interaction/dragging later
-        SetLayoutElement(cardTemplate, 120, 180); // Wider and taller cards
-        
-        // Use a Vertical Layout for the card's internal structure
-        VerticalLayoutGroup cardLayout = AddVerticalLayoutGroup(cardTemplate, 5, 5, controlChildHeight: false);
-        cardLayout.childAlignment = TextAnchor.UpperCenter;
-        cardLayout.childForceExpandHeight = false;
-
-        // Header Panel (Horizontal: Cost + Name)
-        GameObject headerPanel = CreatePanel(cardTemplate.transform, "HeaderPanel", true);
-        SetLayoutElement(headerPanel, minHeight: 30); // Give header fixed height
-        HorizontalLayoutGroup headerLayout = AddHorizontalLayoutGroup(headerPanel, 5, 5, controlChildHeight: true);
-        headerLayout.childAlignment = TextAnchor.MiddleCenter;
-        // Get the ContentSizeFitter added by the helper and adjust its horizontal fit
-        ContentSizeFitter headerFitter = headerPanel.GetComponent<ContentSizeFitter>();
-        if(headerFitter != null) headerFitter.horizontalFit = ContentSizeFitter.FitMode.MinSize; // SET TO MINSIZE
-        TextMeshProUGUI costText = CreateText(headerPanel.transform, "CostText", "1", 18, TextAlignmentOptions.Center);
-        // Optionally add a background image/circle for the cost
-        SetLayoutElement(costText.gameObject, minWidth: 25, minHeight: 25);
-        TextMeshProUGUI cardNameText = CreateText(headerPanel.transform, "CardNameText", "Card Name", 16, TextAlignmentOptions.Left);
-        SetLayoutElement(cardNameText.gameObject, flexibleWidth: 1); // Name takes remaining space
-
-        // Art Panel (Placeholder)
-        GameObject artPanel = CreatePanel(cardTemplate.transform, "ArtPanel");
-        Image artImage = artPanel.GetComponent<Image>(); // Get existing Image
-        artImage.color = new Color(0.5f, 0.5f, 0.5f, 0.5f); // Placeholder grey
-        SetLayoutElement(artPanel, minHeight: 60, flexibleHeight: 1); // Let art take flexible space
-
-        // Description Panel
-        GameObject descPanel = CreatePanel(cardTemplate.transform, "DescPanel", true);
-        SetLayoutElement(descPanel, minHeight: 40); // Minimum height for description
-        VerticalLayoutGroup descLayout = AddVerticalLayoutGroup(descPanel, 5, 2, controlChildHeight: false);
-        // Get the ContentSizeFitter added by the helper and adjust its horizontal fit
-        ContentSizeFitter descFitter = descPanel.GetComponent<ContentSizeFitter>();
-        if(descFitter != null) descFitter.horizontalFit = ContentSizeFitter.FitMode.MinSize; // SET TO MINSIZE
-        descLayout.childAlignment = TextAnchor.UpperCenter;
-        descLayout.childForceExpandHeight = false;
-        TextMeshProUGUI cardDescText = CreateText(descPanel.transform, "CardDescText", "Description text goes here and might wrap around", 12, TextAlignmentOptions.Center);
-        cardDescText.enableWordWrapping = true;
-        SetLayoutElement(cardDescText.gameObject, minHeight: 30); // Min height for the text itself
-
-        cardTemplate.SetActive(false);
-        // --- End Card Template ---
+        // --- Card Template Placeholder --- 
+        // Create an empty, inactive placeholder GameObject. 
+        // The actual CardTemplate prefab will be instantiated here at runtime.
+        GameObject cardTemplatePlaceholder = new GameObject("CardTemplate", typeof(RectTransform));
+        cardTemplatePlaceholder.transform.SetParent(handPanel.transform, false);
+        cardTemplatePlaceholder.SetActive(false);
+        // --- End Card Template Placeholder ---
 
         GameObject bottomBar = CreatePanel(playerArea.transform, "BottomBar", true);
         ConfigureRectTransform(bottomBar.GetComponent<RectTransform>(),

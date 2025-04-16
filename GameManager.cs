@@ -20,6 +20,7 @@ public class GameManager : MonoBehaviourPunCallbacks
     [SerializeField] private GameObject lobbyCanvasPrefab;
     [SerializeField] private GameObject combatCanvasPrefab; // Assign this prefab
     // [SerializeField] private GameObject draftCanvasPrefab; // For later
+    [SerializeField] private GameObject cardPrefab; // Assign this prefab via UISetup
 
     [Header("Start Screen References")]
     private Button connectButton;
@@ -37,7 +38,7 @@ public class GameManager : MonoBehaviourPunCallbacks
     private Slider playerHealthSlider;
     private TextMeshProUGUI playerHealthText;
     private GameObject playerHandPanel;
-    private GameObject cardTemplate; // Inside Hand Panel
+    // private GameObject cardTemplate; // No longer needed - we use cardPrefab
     private TextMeshProUGUI deckCountText;
     private TextMeshProUGUI discardCountText;
     private Button endTurnButton;
@@ -381,7 +382,7 @@ public class GameManager : MonoBehaviourPunCallbacks
                 
                 Transform handPanelTransform = playerArea.Find("PlayerHandPanel");
                 playerHandPanel = handPanelTransform?.gameObject;
-                cardTemplate = handPanelTransform?.Find("CardTemplate")?.gameObject;
+                // cardTemplate = handPanelTransform?.Find("CardTemplate")?.gameObject; // Don't need to find template, use cardPrefab
                 
                 Transform bottomBar = playerArea.Find("BottomBar");
                 deckCountText = bottomBar?.Find("DeckCountText")?.GetComponent<TextMeshProUGUI>();
@@ -392,13 +393,13 @@ public class GameManager : MonoBehaviourPunCallbacks
                 endTurnButton?.onClick.AddListener(EndTurn); 
 
                  // Validate critical findings 
-                if (playerHandPanel == null || opponentPetNameText == null || endTurnButton == null || cardTemplate == null || scoreText == null)
-                     Debug.LogError("One or more critical Combat UI elements not found in CombatCanvasPrefab!");
+                if (playerHandPanel == null || opponentPetNameText == null || endTurnButton == null /*|| cardTemplate == null*/ || scoreText == null)
+                     Debug.LogError("One or more critical Combat UI elements not found in CombatCanvasPrefab! PlayerHandPanel or OpponentPetName missing?");
                 else 
                      Debug.Log("Successfully found critical combat UI elements.");
 
                 
-                cardTemplate?.SetActive(false);
+                // cardTemplate?.SetActive(false); // No longer need to deactivate template in scene
                 otherPlayerStatusTemplate?.SetActive(false);
                 othersStatusArea?.SetActive(PhotonNetwork.PlayerList.Length > 2); // Only show for >2 players
             }
@@ -596,21 +597,31 @@ public class GameManager : MonoBehaviourPunCallbacks
 
     private void UpdateHandUI()
     {
-        if (playerHandPanel == null || cardTemplate == null) return;
+        if (playerHandPanel == null || cardPrefab == null) 
+        {
+            Debug.LogError("Cannot UpdateHandUI - PlayerHandPanel or CardPrefab is missing!");
+            return;
+        }
 
-        // Clear existing card visuals
+        // Clear existing card visuals (excluding the inactive placeholder if it somehow exists)
         foreach (Transform child in playerHandPanel.transform)
         {
-            if (child.gameObject != cardTemplate) // Don't destroy the template itself
-            { 
+            // Don't destroy the original placeholder if UISetup left one (it shouldn't)
+            if (child.gameObject.name != "CardTemplate") 
+            {
                 Destroy(child.gameObject);
+            }
+            else
+            {
+                child.gameObject.SetActive(false); // Ensure placeholder remains inactive
             }
         }
 
-        // Instantiate new card visuals for cards in hand
+        // Instantiate new card visuals for cards in hand using the prefab
         foreach (CardData card in hand)
         {
-            GameObject cardGO = Instantiate(cardTemplate, playerHandPanel.transform);
+            GameObject cardGO = Instantiate(cardPrefab, playerHandPanel.transform);
+            cardGO.name = $"Card_{card.cardName}"; // Give instantiated cards a useful name
             
             // --- Populate Card Visuals (Updated for new structure) --- 
             Transform headerPanel = cardGO.transform.Find("HeaderPanel");
