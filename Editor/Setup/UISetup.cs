@@ -154,6 +154,162 @@ public class UISetup : Editor
         return resultPath;
     }
 
+    // --- ADDED DECK VIEWER PANEL PREFAB START ---
+    [MenuItem("Tools/Setup/UI/Create Deck Viewer Panel Prefab")]
+    public static string CreateDeckViewerPanelPrefab()
+    {
+        const string prefabName = "DeckViewerPanel";
+        string fullPrefabPath = Path.Combine(UIPrefabSavePath, prefabName + ".prefab");
+        GameObject panelRoot = null;
+        string resultPath = null;
+
+        if (!Directory.Exists(UIPrefabSavePath))
+        {
+            Directory.CreateDirectory(UIPrefabSavePath);
+            AssetDatabase.Refresh();
+        }
+
+        bool replacing = AssetDatabase.DeleteAsset(fullPrefabPath);
+        if (replacing) Debug.Log($"Deleted existing Deck Viewer Panel prefab at {fullPrefabPath} to replace it.");
+
+        try
+        {
+            panelRoot = new GameObject(prefabName);
+            panelRoot.SetActive(false); // Start inactive
+            RectTransform rootRect = panelRoot.AddComponent<RectTransform>();
+            // Center anchor, default size for now, can be adjusted by parent layout
+            ConfigureRectTransform(rootRect, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(500, 600));
+
+            // Background
+            Image backgroundImage = panelRoot.AddComponent<Image>();
+            backgroundImage.color = new Color(0.1f, 0.1f, 0.1f, 0.95f);
+            backgroundImage.raycastTarget = true; // Block clicks behind the panel
+
+            // Vertical Layout for the whole panel
+            VerticalLayoutGroup panelLayout = AddVerticalLayoutGroup(panelRoot, DefaultPadding, DefaultSpacing, true, false);
+            panelLayout.childForceExpandHeight = false;
+            panelLayout.childControlHeight = false;
+            panelLayout.childAlignment = TextAnchor.UpperCenter;
+
+            // Header Row (Title + Close Button)
+            GameObject headerRow = CreatePanel(panelRoot.transform, "HeaderRow", true);
+            SetLayoutElement(headerRow, preferredHeight: 40, flexibleHeight: 0);
+            HorizontalLayoutGroup headerLayout = AddHorizontalLayoutGroup(headerRow, DefaultPadding, DefaultSpacing);
+            headerLayout.childAlignment = TextAnchor.MiddleCenter;
+
+            TextMeshProUGUI titleText = CreateText(headerRow.transform, "TitleText", "Deck Viewer", 24, TextAlignmentOptions.Left);
+            SetLayoutElement(titleText.gameObject, flexibleWidth: 1);
+
+            Button closeButton = CreateButton(headerRow.transform, "CloseButton", "X");
+            SetLayoutElement(closeButton.gameObject, minWidth: 40, preferredWidth: 40, minHeight: 40, preferredHeight: 40); 
+
+            // Scroll View for Cards
+            GameObject scrollViewGO = new GameObject("CardScrollView");
+            scrollViewGO.transform.SetParent(panelRoot.transform, false);
+            ScrollRect scrollRect = scrollViewGO.AddComponent<ScrollRect>();
+            Image scrollBg = scrollViewGO.AddComponent<Image>();
+            scrollBg.color = new Color(0f, 0f, 0f, 0.2f); // Slightly darker background for scroll area
+            SetLayoutElement(scrollViewGO, flexibleHeight: 1); // Make scroll view fill available space
+
+            // Scroll Viewport
+            GameObject viewportGO = new GameObject("Viewport");
+            viewportGO.transform.SetParent(scrollViewGO.transform, false);
+            RectTransform viewportRect = viewportGO.AddComponent<RectTransform>();
+            viewportGO.AddComponent<Mask>().showMaskGraphic = false;
+            Image viewportImage = viewportGO.AddComponent<Image>(); // Needed for Mask
+            viewportImage.color = Color.white; // Doesn't matter visually due to mask
+            viewportImage.raycastTarget = false;
+            ConfigureRectTransform(viewportRect, Vector2.zero, Vector2.one, new Vector2(0f, 1f), Vector2.zero, Vector2.zero); // Stretch fill
+
+            // Scroll Content
+            GameObject contentGO = new GameObject("Content");
+            contentGO.transform.SetParent(viewportGO.transform, false);
+            RectTransform contentRect = contentGO.AddComponent<RectTransform>();
+            VerticalLayoutGroup contentLayout = AddVerticalLayoutGroup(contentGO, DefaultPadding, DefaultSpacing, true, false);
+            contentLayout.childControlHeight = false; // Let cards control their height
+            contentLayout.childAlignment = TextAnchor.UpperCenter;
+            ContentSizeFitter contentFitter = contentGO.AddComponent<ContentSizeFitter>();
+            contentFitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize; // Expand vertically based on content
+            ConfigureRectTransform(contentRect, new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1f), Vector2.zero, new Vector2(0, 0)); // Anchor top, stretch width
+
+            // Link ScrollRect components
+            scrollRect.viewport = viewportRect;
+            scrollRect.content = contentRect;
+            scrollRect.horizontal = false;
+            scrollRect.vertical = true;
+            scrollRect.movementType = ScrollRect.MovementType.Clamped;
+
+            // Optional: Add Scrollbar
+            GameObject scrollbarGO = new GameObject("ScrollbarVertical");
+            scrollbarGO.transform.SetParent(scrollViewGO.transform, false); // Parent to ScrollView
+            Scrollbar scrollbar = scrollbarGO.AddComponent<Scrollbar>();
+            Image scrollbarImage = scrollbarGO.AddComponent<Image>();
+            scrollbarImage.color = new Color(0.2f, 0.2f, 0.2f, 0.8f);
+            RectTransform scrollbarRect = scrollbarGO.GetComponent<RectTransform>();
+            ConfigureRectTransform(scrollbarRect, new Vector2(1, 0), new Vector2(1, 1), new Vector2(1, 1), new Vector2(0, 0), new Vector2(15, 0)); // Position right
+            scrollbar.direction = Scrollbar.Direction.BottomToTop; 
+            // Scrollbar Handle (simple block)
+            GameObject handleGO = CreatePanel(scrollbarGO.transform, "Handle", false); // No specific size needed initially 
+            Image handleImage = handleGO.GetComponent<Image>(); 
+            handleImage.color = new Color(0.5f, 0.5f, 0.5f, 0.8f);
+            // Ensure Handle RectTransform fills parent correctly for Scrollbar component
+            RectTransform handleRect = handleGO.GetComponent<RectTransform>();
+            handleRect.anchorMin = Vector2.zero; handleRect.anchorMax = Vector2.one;
+            handleRect.sizeDelta = Vector2.zero; handleRect.anchoredPosition = Vector2.zero;
+            scrollbar.handleRect = handleRect;
+            // Link Scrollbar to ScrollRect
+            scrollRect.verticalScrollbar = scrollbar;
+            scrollRect.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.AutoHideAndExpandViewport;
+            scrollRect.verticalScrollbarSpacing = -3; // Overlap slightly
+
+            // Add DeckViewController script and configure its references
+            DeckViewController controller = panelRoot.AddComponent<DeckViewController>();
+            if (controller != null)
+            {
+                controller.SetTitleText(titleText); // Assign directly since we just created it
+                controller.SetCloseButton(closeButton);
+                controller.SetCardContentArea(contentRect); // Assign the content transform
+
+                // Find and assign the CardTemplate prefab
+                GameObject cardPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(Path.Combine(UIPrefabSavePath, "CardTemplate.prefab"));
+                if (cardPrefab != null)
+                {
+                    controller.SetCardPrefab(cardPrefab);
+                }
+                else
+                {
+                     Debug.LogError("CreateDeckViewerPanelPrefab: Could not find CardTemplate.prefab to assign to DeckViewController!");
+                }
+            }
+            else
+            {
+                Debug.LogError("Failed to add DeckViewController component!");
+            }
+            
+            // We need to save the prefab *after* components and references are set
+            PrefabUtility.SaveAsPrefabAsset(panelRoot, fullPrefabPath);
+            resultPath = fullPrefabPath;
+            Debug.Log($"Successfully {(replacing ? "replaced" : "created")} Deck Viewer Panel prefab at: {fullPrefabPath}");
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogError($"Failed to create Deck Viewer Panel prefab: {e.Message}\n{e.StackTrace}");
+        }
+        finally
+        {
+            // Make sure the temporary GameObject is destroyed *after* saving
+            if (panelRoot != null) DestroyImmediate(panelRoot);
+            AssetDatabase.Refresh();
+        }
+
+        // Assign to GameManager if the field exists
+        if (!string.IsNullOrEmpty(resultPath))
+            AssignPrefabToGameManager("deckViewerPanelPrefab", resultPath);
+
+        return resultPath;
+    }
+    // --- ADDED DECK VIEWER PANEL PREFAB END ---
+
     [MenuItem("Tools/Setup/UI/Create ALL UI Prefabs", priority = 50)] 
     public static void CreateAllUIScreens()
     {
@@ -163,6 +319,7 @@ public class UISetup : Editor
         CreateCombatScreen();
         CreateDraftScreen();
         CreateCardTemplatePrefab(); // Also create the card template
+        CreateDeckViewerPanelPrefab(); // Create the deck viewer panel
         Debug.Log("Finished creating all UI screen prefabs.");
     }
 
@@ -423,6 +580,15 @@ public class UISetup : Editor
         // SetLayoutElement(discardCountText.gameObject, flexibleWidth: 1); // REMOVE flexible width
         SetLayoutElement(discardCountText.gameObject, minWidth: 100); // <<--- ADD minWidth
 
+        // <<--- ADDED DECK VIEW BUTTONS START --->>
+        Button viewPlayerDeckButton = CreateButton(bottomBar.transform, "ViewPlayerDeckButton", "My Deck");
+        SetLayoutElement(viewPlayerDeckButton.gameObject, minWidth: 100, preferredWidth: 100);
+        Button viewPetDeckButton = CreateButton(bottomBar.transform, "ViewPetDeckButton", "Pet Deck");
+        SetLayoutElement(viewPetDeckButton.gameObject, minWidth: 100, preferredWidth: 100);
+        Button viewOppPetDeckButton = CreateButton(bottomBar.transform, "ViewOppPetDeckButton", "Opp Deck");
+        SetLayoutElement(viewOppPetDeckButton.gameObject, minWidth: 100, preferredWidth: 100);
+        // <<--- ADDED DECK VIEW BUTTONS END --->>
+
         // <<--- ADD SPACER START --->>
         GameObject spacer = new GameObject("Spacer", typeof(RectTransform), typeof(LayoutElement));
         spacer.transform.SetParent(bottomBar.transform, false);
@@ -466,6 +632,23 @@ public class UISetup : Editor
         Button optionButtonTemplate = CreateButton(optionsPanel.transform, "OptionButtonTemplate", "Option Description Text");
         SetLayoutElement(optionButtonTemplate.gameObject, minHeight: 50); // Set a minimum height for the button
         optionButtonTemplate.gameObject.SetActive(false); // Disable the template
+
+        // <<--- ADDED DECK VIEW BUTTONS START --->>
+        // Add a horizontal layout group below the options panel for the deck buttons
+        GameObject deckButtonsPanel = CreatePanel(canvasRoot.transform, "DeckButtonsPanel", true); // Transparent panel
+        ConfigureRectTransform(deckButtonsPanel.GetComponent<RectTransform>(),
+            new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0.5f, 0.5f), // Anchor bottom-center relative to canvas
+            new Vector2(0, DefaultPadding + 50), // Position slightly above the bottom, adjust as needed
+            new Vector2(400, 40)); // Size for the buttons
+        HorizontalLayoutGroup deckButtonsLayout = AddHorizontalLayoutGroup(deckButtonsPanel, DefaultPadding, DefaultSpacing * 2); // Add more spacing
+        deckButtonsLayout.childAlignment = TextAnchor.MiddleCenter;
+
+        Button viewDraftPlayerDeckButton = CreateButton(deckButtonsPanel.transform, "ViewPlayerDeckButton", "View My Deck");
+        SetLayoutElement(viewDraftPlayerDeckButton.gameObject, minWidth: 150, preferredWidth: 180); 
+
+        Button viewDraftPetDeckButton = CreateButton(deckButtonsPanel.transform, "ViewPetDeckButton", "View Pet Deck");
+        SetLayoutElement(viewDraftPetDeckButton.gameObject, minWidth: 150, preferredWidth: 180); 
+        // <<--- ADDED DECK VIEW BUTTONS END --->>
     }
 
     // --- Helper Functions --- 

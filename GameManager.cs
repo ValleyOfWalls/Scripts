@@ -27,6 +27,7 @@ public class GameManager : MonoBehaviourPunCallbacks
     [SerializeField] private GameObject combatCanvasPrefab;
     [SerializeField] private GameObject draftCanvasPrefab;
     [SerializeField] private GameObject cardPrefab;
+    [SerializeField] private GameObject deckViewerPanelPrefab;
 
     // Manager instances
     private GameStateManager gameStateManager;
@@ -407,6 +408,13 @@ public class GameManager : MonoBehaviourPunCallbacks
     {
         startingEnergy = value;
     }
+
+    // --- ADDED Getter for Deck Viewer Prefab ---
+    public GameObject GetDeckViewerPanelPrefab()
+    {
+        return deckViewerPanelPrefab;
+    }
+    // --- END ADDED Getter ---
 
     #endregion
 }

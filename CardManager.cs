@@ -913,4 +913,12 @@ public class CardManager
 
         Debug.Log($"Opponent Pet Deck initialized with {opponentPetDeck.Count} cards.");
     }
+
+    // --- ADDED: Get Opponent Pet Deck ---
+    public List<CardData> GetOpponentPetDeck()
+    {
+        // This list is populated by InitializeOpponentPetDeck
+        return opponentPetDeck;
+    }
+    // --- END ADDED ---
 }

@@ -4,6 +4,8 @@ using TMPro;
 using Photon.Pun;
 using Photon.Realtime;
 using System.Collections.Generic;
+using System.Linq; // Needed for Find
+using Newtonsoft.Json;
 
 public class CombatManager
 {
@@ -28,6 +30,12 @@ public class CombatManager
     private TextMeshProUGUI deckCountText;
     private TextMeshProUGUI discardCountText;
     private Button endTurnButton;
+
+    // Added UI References for Deck View
+    private Button viewPlayerDeckButton;
+    private Button viewPetDeckButton;
+    private Button viewOppPetDeckButton;
+    private DeckViewController deckViewController;
 
     public void Initialize(GameManager gameManager, int startingPlayerHealth, int startingPetHealth, int startingEnergy)
     {
@@ -80,8 +88,40 @@ public class CombatManager
         discardCountText = bottomBar?.Find("DiscardCountText")?.GetComponent<TextMeshProUGUI>();
         endTurnButton = bottomBar?.Find("EndTurnButton")?.GetComponent<Button>();
         
+        // --- ADDED: Find Deck View Buttons ---
+        viewPlayerDeckButton = bottomBar?.Find("ViewPlayerDeckButton")?.GetComponent<Button>();
+        viewPetDeckButton = bottomBar?.Find("ViewPetDeckButton")?.GetComponent<Button>();
+        viewOppPetDeckButton = bottomBar?.Find("ViewOppPetDeckButton")?.GetComponent<Button>();
+
+        // --- ADDED: Find DeckViewController ---
+        // Assuming DeckViewerPanel is instantiated under the CombatCanvas or accessible via GameManager
+        GameObject deckViewerPanelInstance = combatInstance.transform.Find("DeckViewerPanel")?.gameObject;
+        if (deckViewerPanelInstance == null && gameManager.GetDeckViewerPanelPrefab() != null) // Fallback: Instantiate if not found
+        {
+            // Instantiate it under the combat canvas so it's part of the UI layer
+            deckViewerPanelInstance = Object.Instantiate(gameManager.GetDeckViewerPanelPrefab(), combatInstance.transform);
+            deckViewerPanelInstance.name = "DeckViewerPanel"; // Ensure consistent name
+        }
+
+        if (deckViewerPanelInstance != null)
+        {
+            deckViewController = deckViewerPanelInstance.GetComponent<DeckViewController>();
+            if (deckViewController == null)
+            {
+                Debug.LogError("DeckViewController component not found on the DeckViewerPanel instance!");
+            }
+        }
+        else
+        {
+            Debug.LogError("DeckViewerPanel instance could not be found or instantiated!");
+        }
+
         // Assign listeners
         endTurnButton?.onClick.AddListener(EndTurn);
+        // --- ADDED: Assign Deck View Listeners ---
+        viewPlayerDeckButton?.onClick.AddListener(ShowPlayerDeck);
+        viewPetDeckButton?.onClick.AddListener(ShowPetDeck);
+        viewOppPetDeckButton?.onClick.AddListener(ShowOpponentPetDeck);
 
         // Validate critical findings 
         if (playerHandPanel == null || opponentPetNameText == null || endTurnButton == null)
@@ -261,4 +301,55 @@ public class CombatManager
     {
         return playerHandPanel;
     }
+
+    // --- ADDED Deck Viewing Methods ---
+    private void ShowPlayerDeck()
+    {
+        if (deckViewController == null) return;
+        CardManager cardManager = gameManager.GetCardManager();
+        if (cardManager == null) return;
+
+        // Combine deck and discard for a full view
+        List<CardData> fullPlayerDeck = new List<CardData>(cardManager.GetDeck());
+        fullPlayerDeck.AddRange(cardManager.GetDiscardPile());
+        // Optional: Sort the deck for display?
+        // fullPlayerDeck = fullPlayerDeck.OrderBy(card => card.cost).ThenBy(card => card.cardName).ToList();
+
+        deckViewController.ShowDeck($"{PhotonNetwork.LocalPlayer.NickName}'s Deck ({fullPlayerDeck.Count})", fullPlayerDeck);
+    }
+
+    private void ShowPetDeck()
+    {
+        if (deckViewController == null) return;
+        CardManager cardManager = gameManager.GetCardManager();
+        if (cardManager == null) return;
+
+        List<CardData> petDeck = cardManager.GetLocalPetDeck() ?? new List<CardData>();
+        // Optional: Sort the deck for display?
+        // petDeck = petDeck.OrderBy(card => card.cost).ThenBy(card => card.cardName).ToList();
+
+        deckViewController.ShowDeck($"{gameManager.GetPlayerManager().GetLocalPetName()}'s Deck ({petDeck.Count})", petDeck);
+    }
+
+    private void ShowOpponentPetDeck()
+    {
+        if (deckViewController == null) return;
+        Player opponent = gameManager.GetPlayerManager().GetOpponentPlayer();
+        CardManager cardManager = gameManager.GetCardManager();
+        if (opponent == null || cardManager == null) return;
+
+        List<CardData> opponentPetDeck = cardManager.GetOpponentPetDeck() ?? new List<CardData>(); // Get directly from CardManager state
+        // Construct the pet name based on opponent's nickname
+        string opponentPetName = opponent.NickName + "'s Pet"; // Simple construction
+        // Fallback if opponent somehow becomes null after check (unlikely but safe)
+        if (string.IsNullOrEmpty(opponent.NickName)) opponentPetName = "Opponent Pet";
+        
+        string title = $"{opponentPetName} Deck ({opponentPetDeck.Count})";
+
+        // Optional: Sort the deck for display?
+        // opponentPetDeck = opponentPetDeck.OrderBy(card => card.cost).ThenBy(card => card.cardName).ToList();
+
+        deckViewController.ShowDeck(title, opponentPetDeck);
+    }
+    // --- END ADDED Deck Viewing Methods ---
 }

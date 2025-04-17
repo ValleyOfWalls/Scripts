@@ -6,6 +6,7 @@ using Photon.Realtime;
 using System.Collections.Generic;
 using ExitGames.Client.Photon;
 using Newtonsoft.Json;
+using System.Linq; // Added for Find
 
 public class GameStateManager : MonoBehaviour
 {
@@ -42,6 +43,10 @@ public class GameStateManager : MonoBehaviour
     private GameObject draftOptionsPanel;
     private TextMeshProUGUI draftTurnText;
     private GameObject draftOptionButtonTemplate;
+    // --- ADDED: Draft Deck View Button References ---
+    private Button viewDraftPlayerDeckButton;
+    private Button viewDraftPetDeckButton;
+    private DeckViewController deckViewController; // Reference to the controller
     
     // Game state
     private GameState currentState = GameState.Connecting;
@@ -208,9 +213,33 @@ public class GameStateManager : MonoBehaviour
                 draftTurnText = draftInstance.transform.Find("DraftTurnText")?.GetComponent<TextMeshProUGUI>();
                 draftOptionButtonTemplate = draftOptionsPanel?.transform.Find("OptionButtonTemplate")?.gameObject;
                 
-                if (draftOptionsPanel == null || draftTurnText == null || draftOptionButtonTemplate == null)
+                // --- ADDED: Find Draft Deck View Buttons & Controller ---
+                Transform deckButtonsPanel = draftInstance.transform.Find("DeckButtonsPanel");
+                viewDraftPlayerDeckButton = deckButtonsPanel?.Find("ViewPlayerDeckButton")?.GetComponent<Button>();
+                viewDraftPetDeckButton = deckButtonsPanel?.Find("ViewPetDeckButton")?.GetComponent<Button>();
+
+                // Find or instantiate DeckViewController (similar to CombatManager)
+                GameObject deckViewerPanelInstance = draftInstance.transform.Find("DeckViewerPanel")?.gameObject;
+                if (deckViewerPanelInstance == null && gameManager.GetDeckViewerPanelPrefab() != null) 
                 {
-                    Debug.LogError("One or more Draft UI elements not found in DraftCanvasPrefab!");
+                    deckViewerPanelInstance = Object.Instantiate(gameManager.GetDeckViewerPanelPrefab(), draftInstance.transform);
+                    deckViewerPanelInstance.name = "DeckViewerPanel"; 
+                }
+                if (deckViewerPanelInstance != null)
+                {
+                    deckViewController = deckViewerPanelInstance.GetComponent<DeckViewController>();
+                    if (deckViewController == null) Debug.LogError("DeckViewController component not found on DeckViewerPanel instance in Draft screen!");
+                }
+                else Debug.LogError("DeckViewerPanel instance could not be found or instantiated in Draft screen!");
+                
+                // Assign Listeners for Deck View
+                viewDraftPlayerDeckButton?.onClick.AddListener(ShowDraftPlayerDeck);
+                viewDraftPetDeckButton?.onClick.AddListener(ShowDraftPetDeck);
+                // --- END ADDED SECTION ---
+
+                if (draftOptionsPanel == null || draftTurnText == null || draftOptionButtonTemplate == null || viewDraftPlayerDeckButton == null || viewDraftPetDeckButton == null)
+                {
+                    Debug.LogError("One or more Draft UI elements (including deck view buttons) not found in DraftCanvasPrefab!");
                 }
                 else
                 {
@@ -417,4 +446,34 @@ public class GameStateManager : MonoBehaviour
             // Buttons are already cleared
         }
     }
+
+    // --- ADDED: Deck Viewing Methods for Draft Screen ---
+    private void ShowDraftPlayerDeck()
+    {
+        if (deckViewController == null) return;
+        CardManager cardManager = gameManager.GetCardManager();
+        if (cardManager == null) return;
+
+        // Combine deck and discard for a full view
+        List<CardData> fullPlayerDeck = new List<CardData>(cardManager.GetDeck());
+        fullPlayerDeck.AddRange(cardManager.GetDiscardPile());
+        // Optional: Sort the deck for display?
+        // fullPlayerDeck = fullPlayerDeck.OrderBy(card => card.cost).ThenBy(card => card.cardName).ToList();
+
+        deckViewController.ShowDeck($"{PhotonNetwork.LocalPlayer.NickName}'s Deck ({fullPlayerDeck.Count})", fullPlayerDeck);
+    }
+
+    private void ShowDraftPetDeck()
+    {
+        if (deckViewController == null) return;
+        CardManager cardManager = gameManager.GetCardManager();
+        if (cardManager == null) return;
+
+        List<CardData> petDeck = cardManager.GetLocalPetDeck() ?? new List<CardData>();
+        // Optional: Sort the deck for display?
+        // petDeck = petDeck.OrderBy(card => card.cost).ThenBy(card => card.cardName).ToList();
+
+        deckViewController.ShowDeck($"{gameManager.GetPlayerManager().GetLocalPetName()}'s Deck ({petDeck.Count})", petDeck);
+    }
+    // --- END ADDED SECTION ---
 }
