@@ -97,6 +97,8 @@ public class PlayerManager
         
         // Determine opponent player based on provided ActorNumber
         opponentPlayer = null; // Reset from previous round
+        List<string> opponentPetCardNames = new List<string>(); // Store opponent pet deck card names here
+        
         if (opponentPetOwnerActorNum > 0)
         {
             opponentPlayer = PhotonNetwork.CurrentRoom.GetPlayer(opponentPetOwnerActorNum);
@@ -106,26 +108,66 @@ public class PlayerManager
         {
             Debug.LogError($"Could not find opponent player with ActorNum {opponentPetOwnerActorNum}!");
         }
-        else if (opponentPetOwnerActorNum <= 0)
+        else if (opponentPlayer != null)
         {
-            Debug.LogWarning("InitializeCombatState called with invalid opponent ActorNum. Likely single player or pairing issue.");
+             // Opponent Player Found - Get their Pet Deck and Base HP
+            Debug.Log($"Found opponent: {opponentPlayer.NickName}");
+
+            // Get opponent's base pet HP
+            if (opponentPlayer.CustomProperties.TryGetValue(PLAYER_BASE_PET_HP_PROP, out object oppBasePetHP))
+            {
+                try { opponentPetHealth = (int)oppBasePetHP; }
+                catch { Debug.LogError($"Failed to cast {PLAYER_BASE_PET_HP_PROP} for player {opponentPlayer.NickName}, using default {startingPetHealth}"); opponentPetHealth = startingPetHealth; }
+            }
+            else
+            {
+                opponentPetHealth = startingPetHealth; // Default if property not found
+            }
+            Debug.Log($"Set initial opponent pet health to {opponentPetHealth}");
+
+            // Get opponent's pet deck card names
+            if (opponentPlayer.CustomProperties.TryGetValue(CardManager.PLAYER_PET_DECK_PROP, out object oppPetDeckObj))
+            {
+                try
+                {
+                    string petDeckJson = oppPetDeckObj as string;
+                    if (!string.IsNullOrEmpty(petDeckJson))
+                    {
+                        opponentPetCardNames = JsonConvert.DeserializeObject<List<string>>(petDeckJson) ?? new List<string>();
+                        Debug.Log($"Retrieved {opponentPetCardNames.Count} pet card names for opponent {opponentPlayer.NickName}.");
+                    }
+                    else
+                    {
+                        Debug.LogWarning($"Opponent {opponentPlayer.NickName} has empty {CardManager.PLAYER_PET_DECK_PROP} property.");
+                    }
+                }
+                catch (System.Exception e)
+                {
+                    Debug.LogError($"Failed to deserialize opponent pet deck JSON for player {opponentPlayer.NickName}: {e.Message}");
+                }
+            }
+            else
+            {
+                Debug.LogWarning($"Opponent {opponentPlayer.NickName} has no {CardManager.PLAYER_PET_DECK_PROP} property. Using starter deck.");
+                // If the property doesn't exist (e.g., first round), we'll implicitly use the starter deck later.
+            }
+        }
+        else // No valid opponent (single player? error?)
+        {
+            Debug.LogWarning("InitializeCombatState called with invalid or missing opponent ActorNum. Setting default opponent pet health.");
+            opponentPetHealth = startingPetHealth; // Use default health
+            // Opponent pet deck will default to starter deck in CardManager
         }
         
-        // Initialize Health - Use potentially upgraded BASE values
+        // Initialize Local Health
         localPlayerHealth = startingPlayerHealth;
-        localPetHealth = startingPetHealth;
-        
-        // Opponent pet health resets based on THEIR base value (from Player Property)
-        int opponentBasePetHealth = startingPetHealth; // Default if property not found
-        if (opponentPlayer != null && opponentPlayer.CustomProperties.TryGetValue(PLAYER_BASE_PET_HP_PROP, out object oppBasePetHP))
-        {
-            try { opponentBasePetHealth = (int)oppBasePetHP; }
-            catch { Debug.LogError($"Failed to cast {PLAYER_BASE_PET_HP_PROP} for player {opponentPlayer.NickName}"); }
-        }
-        opponentPetHealth = opponentBasePetHealth; // Refresh opponent pet health
-        Debug.Log($"Set opponent pet health to {opponentPetHealth} (Base: {opponentBasePetHealth})");
+        localPetHealth = startingPetHealth; // Reset local pet health too
         
         currentEnergy = startingEnergy;
+        
+        // *** Pass opponent pet deck info to CardManager ***
+        // This is where we tell CardManager which cards the opponent's pet actually has.
+        gameManager.GetCardManager().InitializeOpponentPetDeck(opponentPetCardNames);
     }
     
     public void DamageLocalPlayer(int amount)

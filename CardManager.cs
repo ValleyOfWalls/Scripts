@@ -42,6 +42,7 @@ public class CardManager
     public const string DRAFT_PLAYER_QUEUES_PROP = "DraftQueues";
     public const string DRAFT_PICKS_MADE_PROP = "DraftPicks";
     public const string DRAFT_ORDER_PROP = "DraftOrder";
+    public const string PLAYER_PET_DECK_PROP = "PetDeck"; // New property key
     
     // Card configuration
     private int cardsToDraw = 5;
@@ -57,38 +58,56 @@ public class CardManager
         this.cardsToDraw = cardsToDraw;
     }
     
+    // Call this ONCE early in GameManager.Awake
+    public void InitializeAndSyncLocalPetDeck()
+    {
+        if (localPetDeck == null || localPetDeck.Count == 0)
+        {
+            localPetDeck = new List<CardData>(starterPetDeck ?? new List<CardData>());
+            Debug.Log($"InitializeAndSyncLocalPetDeck: Initialized localPetDeck from starter. Count: {localPetDeck.Count}");
+            // Sync this initial state immediately
+            SyncLocalPetDeckToCustomProperties();
+        }
+        else
+        {
+            Debug.Log("InitializeAndSyncLocalPetDeck: localPetDeck already initialized.");
+            // Optional: Re-sync if needed, but likely not necessary here.
+            // SyncLocalPetDeckToCustomProperties();
+        }
+    }
+
     public void InitializeDecks()
     {
         // Check if this is likely the first round (deck, hand, discard are empty)
-        if (deck.Count == 0 && hand.Count == 0 && discardPile.Count == 0)
+        bool isFirstRound = (deck.Count == 0 && hand.Count == 0 && discardPile.Count == 0);
+        if (isFirstRound)
         {
-            Debug.Log("First round detected: Initializing deck from starterDeck.");
+            Debug.Log("First round detected: Initializing player deck from starterDeck.");
             deck = new List<CardData>(starterDeck);
         }
         else
         {
             // Subsequent rounds: Combine hand/discard into deck
-            Debug.Log("Subsequent round detected: Reshuffling existing deck/hand/discard.");
+            Debug.Log("Subsequent round detected: Reshuffling existing player deck/hand/discard.");
             discardPile.AddRange(hand);
             hand.Clear();
             deck.AddRange(discardPile);
             discardPile.Clear();
         }
-        ShuffleDeck(); // Shuffle the full deck (either new or combined)
-        
-        // Initialize Local Pet Deck (reshuffle existing)
+        ShuffleDeck(); // Shuffle the full player deck (either new or combined)
+
+        // Ensure Local Pet Deck exists (should have been initialized in Awake)
+        if (localPetDeck == null) // Add null check just in case
+        {
+            Debug.LogWarning("InitializeDecks: localPetDeck was null! Re-initializing from starter. This might indicate an issue.");
+            localPetDeck = new List<CardData>(starterPetDeck ?? new List<CardData>());
+        }
+        // We only need to shuffle the local pet deck here, not re-initialize or sync it.
         ShuffleLocalPetDeck();
-        
-        // Re-initialize Opponent Pet Deck Simulation State
-        if (starterPetDeck != null && starterPetDeck.Count > 0)
-        {
-            opponentPetDeck = new List<CardData>(starterPetDeck);
-            ShuffleOpponentPetDeck();
-        }
-        else
-        {
-            opponentPetDeck = new List<CardData>();
-        }
+
+        // NOTE: Opponent Pet Deck initialization is now handled by InitializeOpponentPetDeck
+        // which is called AFTER this method by PlayerManager during combat setup.
+        // We still need to clear the opponent's hand/discard from the previous round here.
         opponentPetHand.Clear();
         opponentPetDiscard.Clear();
     }
@@ -471,6 +490,8 @@ public class CardManager
         }
         
         Debug.Log($"Applying draft choice: {choice.Description}");
+        bool petDeckChanged = false; // Flag to check if we need to update properties
+        
         switch (choice.Type)
         {
             case DraftOptionType.AddPlayerCard:
@@ -488,8 +509,9 @@ public class CardManager
                 if (choice.CardToAdd != null)
                 {
                     localPetDeck.Add(choice.CardToAdd);
-                    ShuffleLocalPetDeck();
-                    Debug.Log($"Added {choice.CardToAdd.cardName} to local pet deck.");
+                    ShuffleLocalPetDeck(); // Maybe shuffle later or not at all if just adding?
+                    Debug.Log($"Added {choice.CardToAdd.cardName} to local pet deck. Current count: {localPetDeck.Count}");
+                    petDeckChanged = true;
                 }
                 else { Debug.LogWarning("AddPetCard choice had null CardToAdd."); }
                 break;
@@ -556,17 +578,31 @@ public class CardManager
             case DraftOptionType.UpgradePetCard:
                 if (choice.CardToUpgrade != null && choice.CardToUpgrade.upgradedVersion != null)
                 {
+                    // Find the specific instance to upgrade if multiple copies exist
+                    // Using FindIndex might just find the first one. If CardData had unique IDs this would be better.
                     int indexToUpgrade = localPetDeck.FindIndex(card => card == choice.CardToUpgrade);
+                    if (indexToUpgrade == -1)
+                    {
+                         // Fallback: If reference match failed (e.g., due to deserialization differences), try matching by name
+                         indexToUpgrade = localPetDeck.FindIndex(card => card.cardName == choice.CardToUpgrade.cardName && card.upgradedVersion != null);
+                         if(indexToUpgrade != -1) Debug.LogWarning($"UpgradePetCard: Reference match failed for {choice.CardToUpgrade.cardName}, but found by name.");
+                    }
+
                     if (indexToUpgrade != -1)
                     {
                         CardData upgradedCard = choice.CardToUpgrade.upgradedVersion;
+                        Debug.Log($"Upgrading pet card {localPetDeck[indexToUpgrade].cardName} (index {indexToUpgrade}) to {upgradedCard.cardName} in local pet deck.");
                         localPetDeck[indexToUpgrade] = upgradedCard;
-                        ShuffleLocalPetDeck();
-                        Debug.Log($"Upgraded pet card {choice.CardToUpgrade.cardName} to {upgradedCard.cardName} in local pet deck.");
+                        // Don't necessarily shuffle immediately after upgrade? Depends on game design.
+                        // ShuffleLocalPetDeck();
+                        petDeckChanged = true;
                     }
                     else
                     {
-                        Debug.LogWarning($"Could not find pet card '{choice.CardToUpgrade.cardName}' in local pet deck to upgrade.");
+                        Debug.LogWarning($"Could not find upgradable pet card '{choice.CardToUpgrade.cardName}' in local pet deck to upgrade (Size: {localPetDeck.Count}).");
+                        // Log the current pet deck contents for debugging
+                        string deckContents = string.Join(", ", localPetDeck.Select(c => c.cardName + (c.upgradedVersion != null ? "(U)" : "")));
+                        Debug.LogWarning($"Current Pet Deck: [{deckContents}]");
                     }
                 }
                 else
@@ -575,6 +611,61 @@ public class CardManager
                 }
                 break;
         }
+
+        // If the pet deck was modified, update the player's custom properties
+        if (petDeckChanged)
+        {
+            SyncLocalPetDeckToCustomProperties();
+        }
+    }
+    
+    // New method to sync the current localPetDeck to Photon Player Properties
+    private void SyncLocalPetDeckToCustomProperties()
+    {
+        // Convert List<CardData> to List<string> (card names)
+        List<string> petDeckCardNames = localPetDeck.Select(card => card.cardName).ToList();
+
+        // Serialize the list of names (JSON is convenient)
+        string petDeckJson = JsonConvert.SerializeObject(petDeckCardNames);
+
+        // Set the custom property for the local player
+        Hashtable props = new Hashtable { { PLAYER_PET_DECK_PROP, petDeckJson } };
+        PhotonNetwork.LocalPlayer.SetCustomProperties(props);
+
+        Debug.Log($"Synced local pet deck to Player Properties. {petDeckCardNames.Count} cards. JSON: {petDeckJson}");
+    }
+
+    // Helper method to get all CardData (could be optimized later, e.g., dictionary lookup)
+    public CardData FindCardDataByName(string cardName, bool findInPetPool)
+    {
+        List<CardData> pool = findInPetPool ? allPetCardPool : allPlayerCardPool;
+        // Also check starter decks as they might contain base versions not in pools?
+        CardData found = pool.FirstOrDefault(c => c.cardName == cardName);
+        if (found == null)
+        {
+            found = starterDeck.FirstOrDefault(c => c.cardName == cardName);
+        }
+        if (found == null)
+        {
+            found = starterPetDeck.FirstOrDefault(c => c.cardName == cardName);
+        }
+        // Check upgraded versions too (less efficient, better if CardData had unique IDs)
+        if (found == null)
+        {
+            foreach (var card in pool.Concat(starterDeck).Concat(starterPetDeck))
+            {
+                 if (card.upgradedVersion != null && card.upgradedVersion.cardName == cardName)
+                 {
+                    return card.upgradedVersion;
+                 }
+            }
+        }
+
+        if (found == null)
+        {
+            Debug.LogWarning($"FindCardDataByName: Could not find CardData for name '{cardName}'");
+        }
+        return found;
     }
     
     public void UpdateLocalDraftStateFromRoomProps()
@@ -784,5 +875,42 @@ public class CardManager
     public List<SerializableDraftOption> GetLocalCurrentPack()
     {
         return localCurrentPack;
+    }
+
+    // New method called by PlayerManager to set up the opponent's deck based on synced data
+    public void InitializeOpponentPetDeck(List<string> cardNames)
+    {
+        opponentPetDeck.Clear(); // Clear previous round's deck
+
+        if (cardNames == null || cardNames.Count == 0)
+        {
+            // No synced data found (first round? property missing?), use starter deck
+            Debug.Log("InitializeOpponentPetDeck: No card names provided, using starter pet deck.");
+            opponentPetDeck = new List<CardData>(starterPetDeck ?? new List<CardData>());
+        }
+        else
+        {
+            // Reconstruct the deck from the provided names
+            Debug.Log($"InitializeOpponentPetDeck: Reconstructing deck from {cardNames.Count} names.");
+            foreach (string cardName in cardNames)
+            {
+                CardData cardData = FindCardDataByName(cardName, true); // Find in pet pools/starters
+                if (cardData != null)
+                {
+                    opponentPetDeck.Add(cardData);
+                }
+                else
+                {
+                    Debug.LogWarning($"InitializeOpponentPetDeck: Could not find CardData for card name '{cardName}' while reconstructing opponent deck.");
+                }
+            }
+        }
+
+        // Ensure hand/discard are clear and shuffle the newly constructed deck
+        opponentPetHand.Clear();
+        opponentPetDiscard.Clear();
+        ShuffleOpponentPetDeck(); // Shuffle the reconstructed or starter deck
+
+        Debug.Log($"Opponent Pet Deck initialized with {opponentPetDeck.Count} cards.");
     }
 }

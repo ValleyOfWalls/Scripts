@@ -43,40 +43,53 @@ public class GameManager : MonoBehaviourPunCallbacks
 
     void Awake()
     {
-        photonViewComponent = GetComponent<PhotonView>();
-        if (photonViewComponent == null)
-        {
-            Debug.LogError("PhotonView component missing on GameManager!");
-            photonViewComponent = gameObject.AddComponent<PhotonView>();
-        }
-        
-        // Create PhotonManager
-        photonManager = gameObject.AddComponent<PhotonManager>();
-    }
-
-    void Start()
-    {
-        // Ensure we have only one GameManager instance
-        if (FindObjectsByType<GameManager>(FindObjectsSortMode.None).Length > 1)
+        Debug.Log("GameManager Awake");
+        // Ensure only one GameManager instance exists
+        if (FindObjectsOfType<GameManager>().Length > 1)
         {
             Destroy(gameObject);
             return;
         }
         DontDestroyOnLoad(gameObject);
 
-        // Initialize manager classes
+        // Get PhotonView component
+        photonViewComponent = GetComponent<PhotonView>();
+        if (photonViewComponent == null)
+        {
+            Debug.LogError("GameManager requires a PhotonView component!");
+            // Add it if missing? Or rely on prefab setup?
+            // photonViewComponent = gameObject.AddComponent<PhotonView>();
+            return; 
+        }
+
+        // Initialize Managers (Constructors)
+        // Pass UI Prefabs to GameStateManager constructor
         gameStateManager = new GameStateManager(this, startScreenCanvasPrefab, lobbyCanvasPrefab, combatCanvasPrefab, draftCanvasPrefab);
         playerManager = new PlayerManager(this);
         cardManager = new CardManager(this, starterDeck, starterPetDeck, allPlayerCardPool, allPetCardPool, cardsToDraw);
-        photonManager.Initialize(this);
-        combatManager = new CombatManager();
-        combatManager.Initialize(this, startingPlayerHealth, startingPetHealth, startingEnergy);
-        draftManager = new DraftManager();
-        draftManager.Initialize(this, optionsPerDraft);
+        photonManager = gameObject.AddComponent<PhotonManager>(); // Add as component
+        combatManager = new CombatManager(); // Default constructor
+        draftManager = new DraftManager(); // Default constructor
 
-        // Initialize state
+        // ** Initialize and sync local pet deck early **
+        if (cardManager != null)
+        {
+            cardManager.InitializeAndSyncLocalPetDeck();
+        }
+        else
+        {
+            Debug.LogError("CardManager is null after instantiation in Awake!");
+        }
+    }
+
+    void Start()
+    {
+        // Initialize manager classes that require it after Awake
         gameStateManager.Initialize();
         playerManager.Initialize(startingPlayerHealth, startingPetHealth, startingEnergy);
+        photonManager.Initialize(this); // Assuming PhotonManager needs Initialize
+        combatManager.Initialize(this, startingPlayerHealth, startingPetHealth, startingEnergy); // Pass necessary refs/config
+        draftManager.Initialize(this, optionsPerDraft); // Pass necessary refs/config
     }
 
     #endregion
