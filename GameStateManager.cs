@@ -488,7 +488,9 @@ public class GameStateManager
         List<CardData> playerDeck = cardManager.GetDeck(); // Get the player's current full deck
         if (playerDeck != null)
         {
+             Debug.Log("GameStateManager.ShowDraftPlayerDeck: Calling deckViewController.ShowDeck..."); // ADDED LOG
              deckViewController.ShowDeck("My Deck", playerDeck);
+             Debug.Log("GameStateManager.ShowDraftPlayerDeck: deckViewController.ShowDeck call finished."); // ADDED LOG
         }
         else
         {

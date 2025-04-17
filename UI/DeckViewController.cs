@@ -24,10 +24,11 @@ public class DeckViewController : MonoBehaviour
     private void Awake()
     {
         // Ensure the panel starts inactive
-        if (gameObject.activeSelf)
-        {
-            gameObject.SetActive(false);
-        }
+        // if (gameObject.activeSelf)
+        // {
+        //     Debug.Log("DeckViewController.Awake: Setting inactive...");
+        //     gameObject.SetActive(false);
+        // }
 
         // Add listener to the close button
         if (closeButton != null)
@@ -128,7 +129,9 @@ public class DeckViewController : MonoBehaviour
         }
 
         // Show the panel
+        Debug.Log("DeckViewController.ShowDeck: Setting active...");
         gameObject.SetActive(true);
+        Debug.Log("DeckViewController.ShowDeck: SetActive(true) finished.");
     }
 
     /// <summary>
