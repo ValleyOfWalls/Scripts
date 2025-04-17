@@ -8,7 +8,7 @@ using ExitGames.Client.Photon;
 using Newtonsoft.Json;
 using System.Linq; // Added for Find
 
-public class GameStateManager : MonoBehaviour
+public class GameStateManager
 {
     private GameManager gameManager;
     
@@ -217,24 +217,46 @@ public class GameStateManager : MonoBehaviour
                 Transform deckButtonsPanel = draftInstance.transform.Find("DeckButtonsPanel");
                 viewDraftPlayerDeckButton = deckButtonsPanel?.Find("ViewPlayerDeckButton")?.GetComponent<Button>();
                 viewDraftPetDeckButton = deckButtonsPanel?.Find("ViewPetDeckButton")?.GetComponent<Button>();
+                
+                // --- ADDED: Logging for button discovery ---
+                if (viewDraftPlayerDeckButton != null)
+                {
+                    Debug.Log("Successfully found ViewPlayerDeckButton.");
+                }
+                else
+                {
+                     Debug.LogError("ViewPlayerDeckButton component NOT found on DeckButtonsPanel/ViewPlayerDeckButton object!");
+                }
+                // --- END ADDED Logging ---
 
                 // Find or instantiate DeckViewController (similar to CombatManager)
                 GameObject deckViewerPanelInstance = draftInstance.transform.Find("DeckViewerPanel")?.gameObject;
                 if (deckViewerPanelInstance == null && gameManager.GetDeckViewerPanelPrefab() != null) 
                 {
+                    Debug.Log("DeckViewerPanel not found, attempting to instantiate from prefab.");
                     deckViewerPanelInstance = Object.Instantiate(gameManager.GetDeckViewerPanelPrefab(), draftInstance.transform);
                     deckViewerPanelInstance.name = "DeckViewerPanel"; 
                 }
+                
                 if (deckViewerPanelInstance != null)
                 {
                     deckViewController = deckViewerPanelInstance.GetComponent<DeckViewController>();
-                    if (deckViewController == null) Debug.LogError("DeckViewController component not found on DeckViewerPanel instance in Draft screen!");
+                    if (deckViewController == null) 
+                    {
+                        Debug.LogError("DeckViewController component NOT found on DeckViewerPanel instance in Draft screen!");
+                    }
+                    else
+                    {
+                        Debug.Log("Successfully found or instantiated DeckViewController."); // Added Log
+                    }
                 }
-                else Debug.LogError("DeckViewerPanel instance could not be found or instantiated in Draft screen!");
+                else 
+                {
+                     Debug.LogError("DeckViewerPanel instance could NOT be found or instantiated in Draft screen!");
+                }
                 
-                // Assign Listeners for Deck View
-                viewDraftPlayerDeckButton?.onClick.AddListener(ShowDraftPlayerDeck);
-                viewDraftPetDeckButton?.onClick.AddListener(ShowDraftPetDeck);
+                // Similar check/log for pet button can be added if needed
+                 viewDraftPetDeckButton?.onClick.AddListener(ShowDraftPetDeck);
                 // --- END ADDED SECTION ---
 
                 if (draftOptionsPanel == null || draftTurnText == null || draftOptionButtonTemplate == null || viewDraftPlayerDeckButton == null || viewDraftPetDeckButton == null)
@@ -448,32 +470,55 @@ public class GameStateManager : MonoBehaviour
     }
 
     // --- ADDED: Deck Viewing Methods for Draft Screen ---
-    private void ShowDraftPlayerDeck()
+    public void ShowDraftPlayerDeck()
     {
-        if (deckViewController == null) return;
+        Debug.Log("--- ShowDraftPlayerDeck method called! ---");
+        if (deckViewController == null) 
+        {
+            Debug.LogError("DeckViewController is null in ShowDraftPlayerDeck");
+            return;
+        }
         CardManager cardManager = gameManager.GetCardManager();
-        if (cardManager == null) return;
+        if (cardManager == null) 
+        {
+             Debug.LogError("CardManager is null in ShowDraftPlayerDeck");
+            return;
+        }
 
-        // Combine deck and discard for a full view
-        List<CardData> fullPlayerDeck = new List<CardData>(cardManager.GetDeck());
-        fullPlayerDeck.AddRange(cardManager.GetDiscardPile());
-        // Optional: Sort the deck for display?
-        // fullPlayerDeck = fullPlayerDeck.OrderBy(card => card.cost).ThenBy(card => card.cardName).ToList();
-
-        deckViewController.ShowDeck($"{PhotonNetwork.LocalPlayer.NickName}'s Deck ({fullPlayerDeck.Count})", fullPlayerDeck);
+        List<CardData> playerDeck = cardManager.GetDeck(); // Get the player's current full deck
+        if (playerDeck != null)
+        {
+             deckViewController.ShowDeck("My Deck", playerDeck);
+        }
+        else
+        {
+            Debug.LogWarning("Player deck is null or empty, cannot show.");
+        }
     }
 
-    private void ShowDraftPetDeck()
+    public void ShowDraftPetDeck()
     {
-        if (deckViewController == null) return;
+         if (deckViewController == null) 
+        {
+            Debug.LogError("DeckViewController is null in ShowDraftPetDeck");
+            return;
+        }
         CardManager cardManager = gameManager.GetCardManager();
-        if (cardManager == null) return;
-
-        List<CardData> petDeck = cardManager.GetLocalPetDeck() ?? new List<CardData>();
-        // Optional: Sort the deck for display?
-        // petDeck = petDeck.OrderBy(card => card.cost).ThenBy(card => card.cardName).ToList();
-
-        deckViewController.ShowDeck($"{gameManager.GetPlayerManager().GetLocalPetName()}'s Deck ({petDeck.Count})", petDeck);
+        if (cardManager == null) 
+        {
+            Debug.LogError("CardManager is null in ShowDraftPetDeck");
+            return;
+        }
+        
+        List<CardData> petDeck = cardManager.GetLocalPetDeck(); // Get the pet's current full deck
+        if (petDeck != null)
+        {
+            deckViewController.ShowDeck("Pet Deck", petDeck);
+        }
+         else
+        {
+            Debug.LogWarning("Pet deck is null or empty, cannot show.");
+        }
     }
     // --- END ADDED SECTION ---
 }

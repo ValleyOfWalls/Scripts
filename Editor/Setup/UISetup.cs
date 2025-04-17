@@ -645,6 +645,13 @@ public class UISetup : Editor
 
         Button viewDraftPlayerDeckButton = CreateButton(deckButtonsPanel.transform, "ViewPlayerDeckButton", "View My Deck");
         SetLayoutElement(viewDraftPlayerDeckButton.gameObject, minWidth: 150, preferredWidth: 180); 
+        // --- ADDED: Attach IPointerClickHandler script ---
+        if (viewDraftPlayerDeckButton.gameObject.GetComponent<DraftDeckButtonHandler>() == null)
+        {
+            viewDraftPlayerDeckButton.gameObject.AddComponent<DraftDeckButtonHandler>();
+            Debug.Log("Attached DraftDeckButtonHandler to ViewPlayerDeckButton.");
+        }
+        // --- END ADDED ---
 
         Button viewDraftPetDeckButton = CreateButton(deckButtonsPanel.transform, "ViewPetDeckButton", "View Pet Deck");
         SetLayoutElement(viewDraftPetDeckButton.gameObject, minWidth: 150, preferredWidth: 180); 

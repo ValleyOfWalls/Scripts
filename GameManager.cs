@@ -8,6 +8,10 @@ using ExitGames.Client.Photon;
 
 public class GameManager : MonoBehaviourPunCallbacks
 {
+    // --- ADDED: Static instance for singleton access ---
+    public static GameManager Instance { get; private set; }
+    // --- END ADDED ---
+
     [Header("Settings")]
     [SerializeField] private int startingPlayerHealth = 1;
     [SerializeField] private int startingPetHealth = 1;
@@ -45,12 +49,23 @@ public class GameManager : MonoBehaviourPunCallbacks
     void Awake()
     {
         Debug.Log("GameManager Awake");
-        // Ensure only one GameManager instance exists
-        if (FindObjectsOfType<GameManager>().Length > 1)
+        
+        // --- MODIFIED: Singleton setup ---
+        if (Instance != null && Instance != this)
         {
+            Debug.LogWarning("Another GameManager instance found, destroying this one.");
             Destroy(gameObject);
             return;
         }
+        Instance = this; 
+        // --- END MODIFIED ---
+        
+        // Ensure only one GameManager instance exists (Kept original check just in case, but Instance check should handle it)
+        // if (FindObjectsByType<GameManager>(FindObjectsSortMode.None).Length > 1)
+        // {
+        //     Destroy(gameObject);
+        //     return;
+        // }
         DontDestroyOnLoad(gameObject);
 
         // Get PhotonView component
