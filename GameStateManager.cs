@@ -35,6 +35,9 @@ public class GameStateManager : MonoBehaviour
     private TMP_InputField playerNameInput;
     private TMP_InputField petNameInput;
     
+    // Combat UI References
+    private TextMeshProUGUI scoreText;
+    
     // Draft Screen References
     private GameObject draftOptionsPanel;
     private TextMeshProUGUI draftTurnText;
@@ -169,6 +172,13 @@ public class GameStateManager : MonoBehaviour
             {
                 combatInstance = Object.Instantiate(combatCanvasPrefab);
                 gameManager.InitializeCombatScreenReferences(combatInstance);
+                
+                // Find ScoreText
+                Transform topArea = combatInstance.transform.Find("TopArea");
+                if (topArea != null)
+                {
+                    scoreText = topArea.Find("ScoreText")?.GetComponent<TextMeshProUGUI>();
+                }
             }
             else
             {
@@ -341,6 +351,11 @@ public class GameStateManager : MonoBehaviour
     public GameObject GetCombatInstance()
     {
         return combatInstance;
+    }
+    
+    public TextMeshProUGUI GetScoreText()
+    {
+        return scoreText;
     }
     
     public void UpdateDraftUI(List<SerializableDraftOption> localCurrentPack, Dictionary<int, DraftOption> localActiveOptionMap, bool isWaitingForLocalPick)
