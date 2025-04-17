@@ -12,7 +12,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 7484c59753a60214a9e970e951903b4d, type: 3}
   m_Name: DraftTest
   m_EditorClassIdentifier: 
-  cardName: Strike
+  cardName: Strike Draft
   cost: 1
   description: Deal 6 damage.
   damage: 6
+  upgradedVersion: {fileID: 0}

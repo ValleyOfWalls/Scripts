@@ -10,10 +10,10 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 7484c59753a60214a9e970e951903b4d, type: 3}
-  m_Name: Defend
+  m_Name: Defend 1
   m_EditorClassIdentifier: 
-  cardName: Defend
+  cardName: Defend 1
   cost: 1
   description: Gain 5 block.
   damage: 0
-  upgradedVersion: {fileID: 11400000, guid: 7caac7a4cfb20c6488751a2e3c0faf05, type: 2}
+  upgradedVersion: {fileID: 0}

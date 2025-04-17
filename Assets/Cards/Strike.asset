@@ -16,3 +16,4 @@ MonoBehaviour:
   cost: 1
   description: Deal 6 damage.
   damage: 6
+  upgradedVersion: {fileID: 11400000, guid: 49b074200a38a8d4a8ce120327568ace, type: 2}
