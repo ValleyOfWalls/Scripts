@@ -921,4 +921,27 @@ public class CardManager
         return opponentPetDeck;
     }
     // --- END ADDED ---
+
+    // --- ADDED: Methods to get all owned cards ---
+    public List<CardData> GetAllOwnedPlayerCards()
+    {
+        // Creates a new list containing cards from deck, hand, and discard
+        List<CardData> allCards = new List<CardData>(deck);
+        allCards.AddRange(hand);
+        allCards.AddRange(discardPile);
+        // Optional: Sort the combined list for display consistency
+        // allCards = allCards.OrderBy(card => card.cost).ThenBy(card => card.cardName).ToList();
+        return allCards;
+    }
+    
+    public List<CardData> GetAllOwnedPetCards()
+    {
+        // Assuming pet only has the 'localPetDeck' list and no separate hand/discard
+        // If pet had hand/discard, combine them similarly to the player method above.
+        List<CardData> allCards = new List<CardData>(localPetDeck);
+        // Optional: Sort the list
+        // allCards = allCards.OrderBy(card => card.cost).ThenBy(card => card.cardName).ToList();
+        return allCards;
+    }
+    // --- END ADDED ---
 }

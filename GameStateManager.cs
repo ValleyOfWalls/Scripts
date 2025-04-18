@@ -485,8 +485,8 @@ public class GameStateManager
             return;
         }
 
-        List<CardData> playerDeck = cardManager.GetDeck(); // Get the player's current full deck
-        if (playerDeck != null)
+        List<CardData> playerDeck = cardManager.GetAllOwnedPlayerCards(); // <-- NEW: Get combined deck/hand/discard
+        if (playerDeck != null && playerDeck.Count > 0) // Added count check
         {
              Debug.Log("GameStateManager.ShowDraftPlayerDeck: Calling deckViewController.ShowDeck..."); // ADDED LOG
              deckViewController.ShowDeck("My Deck", playerDeck);
@@ -512,8 +512,8 @@ public class GameStateManager
             return;
         }
         
-        List<CardData> petDeck = cardManager.GetLocalPetDeck(); // Get the pet's current full deck
-        if (petDeck != null)
+        List<CardData> petDeck = cardManager.GetAllOwnedPetCards(); // <-- NEW: Get all pet cards
+        if (petDeck != null && petDeck.Count > 0) // Added count check
         {
             deckViewController.ShowDeck("Pet Deck", petDeck);
         }
