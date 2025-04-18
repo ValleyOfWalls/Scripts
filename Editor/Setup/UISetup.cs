@@ -26,6 +26,17 @@ public struct ImageData
     // public string materialPath; // Optional: Could add material support later
 }
 
+// --- ADDED: Layout Group Data ---
+[System.Serializable]
+public struct LayoutGroupData // Common properties
+{
+    public RectOffset padding; // Note: RectOffset is serializable
+    public float spacing;
+    public TextAnchor childAlignment;
+    // We could add control/forceExpand bools here if needed later
+}
+// --- END ADDED ---
+
 [System.Serializable]
 public class UICustomizationData
 {
@@ -33,6 +44,12 @@ public class UICustomizationData
     public RectTransformData rectData;
     public bool hasImage = false;
     public ImageData imageData;
+    // --- ADDED: Layout Group Flags and Data ---
+    public bool hasVerticalLayout = false;
+    public LayoutGroupData verticalLayoutData;
+    public bool hasHorizontalLayout = false;
+    public LayoutGroupData horizontalLayoutData;
+    // --- END ADDED ---
 }
 // --- END ADDED ---
 
@@ -89,10 +106,12 @@ public class UISetup : Editor
     {
         const string prefabName = "CardTemplate";
         string fullPrefabPath = Path.Combine(UIPrefabSavePath, prefabName + ".prefab");
-        GameObject cardRoot = null;
+        GameObject cardRoot = null; // This will be the object we build and save
         string resultPath = null;
         Dictionary<string, UICustomizationData> customizations = null;
         bool replacing = false;
+        GameObject tempOldInstance = null;
+        // GameObject tempNewInstance = null; // <<-- Removed
 
         if (!Directory.Exists(UIPrefabSavePath))
         {
@@ -100,96 +119,112 @@ public class UISetup : Editor
             AssetDatabase.Refresh();
         }
 
-        // --- MODIFIED: Extract customizations before deleting ---
         GameObject existingPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(fullPrefabPath);
         if (existingPrefab != null)
         {
             Debug.Log($"Found existing prefab at {fullPrefabPath}, extracting customizations...");
             customizations = ExtractCustomizations(existingPrefab);
+            tempOldInstance = (GameObject)PrefabUtility.InstantiatePrefab(existingPrefab);
+            if (tempOldInstance == null) Debug.LogError("Failed to instantiate existing prefab for merging.");
+            
             replacing = true;
             if (!AssetDatabase.DeleteAsset(fullPrefabPath))
             {
                 Debug.LogError($"Failed to delete existing card template prefab at {fullPrefabPath}. Skipping creation.");
+                 if (tempOldInstance != null) DestroyImmediate(tempOldInstance); 
                 return null;
             }
             AssetDatabase.Refresh();
         }
-        // --- END MODIFIED ---
 
         try
         {
+            // 1. Create the base new structure (this is what we will modify and save)
             cardRoot = new GameObject(prefabName);
             // --- Build Card Hierarchy --- 
             Image cardImage = cardRoot.AddComponent<Image>();
             cardImage.color = new Color(0.2f, 0.2f, 0.25f);
-            // Add CanvasGroup for drag-and-drop raycast control
             CanvasGroup cardCanvasGroup = cardRoot.AddComponent<CanvasGroup>(); 
-            cardCanvasGroup.blocksRaycasts = true; // Initially blocks raycasts
-
-            // Add the CardDragHandler script for drag functionality
+            cardCanvasGroup.blocksRaycasts = true; 
             cardRoot.AddComponent<CardDragHandler>();
-
             LayoutElement rootLayout = cardRoot.AddComponent<LayoutElement>();
             rootLayout.minWidth = 120; rootLayout.minHeight = 180;
             rootLayout.preferredWidth = 120; rootLayout.preferredHeight = 180;
-            
             VerticalLayoutGroup cardLayout = AddVerticalLayoutGroup(cardRoot, 5, 5, controlChildWidth: true, controlChildHeight: false);
             cardLayout.childAlignment = TextAnchor.UpperCenter;
             cardLayout.childForceExpandHeight = false;
             ContentSizeFitter rootFitter = cardRoot.GetComponent<ContentSizeFitter>();
             if(rootFitter != null) { rootFitter.verticalFit = ContentSizeFitter.FitMode.Unconstrained; rootFitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained; }
-
-            // Header Panel 
             GameObject headerPanel = CreatePanel(cardRoot.transform, "HeaderPanel", true);
             SetLayoutElement(headerPanel, minHeight: 30);
             HorizontalLayoutGroup headerLayout = AddHorizontalLayoutGroup(headerPanel, 5, 5, controlChildHeight: true);
             headerLayout.childAlignment = TextAnchor.MiddleCenter;
+            // ContentSizeFitter on headerPanel itself might interfere, ensure it's unconstrained if present (or remove)
+            // If the HorizontalLayoutGroup manages size, the fitter on the parent might not be needed or should be Unconstrained.
             ContentSizeFitter headerFitter = headerPanel.GetComponent<ContentSizeFitter>();
-            if(headerFitter != null) { headerFitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained; headerFitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize; }
+            if(headerFitter != null) { headerFitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained; headerFitter.verticalFit = ContentSizeFitter.FitMode.Unconstrained; }
             TextMeshProUGUI costText = CreateText(headerPanel.transform, "CostText", "1", 18, TextAlignmentOptions.Center);
             SetLayoutElement(costText.gameObject, minWidth: 25, minHeight: 25);
+            // Override ContentSizeFitter for costText
+            ContentSizeFitter costFitter = costText.GetComponent<ContentSizeFitter>();
+            if (costFitter != null) { costFitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained; costFitter.verticalFit = ContentSizeFitter.FitMode.Unconstrained; }
             TextMeshProUGUI cardNameText = CreateText(headerPanel.transform, "CardNameText", "Card Name", 16, TextAlignmentOptions.Left);
             SetLayoutElement(cardNameText.gameObject, flexibleWidth: 1);
-
-            // Art Panel
+            // Override ContentSizeFitter for cardNameText
+            ContentSizeFitter nameFitter = cardNameText.GetComponent<ContentSizeFitter>();
+            if (nameFitter != null) { nameFitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained; nameFitter.verticalFit = ContentSizeFitter.FitMode.Unconstrained; }
             GameObject artPanel = CreatePanel(cardRoot.transform, "ArtPanel");
             Image artImage = artPanel.GetComponent<Image>();
             artImage.color = new Color(0.5f, 0.5f, 0.5f, 0.5f);
             SetLayoutElement(artPanel, minHeight: 60, flexibleHeight: 1);
+            // Ensure ContentSizeFitter on artPanel is unconstrained if present
             ContentSizeFitter artFitter = artPanel.GetComponent<ContentSizeFitter>();
-            if(artFitter != null) { artFitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained; artFitter.verticalFit = ContentSizeFitter.FitMode.Unconstrained; } 
-
-            // Description Panel
+            if(artFitter != null) { artFitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained; artFitter.verticalFit = ContentSizeFitter.FitMode.Unconstrained; }
             GameObject descPanel = CreatePanel(cardRoot.transform, "DescPanel", true);
             SetLayoutElement(descPanel, minHeight: 40);
             VerticalLayoutGroup descLayout = AddVerticalLayoutGroup(descPanel, 5, 2, controlChildHeight: false);
             descLayout.childAlignment = TextAnchor.UpperCenter;
             descLayout.childForceExpandHeight = false;
-            ContentSizeFitter descFitter = descPanel.GetComponent<ContentSizeFitter>();
-            if(descFitter != null) { descFitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained; descFitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize; }
+            // Ensure ContentSizeFitter on descPanel is unconstrained if present (VLG controls size)
+             ContentSizeFitter descPanelFitter = descPanel.GetComponent<ContentSizeFitter>();
+            if(descPanelFitter != null) { descPanelFitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained; descPanelFitter.verticalFit = ContentSizeFitter.FitMode.Unconstrained; }
             TextMeshProUGUI cardDescText = CreateText(descPanel.transform, "CardDescText", "Desc...", 12, TextAlignmentOptions.Center);
             cardDescText.textWrappingMode = TextWrappingModes.Normal;
             SetLayoutElement(cardDescText.gameObject, minHeight: 30); 
+            // Override ContentSizeFitter for cardDescText
+            ContentSizeFitter descTextFitter = cardDescText.GetComponent<ContentSizeFitter>();
+            if (descTextFitter != null) { descTextFitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained; descTextFitter.verticalFit = ContentSizeFitter.FitMode.Unconstrained; }
             // --- End Card Hierarchy --- 
 
-            // --- MODIFIED: Apply customizations before saving ---
+            // 2. Apply extracted customizations directly to the new structure
             if (customizations != null)
             {
-                Debug.Log("Applying extracted customizations to new Card Template...");
                 ApplyCustomizations(cardRoot, customizations);
             }
-            // --- END MODIFIED ---
 
+            // 3. Reorder and Merge directly into cardRoot from the temporary old instance
+            if (tempOldInstance != null)
+            {
+                 Debug.Log("Reordering and merging hierarchies directly into new structure...");
+                 ReorderAndMergeHierarchy(tempOldInstance.transform, cardRoot.transform, customizations);
+            }
+            
+            // 4. Save the modified cardRoot structure as the final prefab
             PrefabUtility.SaveAsPrefabAsset(cardRoot, fullPrefabPath);
             resultPath = fullPrefabPath;
             Debug.Log($"Successfully {(replacing ? "replaced" : "created")} Card Template prefab at: {fullPrefabPath}");
         }
         catch (System.Exception e) { Debug.LogError($"Failed to create Card Template prefab: {e.Message}\n{e.StackTrace}"); }
         finally { 
-            if (cardRoot != null) DestroyImmediate(cardRoot);
-            AssetDatabase.Refresh();
+            // Cleanup initial base object (now the main object we worked on)
+            if (cardRoot != null) { Debug.Log("Finally: Cleaning up cardRoot object."); DestroyImmediate(cardRoot); }
+            // No tempNewInstance to clean
+            AssetDatabase.Refresh(); 
         }
-        // Assign to GameManager if the field exists
+        
+        // Final cleanup for old instance
+        if (tempOldInstance != null) { Debug.Log("Final Cleanup: Destroying tempOldInstance."); DestroyImmediate(tempOldInstance); }
+        
         if (!string.IsNullOrEmpty(resultPath))
             AssignPrefabToGameManager("cardPrefab", resultPath);
             
@@ -202,10 +237,12 @@ public class UISetup : Editor
     {
         const string prefabName = "DeckViewerPanel";
         string fullPrefabPath = Path.Combine(UIPrefabSavePath, prefabName + ".prefab");
-        GameObject panelRoot = null;
+        GameObject panelRoot = null; // Object to build and save
         string resultPath = null;
         Dictionary<string, UICustomizationData> customizations = null;
         bool replacing = false;
+        GameObject tempOldInstance = null;
+        // GameObject tempNewInstance = null; // <<-- Removed
 
         if (!Directory.Exists(UIPrefabSavePath))
         {
@@ -213,121 +250,98 @@ public class UISetup : Editor
             AssetDatabase.Refresh();
         }
 
-        // --- MODIFIED: Extract customizations before deleting ---
         GameObject existingPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(fullPrefabPath);
         if (existingPrefab != null)
         {
             Debug.Log($"Found existing prefab at {fullPrefabPath}, extracting customizations...");
             customizations = ExtractCustomizations(existingPrefab);
+            tempOldInstance = (GameObject)PrefabUtility.InstantiatePrefab(existingPrefab);
+             if (tempOldInstance == null) Debug.LogError("Failed to instantiate existing prefab for merging.");
+             
             replacing = true;
             if (!AssetDatabase.DeleteAsset(fullPrefabPath))
             {
                 Debug.LogError($"Failed to delete existing Deck Viewer Panel prefab at {fullPrefabPath}. Skipping creation.");
+                 if (tempOldInstance != null) DestroyImmediate(tempOldInstance);
                 return null;
             }
              AssetDatabase.Refresh();
         }
-        // --- END MODIFIED ---
 
         try
         {
+            // 1. Create base new structure
             panelRoot = new GameObject(prefabName);
-            panelRoot.SetActive(false); // Start inactive
+            panelRoot.SetActive(false); 
             RectTransform rootRect = panelRoot.AddComponent<RectTransform>();
-            // Center anchor, default size for now, can be adjusted by parent layout
             ConfigureRectTransform(rootRect, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(500, 600));
-
-            // Background
             Image backgroundImage = panelRoot.AddComponent<Image>();
             backgroundImage.color = new Color(0.1f, 0.1f, 0.1f, 0.95f);
-            backgroundImage.raycastTarget = true; // Block clicks behind the panel
-
-            // Vertical Layout for the whole panel
+            backgroundImage.raycastTarget = true; 
             VerticalLayoutGroup panelLayout = AddVerticalLayoutGroup(panelRoot, DefaultPadding, DefaultSpacing, true, false);
             panelLayout.childForceExpandHeight = false;
             panelLayout.childControlHeight = false;
             panelLayout.childAlignment = TextAnchor.UpperCenter;
-
-            // Header Row (Title + Close Button)
             GameObject headerRow = CreatePanel(panelRoot.transform, "HeaderRow", true);
             SetLayoutElement(headerRow, preferredHeight: 40, flexibleHeight: 0);
             HorizontalLayoutGroup headerLayout = AddHorizontalLayoutGroup(headerRow, DefaultPadding, DefaultSpacing);
             headerLayout.childAlignment = TextAnchor.MiddleCenter;
-
             TextMeshProUGUI titleText = CreateText(headerRow.transform, "TitleText", "Deck Viewer", 24, TextAlignmentOptions.Left);
             SetLayoutElement(titleText.gameObject, flexibleWidth: 1);
-
             Button closeButton = CreateButton(headerRow.transform, "CloseButton", "X");
             SetLayoutElement(closeButton.gameObject, minWidth: 40, preferredWidth: 40, minHeight: 40, preferredHeight: 40); 
-
-            // Scroll View for Cards
             GameObject scrollViewGO = new GameObject("CardScrollView");
             scrollViewGO.transform.SetParent(panelRoot.transform, false);
             ScrollRect scrollRect = scrollViewGO.AddComponent<ScrollRect>();
             Image scrollBg = scrollViewGO.AddComponent<Image>();
-            scrollBg.color = new Color(0f, 0f, 0f, 0.2f); // Slightly darker background for scroll area
-            SetLayoutElement(scrollViewGO, flexibleHeight: 1); // Make scroll view fill available space
-
-            // Scroll Viewport
+            scrollBg.color = new Color(0f, 0f, 0f, 0.2f); 
+            SetLayoutElement(scrollViewGO, flexibleHeight: 1); 
             GameObject viewportGO = new GameObject("Viewport");
             viewportGO.transform.SetParent(scrollViewGO.transform, false);
             RectTransform viewportRect = viewportGO.AddComponent<RectTransform>();
             viewportGO.AddComponent<Mask>().showMaskGraphic = false;
-            Image viewportImage = viewportGO.AddComponent<Image>(); // Needed for Mask
-            viewportImage.color = Color.white; // Doesn't matter visually due to mask
+            Image viewportImage = viewportGO.AddComponent<Image>(); 
+            viewportImage.color = Color.white; 
             viewportImage.raycastTarget = false;
-            ConfigureRectTransform(viewportRect, Vector2.zero, Vector2.one, new Vector2(0f, 1f), Vector2.zero, Vector2.zero); // Stretch fill
-
-            // Scroll Content
+            ConfigureRectTransform(viewportRect, Vector2.zero, Vector2.one, new Vector2(0f, 1f), Vector2.zero, Vector2.zero); 
             GameObject contentGO = new GameObject("Content");
             contentGO.transform.SetParent(viewportGO.transform, false);
             RectTransform contentRect = contentGO.AddComponent<RectTransform>();
             VerticalLayoutGroup contentLayout = AddVerticalLayoutGroup(contentGO, DefaultPadding, DefaultSpacing, true, false);
-            contentLayout.childControlHeight = false; // Let cards control their height
+            contentLayout.childControlHeight = false; 
             contentLayout.childAlignment = TextAnchor.UpperCenter;
             ContentSizeFitter contentFitter = contentGO.AddComponent<ContentSizeFitter>();
-            contentFitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize; // Expand vertically based on content
-            ConfigureRectTransform(contentRect, new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1f), Vector2.zero, new Vector2(0, 0)); // Anchor top, stretch width
-
-            // Link ScrollRect components
+            contentFitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize; 
+            ConfigureRectTransform(contentRect, new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1f), Vector2.zero, new Vector2(0, 0)); 
             scrollRect.viewport = viewportRect;
             scrollRect.content = contentRect;
             scrollRect.horizontal = false;
             scrollRect.vertical = true;
             scrollRect.movementType = ScrollRect.MovementType.Clamped;
-
-            // Optional: Add Scrollbar
             GameObject scrollbarGO = new GameObject("ScrollbarVertical");
-            scrollbarGO.transform.SetParent(scrollViewGO.transform, false); // Parent to ScrollView
+            scrollbarGO.transform.SetParent(scrollViewGO.transform, false); 
             Scrollbar scrollbar = scrollbarGO.AddComponent<Scrollbar>();
             Image scrollbarImage = scrollbarGO.AddComponent<Image>();
             scrollbarImage.color = new Color(0.2f, 0.2f, 0.2f, 0.8f);
             RectTransform scrollbarRect = scrollbarGO.GetComponent<RectTransform>();
-            ConfigureRectTransform(scrollbarRect, new Vector2(1, 0), new Vector2(1, 1), new Vector2(1, 1), new Vector2(0, 0), new Vector2(15, 0)); // Position right
+            ConfigureRectTransform(scrollbarRect, new Vector2(1, 0), new Vector2(1, 1), new Vector2(1, 1), new Vector2(0, 0), new Vector2(15, 0)); 
             scrollbar.direction = Scrollbar.Direction.BottomToTop; 
-            // Scrollbar Handle (simple block)
-            GameObject handleGO = CreatePanel(scrollbarGO.transform, "Handle", false); // No specific size needed initially 
+            GameObject handleGO = CreatePanel(scrollbarGO.transform, "Handle", false);  
             Image handleImage = handleGO.GetComponent<Image>(); 
             handleImage.color = new Color(0.5f, 0.5f, 0.5f, 0.8f);
-            // Ensure Handle RectTransform fills parent correctly for Scrollbar component
             RectTransform handleRect = handleGO.GetComponent<RectTransform>();
             handleRect.anchorMin = Vector2.zero; handleRect.anchorMax = Vector2.one;
             handleRect.sizeDelta = Vector2.zero; handleRect.anchoredPosition = Vector2.zero;
             scrollbar.handleRect = handleRect;
-            // Link Scrollbar to ScrollRect
             scrollRect.verticalScrollbar = scrollbar;
             scrollRect.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.AutoHideAndExpandViewport;
-            scrollRect.verticalScrollbarSpacing = -3; // Overlap slightly
-
-            // Add DeckViewController script and configure its references
+            scrollRect.verticalScrollbarSpacing = -3; 
             DeckViewController controller = panelRoot.AddComponent<DeckViewController>();
             if (controller != null)
             {
-                controller.SetTitleText(titleText); // Assign directly since we just created it
+                controller.SetTitleText(titleText); 
                 controller.SetCloseButton(closeButton);
-                controller.SetCardContentArea(contentRect); // Assign the content transform
-
-                // Find and assign the CardTemplate prefab
+                controller.SetCardContentArea(contentRect); 
                 GameObject cardPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(Path.Combine(UIPrefabSavePath, "CardTemplate.prefab"));
                 if (cardPrefab != null)
                 {
@@ -343,31 +357,35 @@ public class UISetup : Editor
                 Debug.LogError("Failed to add DeckViewController component!");
             }
             
-            // --- MODIFIED: Apply customizations before saving ---
+            // 2. Apply customizations
             if (customizations != null)
             {
-                Debug.Log("Applying extracted customizations to new Deck Viewer Panel...");
                 ApplyCustomizations(panelRoot, customizations);
             }
-            // --- END MODIFIED ---
+
+            // 3. Reorder and merge directly into panelRoot
+            if (tempOldInstance != null)
+            {
+                 Debug.Log("Reordering and merging hierarchies directly into new structure...");
+                 ReorderAndMergeHierarchy(tempOldInstance.transform, panelRoot.transform, customizations);
+            }
             
-            // We need to save the prefab *after* components and references are set
+            // 4. Save the modified panelRoot
             PrefabUtility.SaveAsPrefabAsset(panelRoot, fullPrefabPath);
             resultPath = fullPrefabPath;
             Debug.Log($"Successfully {(replacing ? "replaced" : "created")} Deck Viewer Panel prefab at: {fullPrefabPath}");
         }
-        catch (System.Exception e)
-        {
-            Debug.LogError($"Failed to create Deck Viewer Panel prefab: {e.Message}\n{e.StackTrace}");
-        }
+        catch (System.Exception e) { Debug.LogError($"Failed to create Deck Viewer Panel prefab: {e.Message}\n{e.StackTrace}"); }
         finally
         {
-            // Make sure the temporary GameObject is destroyed *after* saving
-            if (panelRoot != null) DestroyImmediate(panelRoot);
+            // Cleanup initial base object
+             if (panelRoot != null) { Debug.Log("Finally: Cleaning up panelRoot object."); DestroyImmediate(panelRoot); }
             AssetDatabase.Refresh();
         }
 
-        // Assign to GameManager if the field exists
+        // Final cleanup for old instance
+        if (tempOldInstance != null) { Debug.Log("Final Cleanup: Destroying tempOldInstance."); DestroyImmediate(tempOldInstance); }
+
         if (!string.IsNullOrEmpty(resultPath))
             AssignPrefabToGameManager("deckViewerPanelPrefab", resultPath);
 
@@ -779,34 +797,35 @@ public class UISetup : Editor
         }
 
         string fullPrefabPath = Path.Combine(UIPrefabSavePath, prefabName + ".prefab");
-        GameObject canvasGO = null;
-        string resultPath = null; // Path to return
+        GameObject canvasGO = null; // Object to build and save
+        string resultPath = null; 
         Dictionary<string, UICustomizationData> customizations = null;
         bool replacing = false;
+        GameObject tempOldInstance = null; 
+        // GameObject tempNewInstance = null; // <<-- Removed
 
-        // --- MODIFIED: Extract customizations before deleting ---
         GameObject existingPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(fullPrefabPath);
         if (existingPrefab != null)
         {
-            Debug.Log($"Found existing prefab at {fullPrefabPath}, extracting customizations...");
+           Debug.Log($"Found existing prefab at {fullPrefabPath}, extracting customizations...");
             customizations = ExtractCustomizations(existingPrefab);
+            tempOldInstance = (GameObject)PrefabUtility.InstantiatePrefab(existingPrefab);
+             if (tempOldInstance == null) Debug.LogError("Failed to instantiate existing prefab for merging.");
+             
             replacing = true;
              bool deleted = AssetDatabase.DeleteAsset(fullPrefabPath);
-            if (deleted)
-            {
-                Debug.Log($"Deleted existing UI prefab at {fullPrefabPath} to replace it.");
-                AssetDatabase.Refresh(); 
-            }
-            else
+            if (!deleted)
             {
                 Debug.LogError($"Failed to delete existing UI prefab at {fullPrefabPath}. Skipping creation.");
-                return null; // Return null on failure
+                 if (tempOldInstance != null) DestroyImmediate(tempOldInstance);
+                return null; 
             }
+            AssetDatabase.Refresh();
         }
-        // --- END MODIFIED ---
 
         try
         {
+            // 1. Create base new structure
             canvasGO = new GameObject(prefabName);
             Canvas canvas = canvasGO.AddComponent<Canvas>();
             canvas.renderMode = RenderMode.ScreenSpaceOverlay; 
@@ -816,27 +835,37 @@ public class UISetup : Editor
             scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
             scaler.referenceResolution = new Vector2(1920, 1080); 
             scaler.matchWidthOrHeight = 0.5f;
-            
             populateAction?.Invoke(canvasGO);
 
-             // --- MODIFIED: Apply customizations before saving ---
+            // 2. Apply customizations
             if (customizations != null)
             {
-                Debug.Log($"Applying extracted customizations to new Canvas prefab '{prefabName}'...");
                 ApplyCustomizations(canvasGO, customizations);
             }
-            // --- END MODIFIED ---
+
+            // 3. Reorder and merge directly into canvasGO
+            if (tempOldInstance != null)
+            {
+                 Debug.Log("Reordering and merging hierarchies directly into new structure...");
+                 ReorderAndMergeHierarchy(tempOldInstance.transform, canvasGO.transform, customizations);
+            }
             
+            // 4. Save the modified canvasGO
             PrefabUtility.SaveAsPrefabAsset(canvasGO, fullPrefabPath);
-            resultPath = fullPrefabPath; // Set path only on successful save
+            resultPath = fullPrefabPath; 
             Debug.Log($"Successfully {(replacing ? "replaced" : "created")} UI prefab at: {fullPrefabPath}");
         }
-        catch (System.Exception e) { Debug.LogError($"Failed to create UI prefab {prefabName}: {e.Message}"); }
+       catch (System.Exception e) { Debug.LogError($"Failed to create UI prefab {prefabName}: {e.Message}"); }
         finally { 
-            if (canvasGO != null) DestroyImmediate(canvasGO);
+            // Cleanup initial base object
+            if (canvasGO != null) { Debug.Log("Finally: Cleaning up canvasGO object."); DestroyImmediate(canvasGO); }
             AssetDatabase.Refresh();
         }
-        return resultPath; // Return the path or null
+
+        // Final cleanup for old instance
+        if (tempOldInstance != null) { Debug.Log("Final Cleanup: Destroying tempOldInstance."); DestroyImmediate(tempOldInstance); }
+       
+        return resultPath; 
     }
 
     // --- NEW HELPER --- 
@@ -1216,6 +1245,34 @@ public class UISetup : Editor
              dataAdded = true;
         }
         
+        // --- ADDED: Extract Layout Group Data ---
+        VerticalLayoutGroup vlg = element.GetComponent<VerticalLayoutGroup>();
+        if (vlg != null)
+        {
+            data.hasVerticalLayout = true;
+            data.verticalLayoutData = new LayoutGroupData
+            {
+                padding = new RectOffset(vlg.padding.left, vlg.padding.right, vlg.padding.top, vlg.padding.bottom), // Deep copy RectOffset
+                spacing = vlg.spacing,
+                childAlignment = vlg.childAlignment
+            };
+            dataAdded = true;
+        }
+
+        HorizontalLayoutGroup hlg = element.GetComponent<HorizontalLayoutGroup>();
+        if (hlg != null)
+        {
+             data.hasHorizontalLayout = true;
+            data.horizontalLayoutData = new LayoutGroupData
+            {
+                 padding = new RectOffset(hlg.padding.left, hlg.padding.right, hlg.padding.top, hlg.padding.bottom), // Deep copy RectOffset
+                spacing = hlg.spacing,
+                childAlignment = hlg.childAlignment
+            };
+            dataAdded = true;
+        }
+        // --- END ADDED ---
+        
         // Only store if we actually extracted something relevant
         if (dataAdded)
         {
@@ -1283,6 +1340,41 @@ public class UISetup : Editor
                     // Apply material later if needed
                 }
             }
+
+            // --- ADDED: Apply Layout Group Data ---
+            if (data.hasVerticalLayout)
+            {
+                VerticalLayoutGroup vlg = element.GetComponent<VerticalLayoutGroup>();
+                if (vlg != null)
+                {
+                    Debug.Log($"Applying VerticalLayoutGroup customization to: {path}");
+                    vlg.padding = new RectOffset( // Need to assign new RectOffset
+                        data.verticalLayoutData.padding.left, 
+                        data.verticalLayoutData.padding.right, 
+                        data.verticalLayoutData.padding.top, 
+                        data.verticalLayoutData.padding.bottom);
+                    vlg.spacing = data.verticalLayoutData.spacing;
+                    vlg.childAlignment = data.verticalLayoutData.childAlignment;
+                }
+                else { Debug.LogWarning($"ApplyCustomizations: Found VerticalLayout data for '{path}', but no VLG component exists on the new object."); }
+            }
+             if (data.hasHorizontalLayout)
+            {
+                 HorizontalLayoutGroup hlg = element.GetComponent<HorizontalLayoutGroup>();
+                if (hlg != null)
+                {
+                     Debug.Log($"Applying HorizontalLayoutGroup customization to: {path}");
+                    hlg.padding = new RectOffset( // Need to assign new RectOffset
+                        data.horizontalLayoutData.padding.left, 
+                        data.horizontalLayoutData.padding.right, 
+                        data.horizontalLayoutData.padding.top, 
+                        data.horizontalLayoutData.padding.bottom);
+                    hlg.spacing = data.horizontalLayoutData.spacing;
+                    hlg.childAlignment = data.horizontalLayoutData.childAlignment;
+                }
+                else { Debug.LogWarning($"ApplyCustomizations: Found HorizontalLayout data for '{path}', but no HLG component exists on the new object."); }
+            }
+            // --- END ADDED ---
         }
         
         // Recurse for children
@@ -1290,6 +1382,136 @@ public class UISetup : Editor
         {
             ApplyRecursively(child, path, customizations);
         }
+    }
+    
+    // Removed the old MergeCustomHierarchy function
+    /*
+    private static void MergeCustomHierarchy(Transform oldParent, Transform newParent)
+    {
+        // ... old implementation ...
+    }
+    */
+
+    // --- ADDED: Recursive function to reorder and merge hierarchies ---
+    private static void ReorderAndMergeHierarchy(Transform oldParent, Transform newParent, Dictionary<string, UICustomizationData> customizations)
+    {
+        if (oldParent == null || newParent == null) return;
+
+        // Build a dictionary of children in the new hierarchy for quick lookup
+        var newChildren = new Dictionary<string, Transform>();
+        foreach (Transform child in newParent)
+        {
+            // Handle potential duplicate names gracefully (though generally bad practice in prefabs)
+            if (!newChildren.ContainsKey(child.name))
+            {
+                newChildren.Add(child.name, child);
+            }
+            else
+            {
+                 Debug.LogWarning($"ReorderAndMergeHierarchy: Duplicate name '{child.name}' found under parent '{newParent.name}'. Order merging might be unpredictable for duplicates.");
+            }
+        }
+
+        // Iterate through children of the OLD parent to establish the correct order
+        for (int i = 0; i < oldParent.childCount; i++)
+        {
+            Transform oldChild = oldParent.GetChild(i);
+            string childPath = GetTransformPath(oldChild); // Helper needed to get full path for lookup
+            
+            if (newChildren.TryGetValue(oldChild.name, out Transform newChildFound))
+            {
+                // Child exists in the new hierarchy, set its sibling index to match the old one
+                newChildFound.SetSiblingIndex(i);
+                // Recurse to handle children of this matched pair, passing customizations down
+                ReorderAndMergeHierarchy(oldChild, newChildFound, customizations);
+            }
+            else
+            {
+                // Child from old hierarchy doesn't exist in the new one - it's custom!
+                Debug.Log($"ReorderAndMergeHierarchy: Found custom GameObject '{oldChild.name}' at index {i}, cloning into new hierarchy.");
+                GameObject clonedCustomObject = Object.Instantiate(oldChild.gameObject, newParent, false); 
+                clonedCustomObject.name = oldChild.name; 
+                clonedCustomObject.transform.SetSiblingIndex(i); 
+
+                // --- ADDED: Apply customizations explicitly to the cloned custom object ---
+                if (customizations != null && childPath != null && customizations.TryGetValue(childPath, out UICustomizationData data))
+                {
+                    if (data.hasRectTransform)
+                    {
+                        RectTransform rect = clonedCustomObject.GetComponent<RectTransform>();
+                        if (rect != null)
+                        {
+                            Debug.Log($"Applying RectTransform customization to cloned custom object: {childPath}");
+                            rect.anchoredPosition = data.rectData.anchoredPosition;
+                            rect.sizeDelta = data.rectData.sizeDelta;
+                            rect.anchorMin = data.rectData.anchorMin;
+                            rect.anchorMax = data.rectData.anchorMax;
+                            rect.pivot = data.rectData.pivot;
+                            rect.localScale = data.rectData.localScale;
+                            rect.localRotation = data.rectData.localRotation;
+                        }
+                    }
+                     if (data.hasImage) // Also apply Image data if needed
+                    {
+                        Image image = clonedCustomObject.GetComponent<Image>();
+                        if (image != null)
+                        {
+                             Debug.Log($"Applying Image customization to cloned custom object: {childPath}");
+                            image.color = data.imageData.color;
+                             if (!string.IsNullOrEmpty(data.imageData.spritePath))
+                             {
+                                 Sprite loadedSprite = AssetDatabase.LoadAssetAtPath<Sprite>(data.imageData.spritePath);
+                                 image.sprite = loadedSprite; // Assign sprite (warning if not found is handled elsewhere)
+                             }
+                             else { image.sprite = null; }
+                        }
+                    }
+                }
+                // --- END ADDED ---
+            }
+        }
+    }
+    
+    // --- ADDED: Helper to get the full path of a transform relative to its root prefab instance ---
+    private static string GetTransformPath(Transform target)
+    {
+        if (target == null) return null;
+        // Find the root of the instantiated prefab
+        // This relies on the temporary instances NOT being parented under anything else in the scene.
+        Transform root = target;
+        while (root.parent != null)
+        {
+            root = root.parent;
+        }
+        
+        string path = target.name;
+        Transform current = target.parent;
+        while (current != null && current != root)
+        {
+            path = current.name + "/" + path;
+            current = current.parent;
+        }
+         // Include root name only if target wasn't the root itself
+        if (target != root) 
+        { 
+             path = root.name + "/" + path; 
+        }
+        else
+        {
+             path = root.name; // Path is just the root name
+        }
+
+        // The path extracted initially includes the clone suffix like "(Clone)"
+        // The keys in the customization dictionary do not. We need to match them.
+        // Let's assume the dictionary keys were generated WITHOUT the clone suffix.
+        // We need to remove the clone suffix from the generated path IF the root had one.
+        string rootNameWithoutClone = root.name.Replace("(Clone)", "");
+        if (root.name.EndsWith("(Clone)"))
+        {
+            path = path.Replace(root.name, rootNameWithoutClone);
+        }
+
+        return path;
     }
     // --- END ADDED ---
 } 
