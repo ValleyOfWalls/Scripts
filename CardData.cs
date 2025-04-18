@@ -29,6 +29,11 @@ public class CardData : ScriptableObject
     public int tempMaxHealthChange = 0; // Amount to change max health for this combat (0 if none)
     // Add other effects like buffs, debuffs, etc.
 
+    [Header("Status Effect Application")]
+    public StatusEffectType statusToApply = StatusEffectType.None;
+    public int statusDuration = 0; // Turns the status lasts
+    public int statusPotency = 0; // e.g., Damage reduction for Weak, % increase for Break?
+
     [Header("Discard Trigger Effect")]
     public DiscardEffectType discardEffectType = DiscardEffectType.None;
     public int discardEffectValue = 0; // Value associated with the discard effect (e.g., damage amount, block amount)

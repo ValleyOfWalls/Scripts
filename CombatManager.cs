@@ -163,6 +163,8 @@ public class CombatManager
     {
         Debug.Log("Starting Player Turn");
         gameManager.GetPlayerManager().ResetAllBlock();
+        gameManager.GetPlayerManager().DecrementPlayerStatusEffects();
+        gameManager.GetPlayerManager().DecrementLocalPetStatusEffects();
         gameManager.GetPlayerManager().SetCurrentEnergy(startingEnergy);
         UpdateEnergyUI();
 

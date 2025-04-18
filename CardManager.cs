@@ -258,6 +258,10 @@ public class CardManager
         Debug.Log("---> Starting Opponent Pet Turn <---");
         opponentPetEnergy = startingEnergy;
         
+        // --- ADDED: Decrement Opponent Pet Status Effects --- 
+        gameManager.GetPlayerManager().DecrementOpponentPetStatusEffects();
+        // --- END ADDED ---
+        
         // Determine how many cards the pet should draw (can be different from player)
         int petCardsToDraw = 3; // Example: Pet draws fewer cards
         DrawOpponentPetHand(petCardsToDraw);
@@ -290,8 +294,18 @@ public class CardManager
                 // Apply effect (Example: Damage to Player)
                 if (cardToPlay.damage > 0)
                 {
-                    gameManager.GetPlayerManager().DamageLocalPlayer(cardToPlay.damage);
-                    Debug.Log($"Opponent Pet dealt {cardToPlay.damage} damage to Local Player. New health: {gameManager.GetPlayerManager().GetLocalPlayerHealth()}, Block: {gameManager.GetPlayerManager().GetLocalPlayerBlock()}");
+                    // --- ADDED: Check Attacker (Opponent Pet) Weakness --- 
+                    int actualDamage = cardToPlay.damage;
+                    if (gameManager.GetPlayerManager().IsOpponentPetWeak()) {
+                        // Example: 25% reduction, rounded down
+                        int reduction = Mathf.FloorToInt(actualDamage * 0.25f); 
+                        actualDamage = Mathf.Max(0, actualDamage - reduction);
+                        Debug.Log($"Opponent Pet is Weak! Reducing damage from {cardToPlay.damage} to {actualDamage}");
+                    }
+                    // --- END ADDED ---
+                    
+                    gameManager.GetPlayerManager().DamageLocalPlayer(actualDamage); // Use potentially reduced damage
+                    Debug.Log($"Opponent Pet dealt {actualDamage} damage to Local Player. New health: {gameManager.GetPlayerManager().GetLocalPlayerHealth()}, Block: {gameManager.GetPlayerManager().GetLocalPlayerBlock()}");
                     // Player defeat check is handled in DamageLocalPlayer
                 }
                 
@@ -344,6 +358,14 @@ public class CardManager
                 if (cardToPlay.tempMaxHealthChange != 0)
                 {
                     gameManager.GetPlayerManager().ApplyTempMaxHealthOpponentPet(cardToPlay.tempMaxHealthChange);
+                }
+                // --- END ADDED ---
+                
+                // --- ADDED: Apply Status Effects (Opponent Pet applying to Player) --- 
+                if (cardToPlay.statusToApply != StatusEffectType.None && cardToPlay.statusDuration > 0)
+                {
+                     // Opponent pet usually applies status to the player
+                     gameManager.GetPlayerManager().ApplyStatusEffectLocalPlayer(cardToPlay.statusToApply, cardToPlay.statusDuration);
                 }
                 // --- END ADDED ---
                 
@@ -402,9 +424,17 @@ public class CardManager
                 case CardDropZone.TargetType.EnemyPet:
                     if (cardData.damage > 0)
                     {
-                        int damageDealt = cardData.damage;
-                        gameManager.GetPlayerManager().DamageOpponentPet(damageDealt);
-                        Debug.Log($"Dealt {damageDealt} damage to Opponent Pet. New health: {gameManager.GetPlayerManager().GetOpponentPetHealth()}, Est. Block: {gameManager.GetPlayerManager().GetOpponentPetBlock()}");
+                        // --- ADDED: Check Attacker (Player) Weakness --- 
+                        int actualDamage = cardData.damage;
+                        if (gameManager.GetPlayerManager().IsPlayerWeak()) {
+                            int reduction = Mathf.FloorToInt(actualDamage * 0.25f);
+                            actualDamage = Mathf.Max(0, actualDamage - reduction);
+                             Debug.Log($"Player is Weak! Reducing damage from {cardData.damage} to {actualDamage}");
+                        }
+                        // --- END ADDED ---
+                        
+                        gameManager.GetPlayerManager().DamageOpponentPet(actualDamage); // Use potentially reduced damage
+                        Debug.Log($"Dealt {actualDamage} damage to Opponent Pet. New health: {gameManager.GetPlayerManager().GetOpponentPetHealth()}, Est. Block: {gameManager.GetPlayerManager().GetOpponentPetBlock()}");
                         // Combat win check is handled in DamageOpponentPet
                     }
                     // --- ADDED: Healing & Temp Max HP for Enemy Pet --- 
@@ -415,6 +445,11 @@ public class CardManager
                      if (cardData.tempMaxHealthChange != 0)
                     {
                         gameManager.GetPlayerManager().ApplyTempMaxHealthOpponentPet(cardData.tempMaxHealthChange);
+                    }
+                    // --- ADDED: Apply Status Effect to Enemy Pet --- 
+                    if (cardData.statusToApply != StatusEffectType.None && cardData.statusDuration > 0)
+                    {
+                        gameManager.GetPlayerManager().ApplyStatusEffectOpponentPet(cardData.statusToApply, cardData.statusDuration);
                     }
                     break;
                     
@@ -432,6 +467,11 @@ public class CardManager
                     {
                         gameManager.GetPlayerManager().ApplyTempMaxHealthPlayer(cardData.tempMaxHealthChange);
                     }
+                    // --- ADDED: Apply Status Effect to Player --- 
+                    if (cardData.statusToApply != StatusEffectType.None && cardData.statusDuration > 0)
+                    {
+                        gameManager.GetPlayerManager().ApplyStatusEffectLocalPlayer(cardData.statusToApply, cardData.statusDuration);
+                    }
                     break;
                     
                 case CardDropZone.TargetType.OwnPet:
@@ -447,6 +487,11 @@ public class CardManager
                     if (cardData.tempMaxHealthChange != 0)
                     {
                         gameManager.GetPlayerManager().ApplyTempMaxHealthPet(cardData.tempMaxHealthChange);
+                    }
+                    // --- ADDED: Apply Status Effect to Own Pet --- 
+                    if (cardData.statusToApply != StatusEffectType.None && cardData.statusDuration > 0)
+                    {
+                        gameManager.GetPlayerManager().ApplyStatusEffectLocalPet(cardData.statusToApply, cardData.statusDuration);
                     }
                     break;
                     

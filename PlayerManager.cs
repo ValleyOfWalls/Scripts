@@ -6,6 +6,16 @@ using System.Linq;
 using ExitGames.Client.Photon;
 using Newtonsoft.Json;
 
+// --- ADDED: Status Effect Enum --- 
+public enum StatusEffectType
+{
+    None,
+    Weak,   // Target deals less damage
+    Break   // Target takes more damage
+    // Add more status effects here (e.g., Vulnerable, Strength, Dexterity)
+}
+// --- END ADDED ---
+
 public class PlayerManager
 {
     private GameManager gameManager;
@@ -23,6 +33,12 @@ public class PlayerManager
     private int localPlayerTempMaxHealthBonus = 0;
     private int localPetTempMaxHealthBonus = 0;
     private int opponentPetTempMaxHealthBonus = 0;
+    private int localPlayerWeakTurns = 0;
+    private int localPlayerBreakTurns = 0;
+    private int localPetWeakTurns = 0;
+    private int localPetBreakTurns = 0;
+    private int opponentPetWeakTurns = 0; // Local simulation
+    private int opponentPetBreakTurns = 0; // Local simulation
     private Player opponentPlayer;
     private bool combatEndedForLocalPlayer = false;
     
@@ -180,6 +196,15 @@ public class PlayerManager
         opponentPetTempMaxHealthBonus = 0;
         // --- END ADDED ---
         
+        // --- ADDED: Reset Status Effects --- 
+        localPlayerWeakTurns = 0;
+        localPlayerBreakTurns = 0;
+        localPetWeakTurns = 0;
+        localPetBreakTurns = 0;
+        opponentPetWeakTurns = 0;
+        opponentPetBreakTurns = 0;
+        // --- END ADDED ---
+        
         currentEnergy = startingEnergy;
         
         // *** Pass opponent pet deck info to CardManager ***
@@ -200,6 +225,16 @@ public class PlayerManager
         
         if (damageAfterBlock > 0)
         {
+            // --- ADDED: Check for Break --- 
+            if (IsPlayerBroken()) 
+            {
+                 // Example: 50% increase. Potency could make this variable.
+                 int breakBonus = Mathf.CeilToInt(damageAfterBlock * 0.5f); 
+                 Debug.Log($"Player has Break! Increasing damage by {breakBonus}");
+                 damageAfterBlock += breakBonus;
+            }
+            // --- END ADDED ---
+            
             localPlayerHealth -= damageAfterBlock;
             if (localPlayerHealth < 0) localPlayerHealth = 0;
         }
@@ -228,6 +263,15 @@ public class PlayerManager
         
         if (damageAfterBlock > 0)
         {
+            // --- ADDED: Check for Break --- 
+            if (IsOpponentPetBroken()) 
+            {
+                 int breakBonus = Mathf.CeilToInt(damageAfterBlock * 0.5f); 
+                 Debug.Log($"Opponent Pet has Break! Increasing damage by {breakBonus} (local sim)");
+                 damageAfterBlock += breakBonus;
+            }
+            // --- END ADDED ---
+            
             opponentPetHealth -= damageAfterBlock;
             if (opponentPetHealth < 0) opponentPetHealth = 0;
         }
@@ -260,6 +304,15 @@ public class PlayerManager
         
         if (damageAfterBlock > 0)
         {
+            // --- ADDED: Check for Break --- 
+            if (IsLocalPetBroken()) 
+            {
+                 int breakBonus = Mathf.CeilToInt(damageAfterBlock * 0.5f); 
+                 Debug.Log($"Local Pet has Break! Increasing damage by {breakBonus}");
+                 damageAfterBlock += breakBonus;
+            }
+            // --- END ADDED ---
+            
             localPetHealth -= damageAfterBlock;
             if (localPetHealth < 0) localPetHealth = 0;
         }
@@ -736,5 +789,94 @@ public class PlayerManager
         int baseOpponentPetHP = (opponentPlayer != null && opponentPlayer.CustomProperties.TryGetValue(PLAYER_BASE_PET_HP_PROP, out object hp)) ? (int)hp : gameManager.GetStartingPetHealth();
         return baseOpponentPetHP + opponentPetTempMaxHealthBonus;
     }
+    // --- END ADDED ---
+
+    // --- ADDED: Status Effect Application ---
+    public void ApplyStatusEffectLocalPlayer(StatusEffectType type, int duration)
+    {
+        if (duration <= 0) return;
+        switch(type)
+        {
+            case StatusEffectType.Weak:
+                localPlayerWeakTurns += duration;
+                Debug.Log($"Applied Weak to Player for {duration} turns. Total: {localPlayerWeakTurns}");
+                break;
+            case StatusEffectType.Break:
+                localPlayerBreakTurns += duration;
+                Debug.Log($"Applied Break to Player for {duration} turns. Total: {localPlayerBreakTurns}");
+                break;
+        }
+        // TODO: Update UI to show status
+    }
+    
+    public void ApplyStatusEffectLocalPet(StatusEffectType type, int duration)
+    {
+        if (duration <= 0) return;
+         switch(type)
+        {
+            case StatusEffectType.Weak:
+                localPetWeakTurns += duration;
+                Debug.Log($"Applied Weak to Local Pet for {duration} turns. Total: {localPetWeakTurns}");
+                break;
+            case StatusEffectType.Break:
+                localPetBreakTurns += duration;
+                Debug.Log($"Applied Break to Local Pet for {duration} turns. Total: {localPetBreakTurns}");
+                break;
+        }
+         // TODO: Update UI to show status
+    }
+    
+    public void ApplyStatusEffectOpponentPet(StatusEffectType type, int duration)
+    {
+         if (duration <= 0) return;
+         switch(type)
+        {
+            case StatusEffectType.Weak:
+                opponentPetWeakTurns += duration;
+                Debug.Log($"Applied Weak to Opponent Pet for {duration} turns (local sim). Total: {opponentPetWeakTurns}");
+                break;
+            case StatusEffectType.Break:
+                opponentPetBreakTurns += duration;
+                 Debug.Log($"Applied Break to Opponent Pet for {duration} turns (local sim). Total: {opponentPetBreakTurns}");
+               break;
+        }
+         // TODO: Update UI to show status
+    }
+    // --- END ADDED ---
+    
+    // --- ADDED: Status Effect Decrementing ---
+    public void DecrementPlayerStatusEffects()
+    {
+        if (localPlayerWeakTurns > 0) localPlayerWeakTurns--;
+        if (localPlayerBreakTurns > 0) localPlayerBreakTurns--;
+        Debug.Log($"Decremented Player Status. Weak: {localPlayerWeakTurns}, Break: {localPlayerBreakTurns}");
+        // TODO: Update UI
+    }
+    
+    public void DecrementLocalPetStatusEffects()
+    {
+        if (localPetWeakTurns > 0) localPetWeakTurns--;
+        if (localPetBreakTurns > 0) localPetBreakTurns--;
+         Debug.Log($"Decremented Local Pet Status. Weak: {localPetWeakTurns}, Break: {localPetBreakTurns}");
+       // TODO: Update UI
+    }
+    
+    public void DecrementOpponentPetStatusEffects() // Called by CardManager before pet acts
+    {
+        if (opponentPetWeakTurns > 0) opponentPetWeakTurns--;
+        if (opponentPetBreakTurns > 0) opponentPetBreakTurns--;
+        Debug.Log($"Decremented Opponent Pet Status (local sim). Weak: {opponentPetWeakTurns}, Break: {opponentPetBreakTurns}");
+        // TODO: Update UI
+    }
+    // --- END ADDED ---
+    
+    // --- ADDED: Status Effect Getters ---
+    public bool IsPlayerWeak() => localPlayerWeakTurns > 0;
+    public bool IsPlayerBroken() => localPlayerBreakTurns > 0;
+    public bool IsLocalPetWeak() => localPetWeakTurns > 0;
+    public bool IsLocalPetBroken() => localPetBreakTurns > 0;
+    public bool IsOpponentPetWeak() => opponentPetWeakTurns > 0;
+    public bool IsOpponentPetBroken() => opponentPetBreakTurns > 0;
+    // Add getters for potency if implemented
     // --- END ADDED ---
 }
