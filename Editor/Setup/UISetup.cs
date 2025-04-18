@@ -385,188 +385,277 @@ public class UISetup : Editor
 
     private static void AddCombatScreenElements(GameObject canvasRoot)
     {
-        // Root Layout (Vertical)
-        VerticalLayoutGroup mainLayout = AddVerticalLayoutGroup(canvasRoot, DefaultPadding, DefaultSpacing, controlChildWidth: true, controlChildHeight: false);
-        mainLayout.childAlignment = TextAnchor.UpperCenter;
-        mainLayout.childForceExpandHeight = false;
+        GameObject topArea = CreatePanel(canvasRoot.transform, "TopArea", true);
+        ConfigureRectTransform(topArea.GetComponent<RectTransform>(),
+            new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0.5f, 1f),
+            Vector2.zero, new Vector2(0, -200));
 
-        // --- Top Area (Opponent + Own Pet) --- 
-        GameObject topArea = CreatePanel(canvasRoot.transform, "TopArea");
-        SetLayoutElement(topArea, minHeight: 180, preferredHeight: 200, flexibleHeight: 0); // Adjust height as needed
-        HorizontalLayoutGroup topLayout = AddHorizontalLayoutGroup(topArea, DefaultPadding, DefaultSpacing, controlChildWidth: true, controlChildHeight: true);
-        topLayout.childAlignment = TextAnchor.MiddleCenter;
+        TextMeshProUGUI scoreText = CreateText(topArea.transform, "ScoreText", "Score: P1: 0 / P2: 0", 24, TextAlignmentOptions.TopRight);
+        ConfigureRectTransform(scoreText.rectTransform,
+            new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(1f, 1f),
+            new Vector2(-DefaultPadding, -DefaultPadding), new Vector2(300, 40));
 
-        // Container for Opponent Area (to allow centering/padding)
-        GameObject opponentAreaContainer = CreatePanel(topArea.transform, "OpponentPetAreaContainer");
-        SetLayoutElement(opponentAreaContainer, flexibleWidth: 1);
-        HorizontalLayoutGroup oppContainerLayout = AddHorizontalLayoutGroup(opponentAreaContainer, 0, 0, true, true);
-        oppContainerLayout.childAlignment = TextAnchor.MiddleCenter; // Center the actual pet area
+        // <<--- MODIFIED STRUCTURE START --->>
+        // 1. Create the Container for the Opponent Pet area
+        GameObject opponentPetAreaContainer = CreatePanel(topArea.transform, "OpponentPetAreaContainer", true); // Container is transparent
+        ConfigureRectTransform(opponentPetAreaContainer.GetComponent<RectTransform>(),
+             new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0.5f, 1f),
+             new Vector2(0, -DefaultPadding), new Vector2(300, 150)); // Position/size the container
 
-        // Opponent Pet Area
-        GameObject opponentPetArea = CreatePanel(opponentAreaContainer.transform, "OpponentPetArea", true);
-        SetLayoutElement(opponentPetArea, minWidth: 200, preferredWidth: 250);
-        VerticalLayoutGroup oppPetLayout = AddVerticalLayoutGroup(opponentPetArea, 5, 2, true, false);
-        oppPetLayout.childForceExpandHeight = false;
-        oppPetLayout.childAlignment = TextAnchor.UpperCenter;
+        // 2. Create the Drop Zone as a child of the Container, stretched to fill
+        GameObject opponentDropZoneGO = new GameObject("OpponentPetDropZone");
+        opponentDropZoneGO.transform.SetParent(opponentPetAreaContainer.transform, false);
+        Image oppDropImage = opponentDropZoneGO.AddComponent<Image>();
+        oppDropImage.color = Color.clear; 
+        oppDropImage.raycastTarget = true; 
+        RectTransform oppDropRect = opponentDropZoneGO.GetComponent<RectTransform>();
+        ConfigureRectTransform(oppDropRect, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero); // Stretch to fill container
+        CardDropZone oppDropZone = opponentDropZoneGO.AddComponent<CardDropZone>();
+        oppDropZone.targetType = CardDropZone.TargetType.EnemyPet;
 
-        CreateText(opponentPetArea.transform, "OpponentPetNameText", "Opponent Pet", 18, TextAlignmentOptions.Center);
-        Slider oppPetHealthSlider = CreateSlider(opponentPetArea.transform, "OpponentPetHealthSlider", new Vector2(200, 20));
-        SetSliderRaycastTargets(oppPetHealthSlider, false); // Disable interaction
-        TextMeshProUGUI oppPetHealthText = CreateText(opponentPetArea.transform, "OpponentPetHealthText", "HP: 100 / 100", 14, TextAlignmentOptions.Center);
-        TextMeshProUGUI oppPetBlockText = CreateText(opponentPetArea.transform, "OpponentPetBlockText", "Block: 0", 14, TextAlignmentOptions.Left);
-        TextMeshProUGUI oppPetDotText = CreateText(opponentPetArea.transform, "OpponentPetDotText", "DoT: 0", 14, TextAlignmentOptions.Left);
-        oppPetDotText.gameObject.SetActive(false); // Hide initially
-        // --- ADDED: Opponent Pet Reflection Text ---
-        TextMeshProUGUI oppPetReflectionText = CreateText(opponentPetArea.transform, "OpponentPetReflectionText", "Reflect: 0%", 14, TextAlignmentOptions.Left);
-        oppPetReflectionText.gameObject.SetActive(false); // Hide initially
-        // --- END ADDED ---
-        TextMeshProUGUI oppPetIntentText = CreateText(opponentPetArea.transform, "OpponentPetIntentText", "Intent: ???", 16, TextAlignmentOptions.Center);
+        // <<--- ADDED HIGHLIGHT GRAPHIC START --->>
+        GameObject oppHighlightGO = new GameObject("HighlightGraphic");
+        oppHighlightGO.transform.SetParent(opponentDropZoneGO.transform, false);
+        Image oppHighlightImage = oppHighlightGO.AddComponent<Image>();
+        oppHighlightImage.color = new Color(1f, 1f, 0f, 0.3f); // Semi-transparent yellow
+        oppHighlightImage.raycastTarget = false; // Highlight shouldn't block raycasts
+        RectTransform oppHighlightRect = oppHighlightGO.GetComponent<RectTransform>();
+        ConfigureRectTransform(oppHighlightRect, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero); // Stretch to fill drop zone
+        oppHighlightGO.SetActive(false); // Start disabled
+        // Assign the graphic to the drop zone script field
+        oppDropZone.highlightGraphic = oppHighlightImage;
+        // <<--- ADDED HIGHLIGHT GRAPHIC END --->>
 
-        // Container for Own Pet Area
-        GameObject ownPetAreaContainer = CreatePanel(topArea.transform, "OwnPetAreaContainer");
-        SetLayoutElement(ownPetAreaContainer, flexibleWidth: 1);
-        HorizontalLayoutGroup ownContainerLayout = AddHorizontalLayoutGroup(ownPetAreaContainer, 0, 0, true, true);
-        ownContainerLayout.childAlignment = TextAnchor.MiddleCenter; // Center the actual pet area
+        opponentDropZoneGO.transform.SetAsFirstSibling(); // Render behind the actual pet UI panel
 
-        // Own Pet Area
-        GameObject ownPetArea = CreatePanel(ownPetAreaContainer.transform, "OwnPetArea", true);
-        SetLayoutElement(ownPetArea, minWidth: 200, preferredWidth: 250);
-        VerticalLayoutGroup ownPetLayout = AddVerticalLayoutGroup(ownPetArea, 5, 2, true, false);
-        ownPetLayout.childForceExpandHeight = false;
-        ownPetLayout.childAlignment = TextAnchor.UpperCenter;
-
-        CreateText(ownPetArea.transform, "OwnPetNameText", "Your Pet", 18, TextAlignmentOptions.Center);
-        Slider ownPetHealthSlider = CreateSlider(ownPetArea.transform, "OwnPetHealthSlider", new Vector2(200, 20));
-        SetSliderRaycastTargets(ownPetHealthSlider, false);
-        TextMeshProUGUI ownPetHealthText = CreateText(ownPetArea.transform, "OwnPetHealthText", "HP: 100 / 100", 14, TextAlignmentOptions.Center);
-        TextMeshProUGUI ownPetBlockText = CreateText(ownPetArea.transform, "OwnPetBlockText", "Block: 0", 14, TextAlignmentOptions.Left);
-        TextMeshProUGUI ownPetDotText = CreateText(ownPetArea.transform, "OwnPetDotText", "DoT: 0", 14, TextAlignmentOptions.Left);
-        ownPetDotText.gameObject.SetActive(false); // Hide initially
-        // --- ADDED: Own Pet Reflection Text ---
-        TextMeshProUGUI ownPetReflectionText = CreateText(ownPetArea.transform, "OwnPetReflectionText", "Reflect: 0%", 14, TextAlignmentOptions.Left);
-        ownPetReflectionText.gameObject.SetActive(false); // Hide initially
-        // --- END ADDED ---
-        
-        // --- Player Area (Stats, Hand, Bottom Bar) ---
-        GameObject playerArea = CreatePanel(canvasRoot.transform, "PlayerArea");
-        SetLayoutElement(playerArea, flexibleHeight: 1); // Take remaining space
-        VerticalLayoutGroup playerLayout = AddVerticalLayoutGroup(playerArea, DefaultPadding, DefaultSpacing, true, false);
-        playerLayout.childForceExpandHeight = false;
-        playerLayout.childAlignment = TextAnchor.LowerCenter; // Align content towards bottom
-
-        // Stats Row
-        GameObject statsRow = CreatePanel(playerArea.transform, "StatsRow", true);
-        SetLayoutElement(statsRow, minHeight: 60, preferredHeight: 80);
-        HorizontalLayoutGroup statsLayout = AddHorizontalLayoutGroup(statsRow, DefaultPadding, DefaultSpacing, false, true);
-        statsLayout.childAlignment = TextAnchor.MiddleCenter;
-
-        // Player Name
-        CreateText(statsRow.transform, "PlayerNameText", "Player Name", 18, TextAlignmentOptions.Left); // Removed layout element, let it size naturally?
-
-        // Player Health
-        GameObject healthArea = CreatePanel(statsRow.transform, "PlayerHealthArea", true);
-        VerticalLayoutGroup healthLayout = AddVerticalLayoutGroup(healthArea, 0, 0, true, false);
-        healthLayout.childAlignment = TextAnchor.MiddleCenter;
-        Slider playerHealthSlider = CreateSlider(healthArea.transform, "PlayerHealthSlider", new Vector2(150, 20));
-        SetSliderRaycastTargets(playerHealthSlider, false);
-        TextMeshProUGUI playerHealthText = CreateText(healthArea.transform, "PlayerHealthText", "HP: 100 / 100", 14, TextAlignmentOptions.Center);
-        SetLayoutElement(healthArea, minWidth: 160);
-
-        // Player Block
-        TextMeshProUGUI playerBlockText = CreateText(statsRow.transform, "PlayerBlockText", "Block: 0", 16, TextAlignmentOptions.Left);
-        SetLayoutElement(playerBlockText.gameObject, minWidth: 100);
-
-        // Player DoT
-        TextMeshProUGUI playerDotText = CreateText(statsRow.transform, "PlayerDotText", "DoT: 0", 16, TextAlignmentOptions.Left);
-        SetLayoutElement(playerDotText.gameObject, minWidth: 100);
-        playerDotText.gameObject.SetActive(false); // Hide initially
-
-        // --- ADDED: Player Reflection Text ---
-        TextMeshProUGUI playerReflectionText = CreateText(statsRow.transform, "PlayerReflectionText", "Reflect: 0%", 16, TextAlignmentOptions.Left);
-        SetLayoutElement(playerReflectionText.gameObject, minWidth: 120);
-        playerReflectionText.gameObject.SetActive(false); // Hide initially
-        // --- END ADDED ---
-
-        // Combo Count
-        TextMeshProUGUI comboCountText = CreateText(statsRow.transform, "ComboCountText", "Combo: 0", 16, TextAlignmentOptions.Left);
-        SetLayoutElement(comboCountText.gameObject, minWidth: 100);
-        comboCountText.gameObject.SetActive(false); // Hide initially
-
-        // Spacer
-        GameObject spacer = new GameObject("StatsSpacer");
-        spacer.AddComponent<RectTransform>();
-        spacer.transform.SetParent(statsRow.transform);
-        SetLayoutElement(spacer, flexibleWidth: 1);
-
-        // Energy
-        TextMeshProUGUI energyText = CreateText(statsRow.transform, "EnergyText", "Energy: 3 / 3", 20, TextAlignmentOptions.Right);
-        SetLayoutElement(energyText.gameObject, minWidth: 150);
-
-        // Player Hand Panel
-        GameObject playerHandPanel = CreatePanel(playerArea.transform, "PlayerHandPanel");
-        SetLayoutElement(playerHandPanel, minHeight: 180, preferredHeight: 200, flexibleHeight: 0); // Fixed height for hand
-        HorizontalLayoutGroup handLayout = AddHorizontalLayoutGroup(playerHandPanel, DefaultSpacing, DefaultSpacing, false, false); // Allow cards to determine width/height
-        handLayout.childAlignment = TextAnchor.MiddleCenter;
-
-        // Add a default Card Drop Zone component to the Hand Panel itself
-        CardDropZone handDropZone = playerHandPanel.AddComponent<CardDropZone>();
-        handDropZone.targetType = CardDropZone.TargetType.PlayerSelf; // Default target if dropped back onto hand (can be ignored)
-        // Make hand panel background slightly transparent dark
-        Image handBg = playerHandPanel.GetComponent<Image>();
-        if(handBg) handBg.color = new Color(0.1f, 0.1f, 0.1f, 0.5f);
-
-        // Bottom Bar (Deck, Discard, End Turn)
-        GameObject bottomBar = CreatePanel(playerArea.transform, "BottomBar");
-        SetLayoutElement(bottomBar, minHeight: 50, preferredHeight: 60, flexibleHeight: 0);
-        HorizontalLayoutGroup bottomLayout = AddHorizontalLayoutGroup(bottomBar, DefaultPadding, DefaultSpacing);
-        bottomLayout.childAlignment = TextAnchor.MiddleCenter;
-
-        // Deck Count
-        TextMeshProUGUI deckCountText = CreateText(bottomLayout.transform, "DeckCountText", "Deck: 30", 16, TextAlignmentOptions.Left);
-        SetLayoutElement(deckCountText.gameObject, minWidth: 100);
-
-        // --- ADDED: Deck View Buttons ---
-        Button viewPlayerDeckButton = CreateButton(bottomLayout.transform, "ViewPlayerDeckButton", "View Player Deck");
-        SetLayoutElement(viewPlayerDeckButton.gameObject, minWidth: 150);
-        Button viewPetDeckButton = CreateButton(bottomLayout.transform, "ViewPetDeckButton", "View Pet Deck");
-        SetLayoutElement(viewPetDeckButton.gameObject, minWidth: 150);
-        Button viewOppPetDeckButton = CreateButton(bottomLayout.transform, "ViewOppPetDeckButton", "View Opp. Pet Deck");
-        SetLayoutElement(viewOppPetDeckButton.gameObject, minWidth: 180);
-        // --- END ADDED ---
-
-        // Spacer
-        GameObject bottomSpacer = new GameObject("BottomSpacer");
-        bottomSpacer.AddComponent<RectTransform>();
-        bottomSpacer.transform.SetParent(bottomLayout.transform);
-        SetLayoutElement(bottomSpacer, flexibleWidth: 1);
-
-        // Discard Count
-        TextMeshProUGUI discardCountText = CreateText(bottomLayout.transform, "DiscardCountText", "Discard: 0", 16, TextAlignmentOptions.Right);
-        SetLayoutElement(discardCountText.gameObject, minWidth: 100);
-
-        // End Turn Button
-        Button endTurnButton = CreateButton(bottomLayout.transform, "EndTurnButton", "End Turn");
-        SetLayoutElement(endTurnButton.gameObject, minWidth: 120, minHeight: 40);
-
-        // --- ADDED: Target Drop Zones ---
-        // Attach drop zones to the existing area panels
-        CardDropZone enemyPetDropZone = opponentPetArea.AddComponent<CardDropZone>();
-        enemyPetDropZone.targetType = CardDropZone.TargetType.EnemyPet;
-        // Make opponent area slightly highlightable
+        // 3. Create the Panel for UI elements (Text, Slider) as a child of the Container, stretched to fill
+        GameObject opponentPetArea = CreatePanel(opponentPetAreaContainer.transform, "OpponentPetArea", true); // Panel itself can be transparent
+        RectTransform opponentPetAreaRect = opponentPetArea.GetComponent<RectTransform>();
+        ConfigureRectTransform(opponentPetAreaRect, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero); // Stretch to fill container
+        // Add layout group and UI elements to *this* panel
+        VerticalLayoutGroup oppLayout = AddVerticalLayoutGroup(opponentPetArea, DefaultPadding, DefaultSpacing);
+        oppLayout.childAlignment = TextAnchor.UpperCenter;
+        // <<--- ADDED RAYCAST TARGET DISABLE START --->>
+        // Ensure the panel itself doesn't block raycasts if it has an image
         Image oppAreaImage = opponentPetArea.GetComponent<Image>();
-        if (oppAreaImage) { oppAreaImage.color = new Color(0.3f, 0.1f, 0.1f, 0.3f); oppAreaImage.raycastTarget = true; }
+        if (oppAreaImage != null) oppAreaImage.raycastTarget = false;
+        // <<--- ADDED RAYCAST TARGET DISABLE END --->>
+        // <<--- MODIFIED STRUCTURE END --->>
 
-        CardDropZone ownPetDropZone = ownPetArea.AddComponent<CardDropZone>();
-        ownPetDropZone.targetType = CardDropZone.TargetType.OwnPet;
-        // Make own pet area slightly highlightable
+        // Add UI elements as children of opponentPetArea (the panel with the VLG)
+        TextMeshProUGUI oppNameText = CreateText(opponentPetArea.transform, "OpponentPetNameText", "Opponent Pet", 20, TextAlignmentOptions.Center);
+        oppNameText.raycastTarget = false; // <<--- DISABLE RAYCAST
+        Slider oppHealthSlider = CreateSlider(opponentPetArea.transform, "OpponentPetHealthSlider", new Vector2(200, 20));
+        // Disable raycasts on slider sub-elements if necessary (Background, Fill, Handle Images)
+        SetSliderRaycastTargets(oppHealthSlider, false); // <<--- DISABLE RAYCAST ON SLIDER PARTS
+        TextMeshProUGUI oppHealthText = CreateText(opponentPetArea.transform, "OpponentPetHealthText", "50 / 50", 16, TextAlignmentOptions.Center);
+        oppHealthText.raycastTarget = false; // <<--- DISABLE RAYCAST
+        TextMeshProUGUI oppIntentText = CreateText(opponentPetArea.transform, "OpponentPetIntentText", "Intent: Attack 10", 16, TextAlignmentOptions.Center);
+        oppIntentText.raycastTarget = false; // <<--- DISABLE RAYCAST
+        // --- ADDED: Opponent Pet Block Text ---
+        TextMeshProUGUI opponentPetBlockText = CreateText(opponentPetArea.transform, "OpponentPetBlockText", "Block: 0", 14, TextAlignmentOptions.Left);
+        SetLayoutElement(opponentPetBlockText.gameObject, minWidth: 60);
+        opponentPetBlockText.raycastTarget = false;
+        // --- END ADDED ---
+        // --- ADDED: Opponent Pet DoT Text ---
+        TextMeshProUGUI opponentPetDotText = CreateText(opponentPetArea.transform, "OpponentPetDotText", "DoT: 0 (0t)", 14, TextAlignmentOptions.Left);
+        SetLayoutElement(opponentPetDotText.gameObject, minWidth: 60);
+        opponentPetDotText.gameObject.SetActive(false); // Start hidden
+        opponentPetDotText.raycastTarget = false;
+        // --- END ADDED ---
+
+        // Intent Text (Below health/block)
+        GameObject opponentIntentRow = CreatePanel(opponentPetArea.transform, "OpponentIntentRow", true); 
+        AddHorizontalLayoutGroup(opponentIntentRow, 0, 0, true, true).childAlignment = TextAnchor.MiddleCenter;
+
+        // <<--- MODIFIED STRUCTURE START --->>
+        // 1. Create the Container for the Own Pet area
+        GameObject ownPetAreaContainer = CreatePanel(topArea.transform, "OwnPetAreaContainer", true);
+        ConfigureRectTransform(ownPetAreaContainer.GetComponent<RectTransform>(),
+             new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(0f, 1f),
+             new Vector2(DefaultPadding, -DefaultPadding), new Vector2(200, 100)); // Position/size the container
+        
+        // 2. Create the Drop Zone as a child of the Container, stretched to fill
+        GameObject ownPetDropZoneGO = new GameObject("OwnPetDropZone");
+        ownPetDropZoneGO.transform.SetParent(ownPetAreaContainer.transform, false);
+        Image ownDropImage = ownPetDropZoneGO.AddComponent<Image>();
+        ownDropImage.color = Color.clear; 
+        ownDropImage.raycastTarget = true; 
+        RectTransform ownDropRect = ownPetDropZoneGO.GetComponent<RectTransform>();
+        ConfigureRectTransform(ownDropRect, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero); // Stretch to fill container
+        CardDropZone ownDropZone = ownPetDropZoneGO.AddComponent<CardDropZone>();
+        ownDropZone.targetType = CardDropZone.TargetType.OwnPet;
+        
+        // <<--- ADDED HIGHLIGHT GRAPHIC START --->>
+        GameObject ownHighlightGO = new GameObject("HighlightGraphic");
+        ownHighlightGO.transform.SetParent(ownPetDropZoneGO.transform, false);
+        Image ownHighlightImage = ownHighlightGO.AddComponent<Image>();
+        ownHighlightImage.color = new Color(0f, 0.8f, 1f, 0.3f); // Semi-transparent cyan
+        ownHighlightImage.raycastTarget = false; // Highlight shouldn't block raycasts
+        RectTransform ownHighlightRect = ownHighlightGO.GetComponent<RectTransform>();
+        ConfigureRectTransform(ownHighlightRect, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero); // Stretch to fill drop zone
+        ownHighlightGO.SetActive(false); // Start disabled
+        // Assign the graphic to the drop zone script field
+        ownDropZone.highlightGraphic = ownHighlightImage;
+        // <<--- ADDED HIGHLIGHT GRAPHIC END --->>
+        
+        ownPetDropZoneGO.transform.SetAsFirstSibling(); // Render behind the actual pet UI panel
+
+        // 3. Create the Panel for UI elements (Text, Slider) as a child of the Container, stretched to fill
+        GameObject ownPetArea = CreatePanel(ownPetAreaContainer.transform, "OwnPetArea", true);
+        RectTransform ownPetAreaRect = ownPetArea.GetComponent<RectTransform>();
+        ConfigureRectTransform(ownPetAreaRect, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero); // Stretch to fill container
+        // Add layout group and UI elements to *this* panel
+        VerticalLayoutGroup ownPetLayout = AddVerticalLayoutGroup(ownPetArea, DefaultPadding, DefaultSpacing);
+        ownPetLayout.childAlignment = TextAnchor.UpperCenter;
+        // <<--- ADDED RAYCAST TARGET DISABLE START --->>
+        // Ensure the panel itself doesn't block raycasts if it has an image
         Image ownAreaImage = ownPetArea.GetComponent<Image>();
-        if (ownAreaImage) { ownAreaImage.color = new Color(0.1f, 0.3f, 0.1f, 0.3f); ownAreaImage.raycastTarget = true; }
+        if (ownAreaImage != null) ownAreaImage.raycastTarget = false;
+        // <<--- ADDED RAYCAST TARGET DISABLE END --->>
+        // <<--- MODIFIED STRUCTURE END --->>
 
-        // Optional: A drop zone for the player stats area if needed (e.g., for self-buffs)
-        // CardDropZone playerSelfDropZone = statsRow.AddComponent<CardDropZone>(); 
-        // playerSelfDropZone.targetType = CardDropZone.TargetType.PlayerSelf;
-        // Image statsRowImage = statsRow.GetComponent<Image>();
-        // if(statsRowImage) { statsRowImage.color = new Color(0.1f, 0.1f, 0.3f, 0.3f); statsRowImage.raycastTarget = true; }
+        // Add UI elements as children of ownPetArea (the panel with the VLG)
+        TextMeshProUGUI ownNameText = CreateText(ownPetArea.transform, "OwnPetNameText", "Your Pet", 18, TextAlignmentOptions.Center);
+        ownNameText.raycastTarget = false; // <<--- DISABLE RAYCAST
+        Slider ownPetHealthSlider = CreateSlider(ownPetArea.transform, "OwnPetHealthSlider", new Vector2(150, 15));
+        SetSliderRaycastTargets(ownPetHealthSlider, false); // <<--- DISABLE RAYCAST ON SLIDER PARTS
+        TextMeshProUGUI ownPetHealthText = CreateText(ownPetArea.transform, "OwnPetHealthText", "50 / 50", 14, TextAlignmentOptions.Center);
+        ownPetHealthText.raycastTarget = false; // <<--- DISABLE RAYCAST
+        // --- ADDED: Own Pet Block Text ---
+        TextMeshProUGUI ownPetBlockText = CreateText(ownPetArea.transform, "OwnPetBlockText", "Block: 0", 14, TextAlignmentOptions.Left);
+        SetLayoutElement(ownPetBlockText.gameObject, minWidth: 60);
+        ownPetBlockText.raycastTarget = false;
+        // --- END ADDED ---
+        // --- ADDED: Own Pet DoT Text ---
+        TextMeshProUGUI ownPetDotText = CreateText(ownPetArea.transform, "OwnPetDotText", "DoT: 0 (0t)", 14, TextAlignmentOptions.Left);
+        SetLayoutElement(ownPetDotText.gameObject, minWidth: 60);
+        ownPetDotText.gameObject.SetActive(false); // Start hidden
+        ownPetDotText.raycastTarget = false;
+        // --- END ADDED ---
+
+        GameObject othersStatusArea = CreatePanel(topArea.transform, "OthersStatusArea");
+        ConfigureRectTransform(othersStatusArea.GetComponent<RectTransform>(),
+            new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(1f, 1f),
+            new Vector2(-DefaultPadding, -DefaultPadding - 40 - DefaultSpacing), new Vector2(200, 150));
+        VerticalLayoutGroup othersLayout = AddVerticalLayoutGroup(othersStatusArea, DefaultPadding, DefaultSpacing);
+        othersLayout.childAlignment = TextAnchor.UpperLeft;
+        CreateText(othersStatusArea.transform, "OtherStatusTitle", "Other Fights", 16, TextAlignmentOptions.Left);
+        TextMeshProUGUI otherPlayerStatusTemplate = CreateText(othersStatusArea.transform, "OtherPlayerStatusTemplate", "P#: PetHP", 14, TextAlignmentOptions.Left);
+        otherPlayerStatusTemplate.gameObject.SetActive(false);
+
+        GameObject playerArea = CreatePanel(canvasRoot.transform, "PlayerArea", true);
+        ConfigureRectTransform(playerArea.GetComponent<RectTransform>(),
+            new Vector2(0f, 0f), new Vector2(1f, 0f), new Vector2(0.5f, 0f),
+            Vector2.zero, new Vector2(0, 350)); // <<--- Increased Height to 350
+        
+        // Vertical layout for Player Area
+        VerticalLayoutGroup playerAreaLayout = AddVerticalLayoutGroup(playerArea, DefaultPadding, DefaultSpacing, controlChildHeight: false);
+        playerAreaLayout.childForceExpandHeight = false; // Don't force expand height
+        playerAreaLayout.childControlWidth = true; // Control width to fill
+        playerAreaLayout.childForceExpandWidth = true; // Force expand width
+
+        // --- Create Player Stats Row --- 
+        GameObject statsRow = CreatePanel(playerArea.transform, "StatsRow", true);
+        // ConfigureRectTransform(statsRow.GetComponent<RectTransform>(), // REMOVE MANUAL POS
+        //     new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0.5f, 1f),
+        //     new Vector2(0, -DefaultPadding), new Vector2(0, 40));
+        SetLayoutElement(statsRow, preferredHeight: 40, flexibleHeight: 0); // <<--- ADD LAYOUT ELEMENT
+        HorizontalLayoutGroup statsLayout = AddHorizontalLayoutGroup(statsRow, DefaultPadding, DefaultSpacing);
+        statsLayout.childAlignment = TextAnchor.MiddleLeft;
+        
+        TextMeshProUGUI playerNameText = CreateText(statsRow.transform, "PlayerNameText", "Player Name", 20, TextAlignmentOptions.Left);
+        SetLayoutElement(playerNameText.gameObject, flexibleWidth: 1);
+
+        Slider playerHealthSlider = CreateSlider(statsRow.transform, "PlayerHealthSlider", new Vector2(150, 20));
+        
+        TextMeshProUGUI playerHealthText = CreateText(statsRow.transform, "PlayerHealthText", "100 / 100", 16, TextAlignmentOptions.Right);
+        SetLayoutElement(playerHealthText.gameObject, minWidth: 80);
+        // --- ADDED: Player Block Text ---
+        TextMeshProUGUI playerBlockText = CreateText(statsRow.transform, "PlayerBlockText", "Block: 0", 14, TextAlignmentOptions.Left);
+        SetLayoutElement(playerBlockText.gameObject, minWidth: 60);
+        playerBlockText.raycastTarget = false;
+        // --- END ADDED ---
+        // --- ADDED: Player DoT Text ---
+        TextMeshProUGUI playerDotText = CreateText(statsRow.transform, "PlayerDotText", "DoT: 0 (0t)", 14, TextAlignmentOptions.Left);
+        SetLayoutElement(playerDotText.gameObject, minWidth: 60);
+        playerDotText.gameObject.SetActive(false); // Start hidden
+        playerDotText.raycastTarget = false;
+        // --- END ADDED ---
+        // --- ADDED: Combo Count Text ---
+        TextMeshProUGUI comboCountText = CreateText(statsRow.transform, "ComboCountText", "Combo: 0", 14, TextAlignmentOptions.Left);
+        SetLayoutElement(comboCountText.gameObject, minWidth: 60);
+        comboCountText.gameObject.SetActive(false); // Start hidden
+        comboCountText.raycastTarget = false;
+        // --- END ADDED ---
+
+        // TODO: Add Energy Display
+        TextMeshProUGUI energyTextElement = CreateText(statsRow.transform, "EnergyText", "Energy: 3/3", 18, TextAlignmentOptions.Left);
+        energyTextElement.raycastTarget = false;
+        SetLayoutElement(energyTextElement.gameObject, minWidth: 100); // <<--- ADD LAYOUT ELEMENT
+        
+        // --- Create Player Hand Panel --- 
+        GameObject playerHandPanel = CreatePanel(playerArea.transform, "PlayerHandPanel");
+        // ConfigureRectTransform(playerHandPanel.GetComponent<RectTransform>(), // REMOVE MANUAL POS/SIZE
+        //     new Vector2(0f, 0f), new Vector2(1f, 1f),
+        //     new Vector2(0.5f, 0.5f),
+        //     new Vector2(0, 0), // Position relative to playerArea center
+        //     new Vector2(-DefaultPadding*2, -100)); // Size, adjusted for padding and bottom bar
+        SetLayoutElement(playerHandPanel, flexibleHeight: 1); // <<--- ADD LAYOUT ELEMENT (Flexible Height)
+        HorizontalLayoutGroup handLayout = AddHorizontalLayoutGroup(playerHandPanel, DefaultPadding, DefaultSpacing, controlChildWidth: false); // Let cards control own width
+        handLayout.childAlignment = TextAnchor.MiddleCenter;
+        // No CardTemplate needs to be added here, it will be instantiated by GameManager
+
+        // --- Create Bottom Bar --- 
+        GameObject bottomBar = CreatePanel(playerArea.transform, "BottomBar", true);
+        // ConfigureRectTransform(bottomBar.GetComponent<RectTransform>(), // REMOVE MANUAL POS
+        //     new Vector2(0f, 0f), new Vector2(1f, 0f), new Vector2(0.5f, 0f),
+        //     Vector2.zero, new Vector2(0, 50));
+        SetLayoutElement(bottomBar, preferredHeight: 50, flexibleHeight: 0); // Fixed height for bottom bar
+        HorizontalLayoutGroup bottomLayout = AddHorizontalLayoutGroup(bottomBar, DefaultPadding, DefaultSpacing);
+        bottomLayout.childAlignment = TextAnchor.MiddleRight;
+
+        TextMeshProUGUI deckCountText = CreateText(bottomBar.transform, "DeckCountText", "Deck: 0", 18, TextAlignmentOptions.Left);
+        // SetLayoutElement(deckCountText.gameObject, flexibleWidth: 1); // REMOVE flexible width
+        SetLayoutElement(deckCountText.gameObject, minWidth: 100); // <<--- ADD minWidth
+
+        TextMeshProUGUI discardCountText = CreateText(bottomBar.transform, "DiscardCountText", "Discard: 0", 18, TextAlignmentOptions.Left);
+        // SetLayoutElement(discardCountText.gameObject, flexibleWidth: 1); // REMOVE flexible width
+        SetLayoutElement(discardCountText.gameObject, minWidth: 100); // <<--- ADD minWidth
+
+        // <<--- ADDED DECK VIEW BUTTONS START --->>
+        Button viewPlayerDeckButton = CreateButton(bottomBar.transform, "ViewPlayerDeckButton", "My Deck");
+        SetLayoutElement(viewPlayerDeckButton.gameObject, minWidth: 100, preferredWidth: 100);
+        Button viewPetDeckButton = CreateButton(bottomBar.transform, "ViewPetDeckButton", "Pet Deck");
+        SetLayoutElement(viewPetDeckButton.gameObject, minWidth: 100, preferredWidth: 100);
+        Button viewOppPetDeckButton = CreateButton(bottomBar.transform, "ViewOppPetDeckButton", "Opp Deck");
+        SetLayoutElement(viewOppPetDeckButton.gameObject, minWidth: 100, preferredWidth: 100);
+        // <<--- ADDED DECK VIEW BUTTONS END --->>
+
+        // <<--- ADD SPACER START --->>
+        GameObject spacer = new GameObject("Spacer", typeof(RectTransform), typeof(LayoutElement));
+        spacer.transform.SetParent(bottomBar.transform, false);
+        SetLayoutElement(spacer, flexibleWidth: 1); // This pushes subsequent elements right
+        // <<--- ADD SPACER END --->>
+
+        Button endTurnButton = CreateButton(bottomBar.transform, "EndTurnButton", "End Turn");
+        SetLayoutElement(endTurnButton.gameObject, minWidth: 160); // Ensure button has min width
+
+        // << --- ADDED PLAYER DROP ZONE CREATION START (If needed) --->>
+        // Example: If players can target themselves directly with cards
+        /*
+        GameObject playerDropZoneGO = new GameObject("PlayerSelfDropZone");
+        playerDropZoneGO.transform.SetParent(statsRow.transform, false); // Attach to stats row or player area
+        Image playerDropImage = playerDropZoneGO.AddComponent<Image>();
+        playerDropImage.color = Color.clear;
+        playerDropImage.raycastTarget = true;
+        RectTransform playerDropRect = playerDropZoneGO.GetComponent<RectTransform>();
+        ConfigureRectTransform(playerDropRect, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero); // Stretch
+        CardDropZone playerDropZone = playerDropZoneGO.AddComponent<CardDropZone>();
+        playerDropZone.targetType = CardDropZone.TargetType.PlayerSelf; 
+        playerDropZoneGO.transform.SetAsFirstSibling();
+        */
+        // << --- ADDED PLAYER DROP ZONE CREATION END --->>
     }
 
     private static void AddDraftScreenElements(GameObject canvasRoot)

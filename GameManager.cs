@@ -320,52 +320,6 @@ public class GameManager : MonoBehaviourPunCallbacks
     }
     // --- END ADDED ---
 
-    // --- ADDED: RPCs for Reflected Damage ---
-    [PunRPC]
-    private void RpcApplyReflectedDamageToPlayer(int amount)
-    {
-        if (amount <= 0) return;
-        Debug.Log($"RPC Received: Applying {amount} reflected damage to local player.");
-        // Access HealthManager via PlayerManager
-        playerManager?.GetHealthManager()?.ApplyReflectedDamageToPlayer(amount);
-        // Note: ApplyReflectedDamageToPlayer already handles UI update and death check.
-    }
-
-    [PunRPC]
-    private void RpcApplyReflectedDamageToPet(int amount)
-    {
-        if (amount <= 0) return;
-        Debug.Log($"RPC Received: Applying {amount} reflected damage to local pet.");
-        // Access HealthManager via PlayerManager
-        playerManager?.GetHealthManager()?.ApplyReflectedDamageToLocalPet(amount);
-        // Note: ApplyReflectedDamageToLocalPet already handles UI update.
-    }
-    // --- END ADDED ---
-
-    // --- ADDED: RPC for Opponent Pet Card Effect ---
-    [PunRPC]
-    private void RpcApplyOpponentPetCardEffect(string cardIdentifier, string cardIdentifierForTracking)
-    {
-        Debug.Log($"RPC Received: Opponent Pet applying effect of card '{cardIdentifier}'. Tracking ID: '{cardIdentifierForTracking}'");
-        
-        // Find the card data
-        CardData cardData = cardManager?.FindCardDataByIdentifier(cardIdentifier);
-        if (cardData == null)
-        {
-            Debug.LogError($"RpcApplyOpponentPetCardEffect: Could not find CardData for identifier '{cardIdentifier}'. Cannot apply effect.");
-            return;
-        }
-
-        // Track the card identifier (even if effect fails)
-        playerManager?.SetLastCardPlayedByOpponentPet(cardIdentifierForTracking);
-
-        // Process the effect
-        cardManager?.ProcessOpponentPetCardEffect(cardData);
-        
-        // Note: ProcessOpponentPetCardEffect should ideally trigger necessary UI updates.
-    }
-    // --- END ADDED ---
-
     public PhotonView GetPhotonView()
     {
         return photonViewComponent;

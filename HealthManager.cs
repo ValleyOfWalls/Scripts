@@ -7,7 +7,6 @@ using ExitGames.Client.Photon;
 public class HealthManager
 {
     private GameManager gameManager;
-    private StatusEffectManager statusEffectManager;
     
     // Health data
     private int localPlayerHealth;
@@ -38,11 +37,6 @@ public class HealthManager
     public HealthManager(GameManager gameManager)
     {
         this.gameManager = gameManager;
-    }
-    
-    public void SetStatusEffectManager(StatusEffectManager manager)
-    {
-        this.statusEffectManager = manager;
     }
     
     public void Initialize(int startingPlayerHealth, int startingPetHealth)
@@ -105,30 +99,25 @@ public class HealthManager
     {
         if (amount <= 0) return; // Can't deal negative damage
         
-        // Get references
-        if (statusEffectManager == null) statusEffectManager = gameManager.GetPlayerManager().GetStatusEffectManager();
-        Player opponentPlayer = gameManager.GetPlayerManager().GetOpponentPlayer();
-        
-        int damageDealt = 0;
+        int damageAfterBlock = amount - localPlayerBlock;
         int blockConsumed = Mathf.Min(amount, localPlayerBlock);
         localPlayerBlock -= blockConsumed;
         if (localPlayerBlock < 0) localPlayerBlock = 0;
-        int damageAfterBlock = amount - blockConsumed;
         
         Debug.Log($"DamageLocalPlayer: Incoming={amount}, Block={blockConsumed}, RemainingDamage={damageAfterBlock}");
         
         if (damageAfterBlock > 0)
         {
             // Check for Break
-            if (statusEffectManager.IsPlayerBroken()) 
+            StatusEffectManager statusManager = gameManager.GetPlayerManager().GetStatusEffectManager();
+            if (statusManager.IsPlayerBroken()) 
             {
                 int breakBonus = Mathf.FloorToInt(damageAfterBlock * 0.5f); 
                 Debug.Log($"Player has Break! Increasing damage by {breakBonus}");
                 damageAfterBlock += breakBonus;
             }
             
-            damageDealt = damageAfterBlock; // Track damage actually dealt
-            localPlayerHealth -= damageDealt;
+            localPlayerHealth -= damageAfterBlock;
             if (localPlayerHealth < 0) localPlayerHealth = 0;
         }
         
@@ -137,26 +126,10 @@ public class HealthManager
         if (Random.Range(0, 100) < opponentCritChance)
         {
             Debug.LogWarning($"Opponent Pet CRITICAL HIT! (Chance: {opponentCritChance}%)");
-            int critDamage = damageDealt * (CRIT_DAMAGE_MULTIPLIER - 1);
+            int critDamage = damageAfterBlock * (CRIT_DAMAGE_MULTIPLIER - 1);
             Debug.Log($"Applying additional {critDamage} critical damage.");
             localPlayerHealth -= critDamage;
             if (localPlayerHealth < 0) localPlayerHealth = 0;
-            damageDealt += critDamage; // Include crit in total dealt damage for reflection calc
-        }
-
-        // Handle Reflection
-        if (damageDealt > 0 && statusEffectManager.IsPlayerReflecting())
-        {
-            int reflectPercent = statusEffectManager.GetPlayerReflectionPercentage();
-            int reflectedDamage = Mathf.FloorToInt(damageDealt * (reflectPercent / 100f));
-            if (reflectedDamage > 0)
-            {
-                Debug.Log($"Player reflects {reflectPercent}% of {damageDealt} damage = {reflectedDamage} back to Opponent Pet.");
-                if (opponentPlayer != null)
-                {
-                    gameManager.GetPhotonView().RPC("RpcApplyReflectedDamageToPet", opponentPlayer, reflectedDamage);
-                }
-            }
         }
 
         gameManager.UpdateHealthUI(); // Update both health and block display
@@ -171,30 +144,25 @@ public class HealthManager
     {
         if (amount <= 0) return;
         
-        // Get references
-        if (statusEffectManager == null) statusEffectManager = gameManager.GetPlayerManager().GetStatusEffectManager();
-        Player opponentPlayer = gameManager.GetPlayerManager().GetOpponentPlayer();
-        
-        int damageDealt = 0;
+        int damageAfterBlock = amount - opponentPetBlock;
         int blockConsumed = Mathf.Min(amount, opponentPetBlock);
         opponentPetBlock -= blockConsumed;
         if (opponentPetBlock < 0) opponentPetBlock = 0;
-        int damageAfterBlock = amount - blockConsumed;
         
         Debug.Log($"DamageOpponentPet: Incoming={amount}, Est. Block={blockConsumed}, RemainingDamage={damageAfterBlock}");
         
         if (damageAfterBlock > 0)
         {
             // Check for Break
-            if (statusEffectManager.IsOpponentPetBroken()) 
+            StatusEffectManager statusManager = gameManager.GetPlayerManager().GetStatusEffectManager();
+            if (statusManager.IsOpponentPetBroken()) 
             {
                 int breakBonus = Mathf.FloorToInt(damageAfterBlock * 0.5f); 
                 Debug.Log($"Opponent Pet has Break! Increasing damage by {breakBonus} (local sim)");
                 damageAfterBlock += breakBonus;
             }
             
-            damageDealt = damageAfterBlock;
-            opponentPetHealth -= damageDealt;
+            opponentPetHealth -= damageAfterBlock;
             if (opponentPetHealth < 0) opponentPetHealth = 0;
         }
         
@@ -203,20 +171,20 @@ public class HealthManager
         if (Random.Range(0, 100) < playerCritChance)
         {
             Debug.LogWarning($"Player CRITICAL HIT! (Chance: {playerCritChance}%)");
-            int critDamage = damageDealt * (CRIT_DAMAGE_MULTIPLIER - 1);
+            int critDamage = damageAfterBlock * (CRIT_DAMAGE_MULTIPLIER - 1);
             Debug.Log($"Applying additional {critDamage} critical damage to Opponent Pet.");
             opponentPetHealth -= critDamage;
             if (opponentPetHealth < 0) opponentPetHealth = 0;
-            damageDealt += critDamage; // Include crit in dealt damage
         }
 
         gameManager.UpdateHealthUI(); // Update both health and block display
         
-        // Notify the opponent that their pet took damage (send ORIGINAL amount, they calculate block, crit, break, reflection)
+        // Notify the opponent that their pet took damage (send ORIGINAL amount, they calculate block)
+        Player opponentPlayer = gameManager.GetPlayerManager().GetOpponentPlayer();
         if (opponentPlayer != null)
         {
             Debug.Log($"Sending RpcTakePetDamage({amount}) to {opponentPlayer.NickName}");
-            gameManager.GetPhotonView().RPC("RpcTakePetDamage", opponentPlayer, amount); 
+            gameManager.GetPhotonView().RPC("RpcTakePetDamage", opponentPlayer, amount);
         }
         
         if (opponentPetHealth <= 0)
@@ -229,41 +197,26 @@ public class HealthManager
     {
         if (amount <= 0) return;
         
-        if (statusEffectManager == null) statusEffectManager = gameManager.GetPlayerManager().GetStatusEffectManager();
-        
-        int damageDealt = 0;
+        int damageAfterBlock = amount - localPetBlock;
         int blockConsumed = Mathf.Min(amount, localPetBlock);
         localPetBlock -= blockConsumed;
         if (localPetBlock < 0) localPetBlock = 0;
-        int damageAfterBlock = amount - blockConsumed;
         
         Debug.Log($"DamageLocalPet: Incoming={amount}, Block={blockConsumed}, RemainingDamage={damageAfterBlock}");
         
         if (damageAfterBlock > 0)
         {
             // Check for Break
-            if (statusEffectManager.IsLocalPetBroken()) 
+            StatusEffectManager statusManager = gameManager.GetPlayerManager().GetStatusEffectManager();
+            if (statusManager.IsLocalPetBroken()) 
             {
                 int breakBonus = Mathf.FloorToInt(damageAfterBlock * 0.5f); 
                 Debug.Log($"Local Pet has Break! Increasing damage by {breakBonus}");
                 damageAfterBlock += breakBonus;
             }
             
-            damageDealt = damageAfterBlock;
-            localPetHealth -= damageDealt;
+            localPetHealth -= damageAfterBlock;
             if (localPetHealth < 0) localPetHealth = 0;
-        }
-
-        // Handle Reflection
-        if (damageDealt > 0 && statusEffectManager.IsLocalPetReflecting())
-        {
-            int reflectPercent = statusEffectManager.GetLocalPetReflectionPercentage();
-            int reflectedDamage = Mathf.FloorToInt(damageDealt * (reflectPercent / 100f));
-            if (reflectedDamage > 0)
-            {
-                Debug.Log($"Local Pet reflects {reflectPercent}% of {damageDealt} damage = {reflectedDamage}. Assuming damage source is Opponent Pet.");
-                ApplyReflectedDamageToOpponentPet(reflectedDamage); 
-            }
         }
         
         gameManager.UpdateHealthUI(); // Update both health and block display
@@ -549,47 +502,4 @@ public class HealthManager
     }
     
     #endregion
-
-    public void ApplyReflectedDamageToOpponentPet(int amount)
-    {
-        if (amount <= 0) return;
-        Debug.Log($"ApplyReflectedDamageToOpponentPet: Dealing {amount} reflected damage directly (local sim).");
-        opponentPetHealth -= amount;
-        if (opponentPetHealth < 0) opponentPetHealth = 0;
-        gameManager.UpdateHealthUI();
-        Player opponentPlayer = gameManager.GetPlayerManager().GetOpponentPlayer();
-        if (opponentPlayer != null)
-        {
-            gameManager.GetPhotonView().RPC("RpcApplyReflectedDamageToPet", opponentPlayer, amount);
-        }
-        if (opponentPetHealth <= 0)
-        {
-            gameManager.GetPlayerManager().GetCombatStateManager().HandleCombatWin();
-        }
-    }
-
-    // --- ADDED: Methods to apply reflected damage directly (bypasses block and further reflection) ---
-    public void ApplyReflectedDamageToPlayer(int amount)
-    {
-        if (amount <= 0) return;
-        Debug.Log($"ApplyReflectedDamageToPlayer: Taking {amount} reflected damage directly.");
-        localPlayerHealth -= amount;
-        if (localPlayerHealth < 0) localPlayerHealth = 0;
-        gameManager.UpdateHealthUI();
-        if (localPlayerHealth <= 0)
-        {
-            gameManager.GetPlayerManager().GetCombatStateManager().HandleCombatLoss();
-        }
-    }
-
-    public void ApplyReflectedDamageToLocalPet(int amount)
-    {
-        if (amount <= 0) return;
-        Debug.Log($"ApplyReflectedDamageToLocalPet: Taking {amount} reflected damage directly.");
-        localPetHealth -= amount;
-        if (localPetHealth < 0) localPetHealth = 0;
-        gameManager.UpdateHealthUI();
-        // Pet death doesn't end combat
-    }
-    // --- END ADDED ---
 }

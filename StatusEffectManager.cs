@@ -1,7 +1,5 @@
 using UnityEngine;
 using System.Collections.Generic;
-using Photon.Pun;
-using ExitGames.Client.Photon;
 
 public class StatusEffectManager
 {
@@ -14,17 +12,6 @@ public class StatusEffectManager
     private int localPetBreakTurns = 0;
     private int opponentPetWeakTurns = 0;
     private int opponentPetBreakTurns = 0;
-
-    // --- ADDED: Reflection Tracking ---
-    private int localPlayerReflectionTurns = 0;
-    private int localPlayerReflectionPercentage = 0;
-    private int localPetReflectionTurns = 0;
-    private int localPetReflectionPercentage = 0;
-    private int opponentPetReflectionTurns = 0;
-    private int opponentPetReflectionPercentage = 0;
-    
-    // --- ADDED: Scaling Attack Tracking (Local only) ---
-    private Dictionary<string, int> scalingAttackCounters = new Dictionary<string, int>();
     
     // Combo tracking
     private int currentComboCount = 0;
@@ -43,27 +30,9 @@ public class StatusEffectManager
         localPetBreakTurns = 0;
         opponentPetWeakTurns = 0;
         opponentPetBreakTurns = 0;
-
-        // --- ADDED: Reset Reflection ---
-        localPlayerReflectionTurns = 0;
-        localPlayerReflectionPercentage = 0;
-        localPetReflectionTurns = 0;
-        localPetReflectionPercentage = 0;
-        opponentPetReflectionTurns = 0;
-        opponentPetReflectionPercentage = 0;
-
-        // --- ADDED: Reset Scaling Counters ---
-        ResetScalingAttackCounters();
         
         // Reset combo
         currentComboCount = 0;
-    }
-
-    // --- ADDED: Call this at the start of each combat ---
-    public void ResetCombatSpecificState()
-    {
-        ResetScalingAttackCounters();
-        // Reset other combat-specific states here if needed
     }
     
     #region Status Effect Methods
@@ -103,7 +72,6 @@ public class StatusEffectManager
     public void ApplyStatusEffectOpponentPet(StatusEffectType type, int duration)
     {
         if (duration <= 0) return;
-        // Note: Opponent pet status is often simulated locally first, then confirmed/updated via network state.
         switch(type)
         {
             case StatusEffectType.Weak:
@@ -116,156 +84,29 @@ public class StatusEffectManager
                 break;
         }
     }
-
-    // --- ADDED: Reflection Methods ---
-    public void ApplyReflectionPlayer(int percentage, int duration)
-    {
-        if (duration <= 0 || percentage <= 0) return;
-        localPlayerReflectionTurns += duration;
-        localPlayerReflectionPercentage = Mathf.Max(localPlayerReflectionPercentage, percentage); // Take the stronger reflection if already active
-        Debug.Log($"Applied Reflection to Player: {percentage}% for {duration} turns. Total Duration: {localPlayerReflectionTurns}, Effective %: {localPlayerReflectionPercentage}");
-        // --- ADDED: Sync to Custom Properties ---
-        Hashtable reflectProps = new Hashtable {
-            { PlayerManager.PLAYER_REFLECT_PERC_PROP, localPlayerReflectionPercentage },
-            { PlayerManager.PLAYER_REFLECT_TURNS_PROP, localPlayerReflectionTurns }
-        };
-        PhotonNetwork.LocalPlayer.SetCustomProperties(reflectProps);
-        // --- END ADDED ---
-    }
-
-    public void ApplyReflectionLocalPet(int percentage, int duration)
-    {
-        if (duration <= 0 || percentage <= 0) return;
-        localPetReflectionTurns += duration;
-        localPetReflectionPercentage = Mathf.Max(localPetReflectionPercentage, percentage); 
-        Debug.Log($"Applied Reflection to Local Pet: {percentage}% for {duration} turns. Total Duration: {localPetReflectionTurns}, Effective %: {localPetReflectionPercentage}");
-        // --- ADDED: Sync to Custom Properties ---
-        Hashtable reflectProps = new Hashtable {
-            { PlayerManager.PET_REFLECT_PERC_PROP, localPetReflectionPercentage },
-            { PlayerManager.PET_REFLECT_TURNS_PROP, localPetReflectionTurns }
-        };
-        PhotonNetwork.LocalPlayer.SetCustomProperties(reflectProps);
-        // --- END ADDED ---
-    }
-
-    public void ApplyReflectionOpponentPet(int percentage, int duration)
-    {
-        if (duration <= 0 || percentage <= 0) return;
-        opponentPetReflectionTurns += duration;
-        opponentPetReflectionPercentage = Mathf.Max(opponentPetReflectionPercentage, percentage);
-        Debug.Log($"Applied Reflection to Opponent Pet: {percentage}% for {duration} turns (local sim). Total Duration: {opponentPetReflectionTurns}, Effective %: {opponentPetReflectionPercentage}");
-        // TODO: Add network sync call if needed
-    }
-    // --- END ADDED ---
     
     public void DecrementPlayerStatusEffects()
     {
         if (localPlayerWeakTurns > 0) localPlayerWeakTurns--;
         if (localPlayerBreakTurns > 0) localPlayerBreakTurns--;
-        // --- ADDED: Decrement Reflection ---
-        if (localPlayerReflectionTurns > 0)
-        {
-            localPlayerReflectionTurns--;
-            if (localPlayerReflectionTurns == 0) 
-            {
-                localPlayerReflectionPercentage = 0; // Reset percentage when duration ends
-                // --- ADDED: Sync Zeroed State ---
-                Hashtable reflectProps = new Hashtable {
-                    { PlayerManager.PLAYER_REFLECT_PERC_PROP, 0 },
-                    { PlayerManager.PLAYER_REFLECT_TURNS_PROP, 0 }
-                };
-                PhotonNetwork.LocalPlayer.SetCustomProperties(reflectProps);
-                // --- END ADDED ---
-            }
-            else
-            {
-                // --- ADDED: Sync Decremented Turns ---
-                Hashtable reflectProps = new Hashtable { { PlayerManager.PLAYER_REFLECT_TURNS_PROP, localPlayerReflectionTurns } };
-                PhotonNetwork.LocalPlayer.SetCustomProperties(reflectProps);
-                // --- END ADDED ---
-            }
-        }
-        // --- END ADDED ---
-        Debug.Log($"Decremented Player Status. Weak: {localPlayerWeakTurns}, Break: {localPlayerBreakTurns}, Reflect: {localPlayerReflectionPercentage}% ({localPlayerReflectionTurns}t)");
+        Debug.Log($"Decremented Player Status. Weak: {localPlayerWeakTurns}, Break: {localPlayerBreakTurns}");
     }
     
     public void DecrementLocalPetStatusEffects()
     {
         if (localPetWeakTurns > 0) localPetWeakTurns--;
         if (localPetBreakTurns > 0) localPetBreakTurns--;
-        // --- ADDED: Decrement Reflection ---
-        if (localPetReflectionTurns > 0)
-        {
-            localPetReflectionTurns--;
-            if (localPetReflectionTurns == 0) 
-            {
-                localPetReflectionPercentage = 0;
-                // --- ADDED: Sync Zeroed State ---
-                Hashtable reflectProps = new Hashtable {
-                    { PlayerManager.PET_REFLECT_PERC_PROP, 0 },
-                    { PlayerManager.PET_REFLECT_TURNS_PROP, 0 }
-                };
-                PhotonNetwork.LocalPlayer.SetCustomProperties(reflectProps);
-                // --- END ADDED ---
-            }
-            else
-            {
-                // --- ADDED: Sync Decremented Turns ---
-                Hashtable reflectProps = new Hashtable { { PlayerManager.PET_REFLECT_TURNS_PROP, localPetReflectionTurns } };
-                PhotonNetwork.LocalPlayer.SetCustomProperties(reflectProps);
-                // --- END ADDED ---
-            }
-        }
-        // --- END ADDED ---
-        Debug.Log($"Decremented Local Pet Status. Weak: {localPetWeakTurns}, Break: {localPetBreakTurns}, Reflect: {localPetReflectionPercentage}% ({localPetReflectionTurns}t)");
+        Debug.Log($"Decremented Local Pet Status. Weak: {localPetWeakTurns}, Break: {localPetBreakTurns}");
     }
     
     public void DecrementOpponentPetStatusEffects()
     {
-        // Note: This primarily affects the local simulation. Actual state comes from network.
         if (opponentPetWeakTurns > 0) opponentPetWeakTurns--;
         if (opponentPetBreakTurns > 0) opponentPetBreakTurns--;
-        // --- ADDED: Decrement Reflection ---
-        if (opponentPetReflectionTurns > 0)
-        {
-            opponentPetReflectionTurns--;
-            if (opponentPetReflectionTurns == 0) opponentPetReflectionPercentage = 0;
-        }
-        // --- END ADDED ---
-        Debug.Log($"Decremented Opponent Pet Status (local sim). Weak: {opponentPetWeakTurns}, Break: {opponentPetBreakTurns}, Reflect: {opponentPetReflectionPercentage}% ({opponentPetReflectionTurns}t)");
+        Debug.Log($"Decremented Opponent Pet Status (local sim). Weak: {opponentPetWeakTurns}, Break: {opponentPetBreakTurns}");
     }
     
     #endregion
-
-    // --- ADDED: Scaling Attack Methods ---
-    public void IncrementScalingAttackCounter(string identifier)
-    {
-        if (string.IsNullOrEmpty(identifier)) return;
-        if (!scalingAttackCounters.ContainsKey(identifier))
-        {
-            scalingAttackCounters[identifier] = 0;
-        }
-        scalingAttackCounters[identifier]++;
-        Debug.Log($"Incremented scaling counter for '{identifier}'. New count: {scalingAttackCounters[identifier]}");
-    }
-
-    public int GetScalingAttackBonus(string identifier, int baseIncrease)
-    {
-        if (string.IsNullOrEmpty(identifier) || !scalingAttackCounters.ContainsKey(identifier))
-        {
-            return 0;
-        }
-        int bonus = scalingAttackCounters[identifier] * baseIncrease;
-        Debug.Log($"Calculated scaling bonus for '{identifier}': {scalingAttackCounters[identifier]} uses * {baseIncrease} base increase = {bonus}");
-        return bonus;
-    }
-
-    public void ResetScalingAttackCounters()
-    {
-        Debug.Log("Resetting all scaling attack counters for new combat.");
-        scalingAttackCounters.Clear();
-    }
-    // --- END ADDED ---
     
     #region Combo Methods
     
@@ -294,12 +135,6 @@ public class StatusEffectManager
     public bool IsLocalPetBroken() => localPetBreakTurns > 0;
     public bool IsOpponentPetWeak() => opponentPetWeakTurns > 0;
     public bool IsOpponentPetBroken() => opponentPetBreakTurns > 0;
-
-    // --- ADDED: Reflection Checks ---
-    public bool IsPlayerReflecting() => localPlayerReflectionTurns > 0;
-    public bool IsLocalPetReflecting() => localPetReflectionTurns > 0;
-    public bool IsOpponentPetReflecting() => opponentPetReflectionTurns > 0;
-    // --- END ADDED ---
     
     #endregion
     
@@ -313,29 +148,6 @@ public class StatusEffectManager
     public int GetLocalPetBreakTurns() => localPetBreakTurns;
     public int GetOpponentPetWeakTurns() => opponentPetWeakTurns;
     public int GetOpponentPetBreakTurns() => opponentPetBreakTurns;
-
-    // --- ADDED: Reflection Getters ---
-    public int GetPlayerReflectionTurns() => localPlayerReflectionTurns;
-    public int GetPlayerReflectionPercentage() => localPlayerReflectionPercentage;
-    public int GetLocalPetReflectionTurns() => localPetReflectionTurns;
-    public int GetLocalPetReflectionPercentage() => localPetReflectionPercentage;
-    public int GetOpponentPetReflectionTurns() => opponentPetReflectionTurns;
-    public int GetOpponentPetReflectionPercentage() => opponentPetReflectionPercentage;
-    // --- END ADDED ---
     
     #endregion
-
-    // --- ADDED: Method to update opponent pet status from network ---
-    public void UpdateOpponentPetReflectionStatus(int percentage, int turns)
-    {
-        // Directly set the local simulation state based on received data
-        opponentPetReflectionPercentage = percentage;
-        opponentPetReflectionTurns = turns;
-        Debug.Log($"Updated Opponent Pet Reflection Status from Network: {percentage}% for {turns} turns.");
-        // UI update should be triggered by the caller (PhotonManager/GameManager)
-    }
-    // --- END ADDED ---
-
-    // TODO: Add network synchronization logic for reflection status (opponent pet primarily, maybe others for spectating/consistency)
-    // This might involve implementing IPunObservable or using custom properties depending on the existing setup.
 }

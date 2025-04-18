@@ -23,13 +23,6 @@ public class PlayerManager
     public const string PLAYER_SCORE_PROP = "PlayerScore";
     public const string PLAYER_BASE_PET_HP_PROP = "BasePetHP";
     public const string COMBAT_PAIRINGS_PROP = "CombatPairings";
-    public const string PLAYER_REFLECT_PERC_PROP = "pRefP"; // Player Reflection Percentage
-    public const string PLAYER_REFLECT_TURNS_PROP = "pRefT"; // Player Reflection Turns
-    public const string PET_REFLECT_PERC_PROP = "petRefP"; // Pet Reflection Percentage
-    public const string PET_REFLECT_TURNS_PROP = "petRefT"; // Pet Reflection Turns
-    
-    // --- MODIFIED: Tracking for Opponent PET Last Card ---
-    private string lastCardPlayedByOpponentPetId = null;
     
     public PlayerManager(GameManager gameManager)
     {
@@ -117,10 +110,6 @@ public class PlayerManager
     public void ApplyStatusEffectLocalPet(StatusEffectType type, int duration) => statusEffectManager.ApplyStatusEffectLocalPet(type, duration);
     public void ApplyStatusEffectOpponentPet(StatusEffectType type, int duration) => statusEffectManager.ApplyStatusEffectOpponentPet(type, duration);
     
-    public void ApplyReflectionPlayer(int percentage, int duration) => statusEffectManager.ApplyReflectionPlayer(percentage, duration);
-    public void ApplyReflectionLocalPet(int percentage, int duration) => statusEffectManager.ApplyReflectionLocalPet(percentage, duration);
-    public void ApplyReflectionOpponentPet(int percentage, int duration) => statusEffectManager.ApplyReflectionOpponentPet(percentage, duration);
-    
     public void ApplyDotLocalPlayer(int damage, int duration) => healthManager.ApplyDotLocalPlayer(damage, duration);
     public void ApplyDotLocalPet(int damage, int duration) => healthManager.ApplyDotLocalPet(damage, duration);
     public void ApplyDotOpponentPet(int damage, int duration) => healthManager.ApplyDotOpponentPet(damage, duration);
@@ -153,11 +142,8 @@ public class PlayerManager
     
     #region Combat State Proxies
     
-    public void InitializeCombatState(int opponentPetOwnerActorNum, int startingPlayerHealth, int startingPetHealth)
-    {
+    public void InitializeCombatState(int opponentPetOwnerActorNum, int startingPlayerHealth, int startingPetHealth) =>
         combatStateManager.InitializeCombatState(opponentPetOwnerActorNum, startingPlayerHealth, startingPetHealth);
-        statusEffectManager.ResetCombatSpecificState();
-    }
     
     public void SetPlayerCombatFinished(bool finished) => combatStateManager.SetPlayerCombatFinished(finished);
     
@@ -199,10 +185,6 @@ public class PlayerManager
     public bool IsOpponentPetWeak() => statusEffectManager.IsOpponentPetWeak();
     public bool IsOpponentPetBroken() => statusEffectManager.IsOpponentPetBroken();
     
-    public bool IsPlayerReflecting() => statusEffectManager.IsPlayerReflecting();
-    public bool IsLocalPetReflecting() => statusEffectManager.IsLocalPetReflecting();
-    public bool IsOpponentPetReflecting() => statusEffectManager.IsOpponentPetReflecting();
-    
     #endregion
     
     #region Getters
@@ -232,13 +214,6 @@ public class PlayerManager
     public int GetEffectivePetMaxHealth() => healthManager.GetEffectivePetMaxHealth();
     public int GetEffectiveOpponentPetMaxHealth() => healthManager.GetEffectiveOpponentPetMaxHealth();
     
-    public int GetPlayerReflectionTurns() => statusEffectManager.GetPlayerReflectionTurns();
-    public int GetPlayerReflectionPercentage() => statusEffectManager.GetPlayerReflectionPercentage();
-    public int GetLocalPetReflectionTurns() => statusEffectManager.GetLocalPetReflectionTurns();
-    public int GetLocalPetReflectionPercentage() => statusEffectManager.GetLocalPetReflectionPercentage();
-    public int GetOpponentPetReflectionTurns() => statusEffectManager.GetOpponentPetReflectionTurns();
-    public int GetOpponentPetReflectionPercentage() => statusEffectManager.GetOpponentPetReflectionPercentage();
-    
     public Player GetOpponentPlayer() => combatStateManager.GetOpponentPlayer();
     public void SetOpponentPlayer(Player player) => combatStateManager.SetOpponentPlayer(player);
     
@@ -249,24 +224,4 @@ public class PlayerManager
     public LobbyManager GetLobbyManager() => lobbyManager;
     
     #endregion
-    
-    #region Scaling Attack Proxies
-    
-    public void IncrementScalingAttackCounter(string identifier) => statusEffectManager.IncrementScalingAttackCounter(identifier);
-    public int GetScalingAttackBonus(string identifier, int baseIncrease) => statusEffectManager.GetScalingAttackBonus(identifier, baseIncrease);
-    
-    #endregion
-
-    // --- MODIFIED: Methods for Opponent PET Last Card ---
-    public void SetLastCardPlayedByOpponentPet(string cardId)
-    {
-        lastCardPlayedByOpponentPetId = cardId;
-        Debug.Log($"Tracking opponent PET last played card ID: {cardId ?? "null"}");
-    }
-
-    public string GetLastCardPlayedByOpponentPetId()
-    {
-        return lastCardPlayedByOpponentPetId;
-    }
-    // --- END MODIFIED ---
 }

@@ -130,85 +130,28 @@ public class PhotonManager : MonoBehaviourPunCallbacks
 
     public override void OnPlayerPropertiesUpdate(Player targetPlayer, Hashtable changedProps)
     {
-        // Removed HashtableExtensions.ToStringFull for compatibility
         Debug.Log($"Player {targetPlayer.NickName} properties updated. CurrentState: {gameManager.GetGameStateManager().GetCurrentState()}");
-        // Log changed properties manually if needed for detailed debugging:
-        // foreach (var prop in changedProps) { Debug.Log($"  {prop.Key}: {prop.Value}"); }
         
-        PlayerManager playerManager = gameManager.GetPlayerManager();
-        Player opponentPlayer = playerManager.GetOpponentPlayer();
-        bool uiNeedsUpdate = false;
-
         if (gameManager.GetGameStateManager().GetCurrentState() == GameState.Lobby && 
             changedProps.ContainsKey(PlayerManager.PLAYER_READY_PROPERTY))
         {
             if (gameManager.GetGameStateManager().GetLobbyInstance() != null && 
                 gameManager.GetGameStateManager().GetLobbyInstance().activeSelf)
-                gameManager.UpdatePlayerList(); // Specific UI update
+                gameManager.UpdatePlayerList();
         }
-        else if (gameManager.GetGameStateManager().GetCurrentState() == GameState.Combat)
+        else if (gameManager.GetGameStateManager().GetCurrentState() == GameState.Combat && 
+                 changedProps.ContainsKey(PlayerManager.COMBAT_FINISHED_PROPERTY))
         {
-            // Combat Finished Check
-            if (changedProps.ContainsKey(PlayerManager.COMBAT_FINISHED_PROPERTY))
+            Debug.Log($"Property update for {PlayerManager.COMBAT_FINISHED_PROPERTY} received from {targetPlayer.NickName}");
+            if (PhotonNetwork.IsMasterClient)
             {
-                Debug.Log($"Property update for {PlayerManager.COMBAT_FINISHED_PROPERTY} received from {targetPlayer.NickName}");
-                if (PhotonNetwork.IsMasterClient)
-                {
-                    playerManager.CheckForAllPlayersFinishedCombat();
-                }
+                gameManager.GetPlayerManager().CheckForAllPlayersFinishedCombat();
             }
-
-            // --- ADDED: Handle Opponent Pet Reflection Update ---
-            // We only care about updates from our current opponent
-            if (targetPlayer == opponentPlayer && opponentPlayer != null)
-            {
-                bool reflectionNeedsUpdate = false;
-                // Check if either percentage or turns changed for the PET reflection
-                if (changedProps.ContainsKey(PlayerManager.PET_REFLECT_PERC_PROP) || 
-                    changedProps.ContainsKey(PlayerManager.PET_REFLECT_TURNS_PROP))
-                {
-                    // Fetch the current values (even if only one changed, get both for consistency)
-                    int currentPerc = playerManager.GetOpponentPetReflectionPercentage();
-                    int currentTurns = playerManager.GetOpponentPetReflectionTurns();
-
-                    // Get the new values from the properties, falling back to current if not present in this update
-                    int newPerc = changedProps.ContainsKey(PlayerManager.PET_REFLECT_PERC_PROP) ? 
-                                  (int)changedProps[PlayerManager.PET_REFLECT_PERC_PROP] : currentPerc;
-                    int newTurns = changedProps.ContainsKey(PlayerManager.PET_REFLECT_TURNS_PROP) ? 
-                                   (int)changedProps[PlayerManager.PET_REFLECT_TURNS_PROP] : currentTurns;
-
-                    // Update the StatusEffectManager with the potentially new state
-                    playerManager.GetStatusEffectManager().UpdateOpponentPetReflectionStatus(newPerc, newTurns);
-                    reflectionNeedsUpdate = true;
-                }
-
-                // --- REMOVED: Handle Opponent Last Card Played Update (handled via RPC now) ---
-                /*
-                if (changedProps.ContainsKey(PlayerManager.LAST_CARD_PLAYED_PROP))
-                {
-                    string cardId = changedProps[PlayerManager.LAST_CARD_PLAYED_PROP] as string;
-                    playerManager.SetLastCardPlayedByOpponentPet(cardId); // Use the renamed method
-                    Debug.Log($"Opponent {targetPlayer.NickName} updated LAST_CARD_PLAYED_PROP to {cardId ?? "null"}.");
-                }
-                */
-                // --- END REMOVED ---
-
-                if (reflectionNeedsUpdate) uiNeedsUpdate = true;
-            }
-            // --- END Opponent Specific Updates ---
         }
-        
-        // Score Update (can happen anytime after combat starts)
-        if (changedProps.ContainsKey(PlayerManager.PLAYER_SCORE_PROP))
+        else if (changedProps.ContainsKey(PlayerManager.PLAYER_SCORE_PROP))
         {
             Debug.Log($"Score property updated for {targetPlayer.NickName}. Refreshing Score UI.");
-            playerManager.UpdateScoreUI(); // Specific UI update
-        }
-
-        // General UI update if needed (e.g., for status changes)
-        if (uiNeedsUpdate)
-        {
-            gameManager.GetCombatManager().UpdateStatusAndComboUI();
+            gameManager.GetPlayerManager().UpdateScoreUI();
         }
     }
 
