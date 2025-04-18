@@ -13,8 +13,8 @@ public class GameManager : MonoBehaviourPunCallbacks
     // --- END ADDED ---
 
     [Header("Settings")]
-    [SerializeField] private int startingPlayerHealth = 1;
-    [SerializeField] private int startingPetHealth = 1;
+    [SerializeField] private int startingPlayerHealth = 50;
+    [SerializeField] private int startingPetHealth = 30;
     [SerializeField] private int startingEnergy = 3;
     [SerializeField] private int cardsToDraw = 5;
     [SerializeField] private List<CardData> starterDeck = new List<CardData>();
