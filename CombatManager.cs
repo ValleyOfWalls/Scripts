@@ -45,6 +45,12 @@ public class CombatManager
 
     private TextMeshProUGUI opponentPetDotText;
 
+    // --- ADDED: Other Fights UI Fields ---
+    private GameObject othersStatusArea;
+    private TextMeshProUGUI otherPlayerStatusTemplate;
+    private int currentTurnNumber = 0;
+    // --- END ADDED ---
+
     public void Initialize(GameManager gameManager, int startingPlayerHealth, int startingPetHealth, int startingEnergy)
     {
         this.gameManager = gameManager;
@@ -76,6 +82,12 @@ public class CombatManager
         opponentPetIntentText = opponentArea?.Find("OpponentPetIntentText")?.GetComponent<TextMeshProUGUI>();
         opponentPetDotText = opponentArea?.Find("OpponentPetDotText")?.GetComponent<TextMeshProUGUI>();
         
+        // Hide the opponent intent text as it's currently unused
+        if (opponentPetIntentText != null)
+        {
+            opponentPetIntentText.gameObject.SetActive(false); 
+        }
+        
         // Find own pet area
         Transform ownPetAreaContainer = topArea.Find("OwnPetAreaContainer");
         Transform ownPetArea = ownPetAreaContainer?.Find("OwnPetArea");
@@ -84,6 +96,35 @@ public class CombatManager
         ownPetHealthText = ownPetArea?.Find("OwnPetHealthText")?.GetComponent<TextMeshProUGUI>();
         ownPetBlockText = ownPetArea?.Find("OwnPetBlockText")?.GetComponent<TextMeshProUGUI>();
         ownPetDotText = ownPetArea?.Find("OwnPetDotText")?.GetComponent<TextMeshProUGUI>();
+        
+        // --- ADDED: Find Other Fights UI Elements ---
+        Transform othersStatusAreaTransform = topArea.Find("OthersStatusArea");
+        if (othersStatusAreaTransform != null)
+        {
+            othersStatusArea = othersStatusAreaTransform.gameObject;
+            Transform templateTransform = othersStatusAreaTransform.Find("OtherPlayerStatusTemplate");
+            if (templateTransform != null)
+            {
+                otherPlayerStatusTemplate = templateTransform.GetComponent<TextMeshProUGUI>();
+                if (otherPlayerStatusTemplate != null)
+                {
+                    otherPlayerStatusTemplate.gameObject.SetActive(false); // Ensure template is initially hidden
+                }
+                else
+                {
+                     Debug.LogError("OtherPlayerStatusTemplate TextMeshProUGUI component not found!");
+                }
+            }
+            else
+            {
+                Debug.LogError("OtherPlayerStatusTemplate GameObject not found under OthersStatusArea!");
+            }
+        }
+        else
+        {
+            Debug.LogWarning("OthersStatusArea GameObject not found in TopArea.");
+        }
+        // --- END ADDED ---
 
         // Find elements within PlayerArea
         Transform statsRow = playerArea.Find("StatsRow");
@@ -150,6 +191,10 @@ public class CombatManager
         gameManager.GetPlayerManager().InitializeCombatState(opponentPetOwnerActorNum, startingPlayerHealth, startingPetHealth);
         gameManager.GetCardManager().InitializeDecks();
         
+        // --- ADDED: Reset Turn Number ---
+        currentTurnNumber = 0; 
+        // --- END ADDED ---
+        
         // Setup Initial UI
         if (playerNameText) playerNameText.text = PhotonNetwork.LocalPlayer.NickName;
         UpdateHealthUI();
@@ -167,6 +212,10 @@ public class CombatManager
         
         // Start the first turn
         StartTurn();
+        
+        // --- ADDED: Initial Other Fights UI Update ---
+        UpdateOtherFightsUI();
+        // --- END ADDED ---
     }
 
     public void StartTurn()
@@ -190,19 +239,28 @@ public class CombatManager
         playerManager.SetCurrentEnergy(startingEnergy);
         UpdateEnergyUI();
 
+        // --- ADDED: Increment Turn and Publish Status ---
+        currentTurnNumber++;
+        PublishCombatStatus();
+        // --- END ADDED ---
+
         // Draw cards
         gameManager.GetCardManager().DrawHand();
         UpdateHandUI();
         UpdateDeckCountUI();
 
         // Set opponent pet intent (Placeholder - should fetch from CardManager/PlayerManager later)
-        if (opponentPetIntentText) opponentPetIntentText.text = "Intent: Attack 5"; // Placeholder
+        // if (opponentPetIntentText) opponentPetIntentText.text = "Intent: Attack 5"; // Placeholder
 
         // Make cards playable and enable end turn button
         if (endTurnButton) endTurnButton.interactable = true;
         // Maybe update card interactability here based on energy etc.
 
         UpdateStatusAndComboUI();
+        
+        // --- ADDED: Update Other Fights UI ---
+        UpdateOtherFightsUI();
+        // --- END ADDED ---
     }
 
     public void EndTurn()
@@ -229,6 +287,83 @@ public class CombatManager
             StartTurn();
         }
     }
+
+    // --- ADDED: Method to publish combat status to custom properties ---
+    private void PublishCombatStatus()
+    {
+        if (!PhotonNetwork.InRoom) return; // Safety check
+
+        int opponentPetHealth = gameManager.GetPlayerManager().GetOpponentPetHealth(); 
+        
+        ExitGames.Client.Photon.Hashtable combatProps = new ExitGames.Client.Photon.Hashtable
+        {
+            { CombatStateManager.PLAYER_COMBAT_OPP_PET_HP_PROP, opponentPetHealth },
+            { CombatStateManager.PLAYER_COMBAT_TURN_PROP, currentTurnNumber }
+        };
+        
+        PhotonNetwork.LocalPlayer.SetCustomProperties(combatProps);
+        // Debug.Log($"Published Combat Status: Turn={currentTurnNumber}, OppPetHP={opponentPetHealth}");
+    }
+    // --- END ADDED ---
+
+    // --- ADDED: Method to update the Other Fights UI panel ---
+    public void UpdateOtherFightsUI()
+    {
+        if (othersStatusArea == null || otherPlayerStatusTemplate == null)
+        {
+            // Debug.LogWarning("Cannot update Other Fights UI - references missing.");
+            return;
+        }
+
+        // Clear previous entries (but keep the template itself)
+        foreach (Transform child in othersStatusArea.transform)
+        {
+            if (child.gameObject != otherPlayerStatusTemplate.gameObject && child.gameObject.name != "OtherStatusTitle") // Don't destroy template or title
+            {
+                Object.Destroy(child.gameObject);
+            }
+        }
+
+        // Loop through players and display their status
+        foreach (Player player in PhotonNetwork.PlayerList)
+        {
+            if (player.IsLocal) continue; // Skip self
+
+            int oppPetHP = -1;
+            int turnNum = -1;
+            bool hpFound = false;
+            bool turnFound = false;
+
+            if (player.CustomProperties.TryGetValue(CombatStateManager.PLAYER_COMBAT_OPP_PET_HP_PROP, out object hpObj))
+            {
+                try { oppPetHP = (int)hpObj; hpFound = true; } catch { /* Ignore */ }
+            }
+            if (player.CustomProperties.TryGetValue(CombatStateManager.PLAYER_COMBAT_TURN_PROP, out object turnObj))
+            {
+                 try { turnNum = (int)turnObj; turnFound = true; } catch { /* Ignore */ }
+            }
+
+            // Only display if we have valid data
+            if (hpFound && turnFound)
+            {
+                GameObject statusEntryGO = Object.Instantiate(otherPlayerStatusTemplate.gameObject, othersStatusArea.transform);
+                statusEntryGO.name = $"Status_{player.NickName}"; // Easier debugging
+                TextMeshProUGUI statusText = statusEntryGO.GetComponent<TextMeshProUGUI>();
+                
+                if (statusText != null)
+                {
+                    statusText.text = $"{player.NickName}: T{turnNum}, OppHP: {oppPetHP}";
+                    statusEntryGO.SetActive(true); // Activate the instantiated entry
+                }
+                else
+                {
+                    Object.Destroy(statusEntryGO); // Clean up if component missing
+                }
+            }
+            // Optional: Handle cases where data isn't found (e.g., show "Waiting..." or nothing)
+        }
+    }
+    // --- END ADDED ---
 
     public void UpdateHealthUI()
     {

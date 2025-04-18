@@ -121,7 +121,18 @@ public class GameManager : MonoBehaviourPunCallbacks
     public override void OnDisconnected(DisconnectCause cause) => photonManager.OnDisconnected(cause);
     public override void OnPlayerEnteredRoom(Player newPlayer) => photonManager.OnPlayerEnteredRoom(newPlayer);
     public override void OnPlayerLeftRoom(Player otherPlayer) => photonManager.OnPlayerLeftRoom(otherPlayer);
-    public override void OnPlayerPropertiesUpdate(Player targetPlayer, Hashtable changedProps) => photonManager.OnPlayerPropertiesUpdate(targetPlayer, changedProps);
+    public override void OnPlayerPropertiesUpdate(Player targetPlayer, Hashtable changedProps)
+    {
+        photonManager.OnPlayerPropertiesUpdate(targetPlayer, changedProps);
+        // Update Score UI if in Combat or Draft (score persists)
+        if (gameStateManager.GetCurrentState() == GameState.Combat || gameStateManager.GetCurrentState() == GameState.Drafting)
+        {
+            playerManager.GetCombatStateManager().UpdateScoreUI(); // Use CombatStateManager via PlayerManager
+             // --- ADDED: Update Other Fights UI on property change ---
+             combatManager.UpdateOtherFightsUI();
+             // --- END ADDED ---
+        }
+    }
     public override void OnRoomPropertiesUpdate(Hashtable propertiesThatChanged) => photonManager.OnRoomPropertiesUpdate(propertiesThatChanged);
     public override void OnMasterClientSwitched(Player newMasterClient) => photonManager.OnMasterClientSwitched(newMasterClient);
     

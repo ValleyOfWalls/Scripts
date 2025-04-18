@@ -18,6 +18,10 @@ public class CombatStateManager
     public const string PLAYER_SCORE_PROP = "PlayerScore";
     public const string PLAYER_BASE_PET_HP_PROP = "BasePetHP";
     public const string COMBAT_PAIRINGS_PROP = "CombatPairings";
+    // --- ADDED: Constants for Other Fights UI ---
+    public const string PLAYER_COMBAT_OPP_PET_HP_PROP = "OppPetHP";
+    public const string PLAYER_COMBAT_TURN_PROP = "CombatTurn";
+    // --- END ADDED ---
     
     public CombatStateManager(GameManager gameManager)
     {

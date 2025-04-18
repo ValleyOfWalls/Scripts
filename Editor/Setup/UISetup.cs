@@ -1060,7 +1060,7 @@ public class UISetup : Editor
         ConfigureRectTransform(placeholderTextComp.rectTransform, Vector2.zero, Vector2.one, new Vector2(0, 1), Vector2.zero, Vector2.zero);
         placeholderTextComp.rectTransform.offsetMin = new Vector2(5, 0); // Align left, full height
         placeholderTextComp.rectTransform.offsetMax = new Vector2(0, 0);
-        placeholderTextComp.enableWordWrapping = false;
+        placeholderTextComp.textWrappingMode = TextWrappingModes.NoWrap;
         placeholderTextComp.overflowMode = TextOverflowModes.Ellipsis;
 
         // Create Text Component (for actual input)
@@ -1069,7 +1069,7 @@ public class UISetup : Editor
         ConfigureRectTransform(textComp.rectTransform, Vector2.zero, Vector2.one, new Vector2(0, 1), Vector2.zero, Vector2.zero);
         textComp.rectTransform.offsetMin = new Vector2(5, 0); // Align left, full height
         textComp.rectTransform.offsetMax = new Vector2(0, 0);
-        textComp.enableWordWrapping = false;
+        textComp.textWrappingMode = TextWrappingModes.NoWrap;
         textComp.overflowMode = TextOverflowModes.Ellipsis; // Or Overflow
 
         // Assign components to InputField
