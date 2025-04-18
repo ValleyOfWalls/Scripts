@@ -29,9 +29,12 @@ public class CombatManager
     private Slider ownPetHealthSlider;
     private TextMeshProUGUI ownPetHealthText;
     private TextMeshProUGUI ownPetBlockText;
+    private TextMeshProUGUI ownPetDotText;
     private GameObject playerHandPanel;
     private TextMeshProUGUI deckCountText;
     private TextMeshProUGUI discardCountText;
+    private TextMeshProUGUI playerDotText;
+    private TextMeshProUGUI comboCountText;
     private Button endTurnButton;
 
     // Added UI References for Deck View
@@ -39,6 +42,8 @@ public class CombatManager
     private Button viewPetDeckButton;
     private Button viewOppPetDeckButton;
     private DeckViewController deckViewController;
+
+    private TextMeshProUGUI opponentPetDotText;
 
     public void Initialize(GameManager gameManager, int startingPlayerHealth, int startingPetHealth, int startingEnergy)
     {
@@ -69,6 +74,7 @@ public class CombatManager
         opponentPetHealthText = opponentArea?.Find("OpponentPetHealthText")?.GetComponent<TextMeshProUGUI>();
         opponentPetBlockText = opponentArea?.Find("OpponentPetBlockText")?.GetComponent<TextMeshProUGUI>();
         opponentPetIntentText = opponentArea?.Find("OpponentPetIntentText")?.GetComponent<TextMeshProUGUI>();
+        opponentPetDotText = opponentArea?.Find("OpponentPetDotText")?.GetComponent<TextMeshProUGUI>();
         
         // Find own pet area
         Transform ownPetAreaContainer = topArea.Find("OwnPetAreaContainer");
@@ -77,6 +83,7 @@ public class CombatManager
         ownPetHealthSlider = ownPetArea?.Find("OwnPetHealthSlider")?.GetComponent<Slider>();
         ownPetHealthText = ownPetArea?.Find("OwnPetHealthText")?.GetComponent<TextMeshProUGUI>();
         ownPetBlockText = ownPetArea?.Find("OwnPetBlockText")?.GetComponent<TextMeshProUGUI>();
+        ownPetDotText = ownPetArea?.Find("OwnPetDotText")?.GetComponent<TextMeshProUGUI>();
 
         // Find elements within PlayerArea
         Transform statsRow = playerArea.Find("StatsRow");
@@ -85,6 +92,8 @@ public class CombatManager
         playerHealthText = statsRow?.Find("PlayerHealthText")?.GetComponent<TextMeshProUGUI>();
         playerBlockText = statsRow?.Find("PlayerBlockText")?.GetComponent<TextMeshProUGUI>();
         energyText = statsRow?.Find("EnergyText")?.GetComponent<TextMeshProUGUI>();
+        playerDotText = statsRow?.Find("PlayerDotText")?.GetComponent<TextMeshProUGUI>();
+        comboCountText = statsRow?.Find("ComboCountText")?.GetComponent<TextMeshProUGUI>();
         
         Transform handPanelTransform = playerArea.Find("PlayerHandPanel");
         playerHandPanel = handPanelTransform?.gameObject;
@@ -144,6 +153,7 @@ public class CombatManager
         // Setup Initial UI
         if (playerNameText) playerNameText.text = PhotonNetwork.LocalPlayer.NickName;
         UpdateHealthUI();
+        UpdateStatusAndComboUI();
         
         if (opponentPetNameText)
         {
@@ -162,21 +172,37 @@ public class CombatManager
     public void StartTurn()
     {
         Debug.Log("Starting Player Turn");
-        gameManager.GetPlayerManager().ResetAllBlock();
-        gameManager.GetPlayerManager().DecrementPlayerStatusEffects();
-        gameManager.GetPlayerManager().DecrementLocalPetStatusEffects();
-        gameManager.GetPlayerManager().SetCurrentEnergy(startingEnergy);
+        PlayerManager playerManager = gameManager.GetPlayerManager();
+
+        // Reset combo counter at the start of the turn
+        playerManager.ResetComboCount();
+
+        // Reset block from previous turn
+        playerManager.ResetAllBlock();
+
+        // Process turn start effects (like DoT) and decrement buffs/debuffs
+        playerManager.ProcessPlayerTurnStartEffects();
+        playerManager.ProcessLocalPetTurnStartEffects();
+        // Check for deaths after DoT
+        if (gameManager.GetPlayerManager().IsCombatEndedForLocalPlayer()) return; // End turn early if player/pet died
+
+        // Reset energy
+        playerManager.SetCurrentEnergy(startingEnergy);
         UpdateEnergyUI();
 
+        // Draw cards
         gameManager.GetCardManager().DrawHand();
         UpdateHandUI();
         UpdateDeckCountUI();
 
-        // Set opponent pet intent
+        // Set opponent pet intent (Placeholder - should fetch from CardManager/PlayerManager later)
         if (opponentPetIntentText) opponentPetIntentText.text = "Intent: Attack 5"; // Placeholder
 
-        // Make cards playable
+        // Make cards playable and enable end turn button
         if (endTurnButton) endTurnButton.interactable = true;
+        // Maybe update card interactability here based on energy etc.
+
+        UpdateStatusAndComboUI();
     }
 
     public void EndTurn()
@@ -191,6 +217,7 @@ public class CombatManager
 
         // 2. Opponent Pet Acts
         gameManager.GetCardManager().ExecuteOpponentPetTurn(startingEnergy);
+        UpdateStatusAndComboUI();
 
         // 3. Start Next Player Turn (if combat hasn't ended)
         if (!gameManager.GetPlayerManager().IsCombatEndedForLocalPlayer())
@@ -230,6 +257,8 @@ public class CombatManager
         }
         if (opponentPetHealthText) opponentPetHealthText.text = $"{currentOpponentPetHealth} / {effectiveOpponentPetMaxHealth}";
         if (opponentPetBlockText) opponentPetBlockText.text = $"Block: {playerManager.GetOpponentPetBlock()}";
+
+        UpdateStatusAndComboUI();
     }
 
     public void UpdateHandUI()
@@ -377,4 +406,47 @@ public class CombatManager
         deckViewController.ShowDeck(title, opponentPetDeck);
     }
     // --- END ADDED Deck Viewing Methods ---
+
+    // --- ADDED: Update Status Effects and Combo UI ---
+    public void UpdateStatusAndComboUI()
+    {
+        PlayerManager playerManager = gameManager.GetPlayerManager();
+        if (playerManager == null) return;
+
+        // Player DoT
+        if (playerDotText != null)
+        {
+            int dotTurns = playerManager.GetPlayerDotTurns();
+            int dotDmg = playerManager.GetPlayerDotDamage();
+            playerDotText.text = (dotTurns > 0) ? $"DoT: {dotDmg} ({dotTurns}t)" : "";
+            playerDotText.gameObject.SetActive(dotTurns > 0);
+        }
+
+        // Combo Count
+        if (comboCountText != null)
+        {
+            int combo = playerManager.GetCurrentComboCount();
+            comboCountText.text = (combo > 0) ? $"Combo: {combo}" : "";
+            comboCountText.gameObject.SetActive(combo > 0);
+        }
+
+        // Own Pet DoT
+        if (ownPetDotText != null)
+        {
+            int dotTurns = playerManager.GetLocalPetDotTurns();
+            int dotDmg = playerManager.GetLocalPetDotDamage();
+            ownPetDotText.text = (dotTurns > 0) ? $"DoT: {dotDmg} ({dotTurns}t)" : "";
+            ownPetDotText.gameObject.SetActive(dotTurns > 0);
+        }
+
+        // Opponent Pet DoT
+        if (opponentPetDotText != null)
+        {
+            int dotTurns = playerManager.GetOpponentPetDotTurns();
+            int dotDmg = playerManager.GetOpponentPetDotDamage();
+            opponentPetDotText.text = (dotTurns > 0) ? $"DoT: {dotDmg} ({dotTurns}t)" : "";
+            opponentPetDotText.gameObject.SetActive(dotTurns > 0);
+        }
+    }
+    // --- END ADDED ---
 }

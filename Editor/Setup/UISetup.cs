@@ -452,6 +452,21 @@ public class UISetup : Editor
         oppHealthText.raycastTarget = false; // <<--- DISABLE RAYCAST
         TextMeshProUGUI oppIntentText = CreateText(opponentPetArea.transform, "OpponentPetIntentText", "Intent: Attack 10", 16, TextAlignmentOptions.Center);
         oppIntentText.raycastTarget = false; // <<--- DISABLE RAYCAST
+        // --- ADDED: Opponent Pet Block Text ---
+        TextMeshProUGUI opponentPetBlockText = CreateText(opponentPetArea.transform, "OpponentPetBlockText", "Block: 0", 14, TextAlignmentOptions.Left);
+        SetLayoutElement(opponentPetBlockText.gameObject, minWidth: 60);
+        opponentPetBlockText.raycastTarget = false;
+        // --- END ADDED ---
+        // --- ADDED: Opponent Pet DoT Text ---
+        TextMeshProUGUI opponentPetDotText = CreateText(opponentPetArea.transform, "OpponentPetDotText", "DoT: 0 (0t)", 14, TextAlignmentOptions.Left);
+        SetLayoutElement(opponentPetDotText.gameObject, minWidth: 60);
+        opponentPetDotText.gameObject.SetActive(false); // Start hidden
+        opponentPetDotText.raycastTarget = false;
+        // --- END ADDED ---
+
+        // Intent Text (Below health/block)
+        GameObject opponentIntentRow = CreatePanel(opponentPetArea.transform, "OpponentIntentRow", true); 
+        AddHorizontalLayoutGroup(opponentIntentRow, 0, 0, true, true).childAlignment = TextAnchor.MiddleCenter;
 
         // <<--- MODIFIED STRUCTURE START --->>
         // 1. Create the Container for the Own Pet area
@@ -507,6 +522,17 @@ public class UISetup : Editor
         SetSliderRaycastTargets(ownPetHealthSlider, false); // <<--- DISABLE RAYCAST ON SLIDER PARTS
         TextMeshProUGUI ownPetHealthText = CreateText(ownPetArea.transform, "OwnPetHealthText", "50 / 50", 14, TextAlignmentOptions.Center);
         ownPetHealthText.raycastTarget = false; // <<--- DISABLE RAYCAST
+        // --- ADDED: Own Pet Block Text ---
+        TextMeshProUGUI ownPetBlockText = CreateText(ownPetArea.transform, "OwnPetBlockText", "Block: 0", 14, TextAlignmentOptions.Left);
+        SetLayoutElement(ownPetBlockText.gameObject, minWidth: 60);
+        ownPetBlockText.raycastTarget = false;
+        // --- END ADDED ---
+        // --- ADDED: Own Pet DoT Text ---
+        TextMeshProUGUI ownPetDotText = CreateText(ownPetArea.transform, "OwnPetDotText", "DoT: 0 (0t)", 14, TextAlignmentOptions.Left);
+        SetLayoutElement(ownPetDotText.gameObject, minWidth: 60);
+        ownPetDotText.gameObject.SetActive(false); // Start hidden
+        ownPetDotText.raycastTarget = false;
+        // --- END ADDED ---
 
         GameObject othersStatusArea = CreatePanel(topArea.transform, "OthersStatusArea");
         ConfigureRectTransform(othersStatusArea.GetComponent<RectTransform>(),
@@ -545,6 +571,23 @@ public class UISetup : Editor
         
         TextMeshProUGUI playerHealthText = CreateText(statsRow.transform, "PlayerHealthText", "100 / 100", 16, TextAlignmentOptions.Right);
         SetLayoutElement(playerHealthText.gameObject, minWidth: 80);
+        // --- ADDED: Player Block Text ---
+        TextMeshProUGUI playerBlockText = CreateText(statsRow.transform, "PlayerBlockText", "Block: 0", 14, TextAlignmentOptions.Left);
+        SetLayoutElement(playerBlockText.gameObject, minWidth: 60);
+        playerBlockText.raycastTarget = false;
+        // --- END ADDED ---
+        // --- ADDED: Player DoT Text ---
+        TextMeshProUGUI playerDotText = CreateText(statsRow.transform, "PlayerDotText", "DoT: 0 (0t)", 14, TextAlignmentOptions.Left);
+        SetLayoutElement(playerDotText.gameObject, minWidth: 60);
+        playerDotText.gameObject.SetActive(false); // Start hidden
+        playerDotText.raycastTarget = false;
+        // --- END ADDED ---
+        // --- ADDED: Combo Count Text ---
+        TextMeshProUGUI comboCountText = CreateText(statsRow.transform, "ComboCountText", "Combo: 0", 14, TextAlignmentOptions.Left);
+        SetLayoutElement(comboCountText.gameObject, minWidth: 60);
+        comboCountText.gameObject.SetActive(false); // Start hidden
+        comboCountText.raycastTarget = false;
+        // --- END ADDED ---
 
         // TODO: Add Energy Display
         TextMeshProUGUI energyTextElement = CreateText(statsRow.transform, "EnergyText", "Energy: 3/3", 18, TextAlignmentOptions.Left);

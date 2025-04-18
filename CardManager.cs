@@ -258,9 +258,9 @@ public class CardManager
         Debug.Log("---> Starting Opponent Pet Turn <---");
         opponentPetEnergy = startingEnergy;
         
-        // --- ADDED: Decrement Opponent Pet Status Effects --- 
-        gameManager.GetPlayerManager().DecrementOpponentPetStatusEffects();
-        // --- END ADDED ---
+        // --- REVISED: Process Turn Start Effects (includes status decrement) ---
+        gameManager.GetPlayerManager().ProcessOpponentPetTurnStartEffects();
+        // --- END REVISED ---
         
         // Determine how many cards the pet should draw (can be different from player)
         int petCardsToDraw = 3; // Example: Pet draws fewer cards
@@ -369,6 +369,13 @@ public class CardManager
                 }
                 // --- END ADDED ---
                 
+                // --- ADDED: Apply DoT (Opponent Pet applying to Player) --- 
+                if (cardToPlay.dotDamageAmount > 0 && cardToPlay.dotDuration > 0)
+                {
+                    gameManager.GetPlayerManager().ApplyDotLocalPlayer(cardToPlay.dotDamageAmount, cardToPlay.dotDuration);
+                }
+                // --- END ADDED ---
+                
                 // Move card from hand to discard
                 opponentPetHand.RemoveAt(cardIndex);
                 opponentPetDiscard.Add(cardToPlay);
@@ -451,6 +458,11 @@ public class CardManager
                     {
                         gameManager.GetPlayerManager().ApplyStatusEffectOpponentPet(cardData.statusToApply, cardData.statusDuration);
                     }
+                    // --- ADDED: Apply DoT to Enemy Pet --- 
+                    if (cardData.dotDamageAmount > 0 && cardData.dotDuration > 0)
+                    {
+                        gameManager.GetPlayerManager().ApplyDotOpponentPet(cardData.dotDamageAmount, cardData.dotDuration);
+                    }
                     break;
                     
                 case CardDropZone.TargetType.PlayerSelf:
@@ -472,6 +484,11 @@ public class CardManager
                     {
                         gameManager.GetPlayerManager().ApplyStatusEffectLocalPlayer(cardData.statusToApply, cardData.statusDuration);
                     }
+                    // --- ADDED: Apply DoT to Player --- 
+                    if (cardData.dotDamageAmount > 0 && cardData.dotDuration > 0)
+                    {
+                        gameManager.GetPlayerManager().ApplyDotLocalPlayer(cardData.dotDamageAmount, cardData.dotDuration);
+                    }
                     break;
                     
                 case CardDropZone.TargetType.OwnPet:
@@ -492,6 +509,11 @@ public class CardManager
                     if (cardData.statusToApply != StatusEffectType.None && cardData.statusDuration > 0)
                     {
                         gameManager.GetPlayerManager().ApplyStatusEffectLocalPet(cardData.statusToApply, cardData.statusDuration);
+                    }
+                    // --- ADDED: Apply DoT to Own Pet --- 
+                    if (cardData.dotDamageAmount > 0 && cardData.dotDuration > 0)
+                    {
+                        gameManager.GetPlayerManager().ApplyDotLocalPet(cardData.dotDamageAmount, cardData.dotDuration);
                     }
                     break;
                     
@@ -525,6 +547,21 @@ public class CardManager
                 DiscardRandomPlayerCards(cardData.discardRandomAmount);
                 gameManager.UpdateHandUI(); // Update hand after discarding
                 gameManager.UpdateDeckCountUI();
+            }
+            // --- END ADDED ---
+            
+            // --- ADDED: Combo Check --- 
+            if (cardData.isComboStarter)
+            {
+                PlayerManager playerManager = gameManager.GetPlayerManager();
+                playerManager.IncrementComboCount();
+                if (playerManager.GetCurrentComboCount() >= cardData.comboTriggerValue)
+                {
+                    Debug.Log($"COMBO TRIGGERED! ({playerManager.GetCurrentComboCount()}/{cardData.comboTriggerValue}) Applying effect: {cardData.comboEffectType}");
+                    ApplyComboEffect(cardData);
+                    // Optional: Reset combo count immediately after trigger?
+                    // playerManager.ResetComboCount(); 
+                }
             }
             // --- END ADDED ---
             
@@ -1207,6 +1244,40 @@ public class CardManager
                 if (value > 0) playerManager.GainEnergy(value);
                 break;
             // Add cases for other effects
+        }
+    }
+    // --- END ADDED ---
+
+    // --- ADDED: Handle Combo Effect --- 
+    private void ApplyComboEffect(CardData triggeringCard)
+    {
+        PlayerManager playerManager = gameManager.GetPlayerManager();
+        int value = triggeringCard.comboEffectValue;
+        CardDropZone.TargetType comboTarget = triggeringCard.comboEffectTarget;
+
+        switch (triggeringCard.comboEffectType)
+        {
+            case ComboEffectType.DealDamageToOpponentPet:
+                 if (value > 0) playerManager.DamageOpponentPet(value);
+                break;
+            case ComboEffectType.GainBlockPlayer:
+                if (value > 0) playerManager.AddBlockToLocalPlayer(value);
+                break;
+            case ComboEffectType.GainBlockPet:
+                 if (value > 0) playerManager.AddBlockToLocalPet(value);
+                break;
+            case ComboEffectType.DrawCard:
+                 if (value > 0) {
+                    for(int i=0; i < value; i++) DrawCard();
+                    gameManager.UpdateHandUI();
+                    gameManager.UpdateDeckCountUI();
+                }
+                break;
+            case ComboEffectType.GainEnergy:
+                if (value > 0) playerManager.GainEnergy(value);
+                break;
+            // TODO: Add more complex combo effects (e.g., apply status, heal based on target)
+            // Need to potentially check comboTarget here if effects are target-dependent.
         }
     }
     // --- END ADDED ---

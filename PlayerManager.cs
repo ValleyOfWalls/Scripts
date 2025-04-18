@@ -39,6 +39,20 @@ public class PlayerManager
     private int localPetBreakTurns = 0;
     private int opponentPetWeakTurns = 0; // Local simulation
     private int opponentPetBreakTurns = 0; // Local simulation
+    
+    // --- ADDED: Combo Tracking ---
+    private int currentComboCount = 0;
+    // --- END ADDED ---
+    
+    // --- ADDED: DoT Tracking ---
+    private int localPlayerDotTurns = 0;
+    private int localPlayerDotDamage = 0;
+    private int localPetDotTurns = 0;
+    private int localPetDotDamage = 0;
+    private int opponentPetDotTurns = 0; // Local simulation
+    private int opponentPetDotDamage = 0; // Local simulation
+    // --- END ADDED ---
+    
     private Player opponentPlayer;
     private bool combatEndedForLocalPlayer = false;
     
@@ -63,6 +77,16 @@ public class PlayerManager
         this.localPetHealth = startingPetHealth;
         this.startingEnergy = startingEnergy;
         this.currentEnergy = startingEnergy;
+        
+        // --- ADDED: Reset Combo & DoT --- 
+        currentComboCount = 0;
+        localPlayerDotTurns = 0;
+        localPlayerDotDamage = 0;
+        localPetDotTurns = 0;
+        localPetDotDamage = 0;
+        opponentPetDotTurns = 0;
+        opponentPetDotDamage = 0;
+        // --- END ADDED ---
     }
     
     public void UpdatePlayerList(GameObject playerListPanel, GameObject playerEntryTemplate)
@@ -203,6 +227,16 @@ public class PlayerManager
         localPetBreakTurns = 0;
         opponentPetWeakTurns = 0;
         opponentPetBreakTurns = 0;
+        // --- END ADDED ---
+        
+        // --- ADDED: Reset Combo & DoT --- 
+        currentComboCount = 0;
+        localPlayerDotTurns = 0;
+        localPlayerDotDamage = 0;
+        localPetDotTurns = 0;
+        localPetDotDamage = 0;
+        opponentPetDotTurns = 0;
+        opponentPetDotDamage = 0;
         // --- END ADDED ---
         
         currentEnergy = startingEnergy;
@@ -879,4 +913,124 @@ public class PlayerManager
     public bool IsOpponentPetBroken() => opponentPetBreakTurns > 0;
     // Add getters for potency if implemented
     // --- END ADDED ---
+
+    // --- ADDED: Combo Methods ---
+    public void IncrementComboCount()
+    {
+        currentComboCount++;
+        Debug.Log($"Combo count incremented to: {currentComboCount}");
+        // TODO: Update UI potentially?
+    }
+
+    public void ResetComboCount()
+    {
+        if (currentComboCount > 0)
+        {
+            Debug.Log($"Resetting combo count from {currentComboCount} to 0.");
+            currentComboCount = 0;
+            // TODO: Update UI potentially?
+        }
+    }
+    
+    public int GetCurrentComboCount() => currentComboCount;
+    // --- END ADDED ---
+    
+    // --- ADDED: DoT Getters ---
+    public int GetPlayerDotTurns() => localPlayerDotTurns;
+    public int GetPlayerDotDamage() => localPlayerDotDamage;
+    public int GetLocalPetDotTurns() => localPetDotTurns;
+    public int GetLocalPetDotDamage() => localPetDotDamage;
+    public int GetOpponentPetDotTurns() => opponentPetDotTurns;
+    public int GetOpponentPetDotDamage() => opponentPetDotDamage;
+    // --- END ADDED ---
+
+    // --- ADDED: DoT Application ---
+    public void ApplyDotLocalPlayer(int damage, int duration)
+    {
+        if (damage <= 0 || duration <= 0) return;
+        // Simple approach: Stack duration, use latest damage value.
+        // More complex logic (e.g., highest damage, separate stacks) could be added.
+        localPlayerDotTurns += duration;
+        localPlayerDotDamage = damage; 
+        Debug.Log($"Applied DoT to Player: {damage} damage for {duration} turns. Total Turns: {localPlayerDotTurns}");
+        // TODO: Update UI
+    }
+    
+     public void ApplyDotLocalPet(int damage, int duration)
+    {
+        if (damage <= 0 || duration <= 0) return;
+        localPetDotTurns += duration;
+        localPetDotDamage = damage; 
+        Debug.Log($"Applied DoT to Local Pet: {damage} damage for {duration} turns. Total Turns: {localPetDotTurns}");
+        // TODO: Update UI
+    }
+    
+    public void ApplyDotOpponentPet(int damage, int duration)
+    {
+         if (damage <= 0 || duration <= 0) return;
+        opponentPetDotTurns += duration;
+        opponentPetDotDamage = damage; 
+        Debug.Log($"Applied DoT to Opponent Pet: {damage} damage for {duration} turns (local sim). Total Turns: {opponentPetDotTurns}");
+        // TODO: Update UI
+    }
+    // --- END ADDED ---
+    
+    // --- REVISED: Turn Start Processing --- 
+    public void ProcessPlayerTurnStartEffects()
+    {
+        // Apply DoT Damage FIRST
+        if (localPlayerDotTurns > 0 && localPlayerDotDamage > 0)
+        {
+            Debug.Log($"Player DoT ticking for {localPlayerDotDamage} damage.");
+            DamageLocalPlayer(localPlayerDotDamage);
+            localPlayerDotTurns--; // Decrement AFTER applying damage
+            if (localPlayerDotTurns == 0) localPlayerDotDamage = 0; // Clear damage if duration ends
+        }
+        
+        // Then Decrement Status Effects
+        if (localPlayerWeakTurns > 0) localPlayerWeakTurns--;
+        if (localPlayerBreakTurns > 0) localPlayerBreakTurns--;
+        
+        Debug.Log($"Processed Player Turn Start. Weak: {localPlayerWeakTurns}, Break: {localPlayerBreakTurns}, DoT Turns: {localPlayerDotTurns}");
+        // TODO: Update UI
+    }
+    
+    public void ProcessLocalPetTurnStartEffects()
+    {
+         // Apply DoT Damage FIRST
+        if (localPetDotTurns > 0 && localPetDotDamage > 0)
+        {
+            Debug.Log($"Local Pet DoT ticking for {localPetDotDamage} damage.");
+            DamageLocalPet(localPetDotDamage);
+            localPetDotTurns--; 
+            if (localPetDotTurns == 0) localPetDotDamage = 0; 
+        }
+        
+        // Then Decrement Status Effects
+        if (localPetWeakTurns > 0) localPetWeakTurns--;
+        if (localPetBreakTurns > 0) localPetBreakTurns--;
+        
+        Debug.Log($"Processed Local Pet Turn Start. Weak: {localPetWeakTurns}, Break: {localPetBreakTurns}, DoT Turns: {localPetDotTurns}");
+        // TODO: Update UI
+    }
+    
+    public void ProcessOpponentPetTurnStartEffects() // Called by CardManager before pet acts
+    {
+         // Apply DoT Damage FIRST
+        if (opponentPetDotTurns > 0 && opponentPetDotDamage > 0)
+        {
+            Debug.Log($"Opponent Pet DoT ticking for {opponentPetDotDamage} damage (local sim).");
+            DamageOpponentPet(opponentPetDotDamage);
+            opponentPetDotTurns--; 
+            if (opponentPetDotTurns == 0) opponentPetDotDamage = 0; 
+        }
+        
+        // Then Decrement Status Effects
+        if (opponentPetWeakTurns > 0) opponentPetWeakTurns--;
+        if (opponentPetBreakTurns > 0) opponentPetBreakTurns--;
+        
+        Debug.Log($"Processed Opponent Pet Turn Start (local sim). Weak: {opponentPetWeakTurns}, Break: {opponentPetBreakTurns}, DoT Turns: {opponentPetDotTurns}");
+        // TODO: Update UI
+    }
+    // --- END REVISED ---
 }

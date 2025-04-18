@@ -12,6 +12,19 @@ public enum DiscardEffectType
 }
 // --- END ADDED ---
 
+// --- ADDED: Enum for Combo Effects --- 
+public enum ComboEffectType
+{
+    None,
+    DealDamageToOpponentPet,
+    GainBlockPlayer,
+    GainBlockPet,
+    DrawCard,
+    GainEnergy
+    // Add more complex combo effects later
+}
+// --- END ADDED ---
+
 [CreateAssetMenu(fileName = "New Card", menuName = "Cards/Card Data")]
 public class CardData : ScriptableObject
 {
@@ -33,6 +46,17 @@ public class CardData : ScriptableObject
     public StatusEffectType statusToApply = StatusEffectType.None;
     public int statusDuration = 0; // Turns the status lasts
     public int statusPotency = 0; // e.g., Damage reduction for Weak, % increase for Break?
+
+    [Header("Damage Over Time (DoT)")]
+    public int dotDamageAmount = 0; // Damage per turn
+    public int dotDuration = 0; // Turns the DoT lasts
+
+    [Header("Combo Effect")]
+    public bool isComboStarter = false; // Does this card contribute to/start a combo?
+    public int comboTriggerValue = 3; // How many combo cards needed to trigger the effect
+    public ComboEffectType comboEffectType = ComboEffectType.None;
+    public int comboEffectValue = 0; // Value for the combo effect (e.g., damage, block)
+    public CardDropZone.TargetType comboEffectTarget = CardDropZone.TargetType.EnemyPet; // Who does the combo effect hit?
 
     [Header("Discard Trigger Effect")]
     public DiscardEffectType discardEffectType = DiscardEffectType.None;
