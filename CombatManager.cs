@@ -294,11 +294,13 @@ public class CombatManager
         if (!PhotonNetwork.InRoom) return; // Safety check
 
         int opponentPetHealth = gameManager.GetPlayerManager().GetOpponentPetHealth(); 
+        int playerHealth = gameManager.GetPlayerManager().GetLocalPlayerHealth(); // Get player health
         
         ExitGames.Client.Photon.Hashtable combatProps = new ExitGames.Client.Photon.Hashtable
         {
             { CombatStateManager.PLAYER_COMBAT_OPP_PET_HP_PROP, opponentPetHealth },
-            { CombatStateManager.PLAYER_COMBAT_TURN_PROP, currentTurnNumber }
+            { CombatStateManager.PLAYER_COMBAT_TURN_PROP, currentTurnNumber },
+            { CombatStateManager.PLAYER_COMBAT_PLAYER_HP_PROP, playerHealth } // Add player health
         };
         
         PhotonNetwork.LocalPlayer.SetCustomProperties(combatProps);
@@ -331,8 +333,10 @@ public class CombatManager
 
             int oppPetHP = -1;
             int turnNum = -1;
+            int playerHP = -1; // Variable for player health
             bool hpFound = false;
             bool turnFound = false;
+            bool playerHpFound = false; // Flag for player health
 
             if (player.CustomProperties.TryGetValue(CombatStateManager.PLAYER_COMBAT_OPP_PET_HP_PROP, out object hpObj))
             {
@@ -342,9 +346,14 @@ public class CombatManager
             {
                  try { turnNum = (int)turnObj; turnFound = true; } catch { /* Ignore */ }
             }
+            // Try to get player health
+            if (player.CustomProperties.TryGetValue(CombatStateManager.PLAYER_COMBAT_PLAYER_HP_PROP, out object playerHpObj))
+            {
+                 try { playerHP = (int)playerHpObj; playerHpFound = true; } catch { /* Ignore */ }
+            }
 
-            // Only display if we have valid data
-            if (hpFound && turnFound)
+            // Only display if we have valid data for all fields now
+            if (hpFound && turnFound && playerHpFound)
             {
                 GameObject statusEntryGO = Object.Instantiate(otherPlayerStatusTemplate.gameObject, othersStatusArea.transform);
                 statusEntryGO.name = $"Status_{player.NickName}"; // Easier debugging
@@ -352,7 +361,8 @@ public class CombatManager
                 
                 if (statusText != null)
                 {
-                    statusText.text = $"{player.NickName}: T{turnNum}, OppHP: {oppPetHP}";
+                    // Update text to include player HP
+                    statusText.text = $"{player.NickName}: HP:{playerHP} | T{turnNum}, OppHP: {oppPetHP}";
                     statusEntryGO.SetActive(true); // Activate the instantiated entry
                 }
                 else

@@ -5,6 +5,37 @@ using System.IO;
 using TMPro; // Import TextMeshPro
 using System.Collections.Generic; // Needed for FindObjectsOfType
 
+// --- ADDED: Helper Structs for Customization Data ---
+[System.Serializable] // Not strictly needed for this usage, but good practice
+public struct RectTransformData
+{
+    public Vector2 anchoredPosition;
+    public Vector2 sizeDelta;
+    public Vector2 anchorMin;
+    public Vector2 anchorMax;
+    public Vector2 pivot;
+    public Vector3 localScale;
+    public Quaternion localRotation;
+}
+
+[System.Serializable]
+public struct ImageData
+{
+    public string spritePath; // Store path, not Sprite object directly
+    public Color color;
+    // public string materialPath; // Optional: Could add material support later
+}
+
+[System.Serializable]
+public class UICustomizationData
+{
+    public bool hasRectTransform = false;
+    public RectTransformData rectData;
+    public bool hasImage = false;
+    public ImageData imageData;
+}
+// --- END ADDED ---
+
 public class UISetup : Editor
 {
     private const string UIPrefabSavePath = "Assets/Prefabs/UI";
@@ -58,6 +89,9 @@ public class UISetup : Editor
     {
         const string prefabName = "CardTemplate";
         string fullPrefabPath = Path.Combine(UIPrefabSavePath, prefabName + ".prefab");
+        GameObject cardRoot = null;
+        string resultPath = null;
+        Dictionary<string, UICustomizationData> customizations = null;
         bool replacing = false;
 
         if (!Directory.Exists(UIPrefabSavePath))
@@ -66,25 +100,25 @@ public class UISetup : Editor
             AssetDatabase.Refresh();
         }
 
-        if (AssetDatabase.LoadAssetAtPath<GameObject>(fullPrefabPath) != null)
+        // --- MODIFIED: Extract customizations before deleting ---
+        GameObject existingPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(fullPrefabPath);
+        if (existingPrefab != null)
         {
-            if (AssetDatabase.DeleteAsset(fullPrefabPath))
-            {
-                Debug.Log($"Deleted existing card template prefab at {fullPrefabPath} to replace it.");
-                AssetDatabase.Refresh();
-                replacing = true;
-            }
-            else
+            Debug.Log($"Found existing prefab at {fullPrefabPath}, extracting customizations...");
+            customizations = ExtractCustomizations(existingPrefab);
+            replacing = true;
+            if (!AssetDatabase.DeleteAsset(fullPrefabPath))
             {
                 Debug.LogError($"Failed to delete existing card template prefab at {fullPrefabPath}. Skipping creation.");
                 return null;
             }
+            AssetDatabase.Refresh();
         }
+        // --- END MODIFIED ---
 
-        GameObject cardRoot = new GameObject(prefabName);
-        string resultPath = null;
         try
         {
+            cardRoot = new GameObject(prefabName);
             // --- Build Card Hierarchy --- 
             Image cardImage = cardRoot.AddComponent<Image>();
             cardImage.color = new Color(0.2f, 0.2f, 0.25f);
@@ -138,6 +172,14 @@ public class UISetup : Editor
             SetLayoutElement(cardDescText.gameObject, minHeight: 30); 
             // --- End Card Hierarchy --- 
 
+            // --- MODIFIED: Apply customizations before saving ---
+            if (customizations != null)
+            {
+                Debug.Log("Applying extracted customizations to new Card Template...");
+                ApplyCustomizations(cardRoot, customizations);
+            }
+            // --- END MODIFIED ---
+
             PrefabUtility.SaveAsPrefabAsset(cardRoot, fullPrefabPath);
             resultPath = fullPrefabPath;
             Debug.Log($"Successfully {(replacing ? "replaced" : "created")} Card Template prefab at: {fullPrefabPath}");
@@ -162,6 +204,8 @@ public class UISetup : Editor
         string fullPrefabPath = Path.Combine(UIPrefabSavePath, prefabName + ".prefab");
         GameObject panelRoot = null;
         string resultPath = null;
+        Dictionary<string, UICustomizationData> customizations = null;
+        bool replacing = false;
 
         if (!Directory.Exists(UIPrefabSavePath))
         {
@@ -169,8 +213,21 @@ public class UISetup : Editor
             AssetDatabase.Refresh();
         }
 
-        bool replacing = AssetDatabase.DeleteAsset(fullPrefabPath);
-        if (replacing) Debug.Log($"Deleted existing Deck Viewer Panel prefab at {fullPrefabPath} to replace it.");
+        // --- MODIFIED: Extract customizations before deleting ---
+        GameObject existingPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(fullPrefabPath);
+        if (existingPrefab != null)
+        {
+            Debug.Log($"Found existing prefab at {fullPrefabPath}, extracting customizations...");
+            customizations = ExtractCustomizations(existingPrefab);
+            replacing = true;
+            if (!AssetDatabase.DeleteAsset(fullPrefabPath))
+            {
+                Debug.LogError($"Failed to delete existing Deck Viewer Panel prefab at {fullPrefabPath}. Skipping creation.");
+                return null;
+            }
+             AssetDatabase.Refresh();
+        }
+        // --- END MODIFIED ---
 
         try
         {
@@ -285,6 +342,14 @@ public class UISetup : Editor
             {
                 Debug.LogError("Failed to add DeckViewController component!");
             }
+            
+            // --- MODIFIED: Apply customizations before saving ---
+            if (customizations != null)
+            {
+                Debug.Log("Applying extracted customizations to new Deck Viewer Panel...");
+                ApplyCustomizations(panelRoot, customizations);
+            }
+            // --- END MODIFIED ---
             
             // We need to save the prefab *after* components and references are set
             PrefabUtility.SaveAsPrefabAsset(panelRoot, fullPrefabPath);
@@ -714,16 +779,23 @@ public class UISetup : Editor
         }
 
         string fullPrefabPath = Path.Combine(UIPrefabSavePath, prefabName + ".prefab");
+        GameObject canvasGO = null;
+        string resultPath = null; // Path to return
+        Dictionary<string, UICustomizationData> customizations = null;
         bool replacing = false;
 
-        if (AssetDatabase.LoadAssetAtPath<GameObject>(fullPrefabPath) != null)
+        // --- MODIFIED: Extract customizations before deleting ---
+        GameObject existingPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(fullPrefabPath);
+        if (existingPrefab != null)
         {
-            bool deleted = AssetDatabase.DeleteAsset(fullPrefabPath);
+            Debug.Log($"Found existing prefab at {fullPrefabPath}, extracting customizations...");
+            customizations = ExtractCustomizations(existingPrefab);
+            replacing = true;
+             bool deleted = AssetDatabase.DeleteAsset(fullPrefabPath);
             if (deleted)
             {
                 Debug.Log($"Deleted existing UI prefab at {fullPrefabPath} to replace it.");
                 AssetDatabase.Refresh(); 
-                replacing = true;
             }
             else
             {
@@ -731,11 +803,11 @@ public class UISetup : Editor
                 return null; // Return null on failure
             }
         }
+        // --- END MODIFIED ---
 
-        GameObject canvasGO = new GameObject(prefabName);
-        string resultPath = null; // Path to return
         try
         {
+            canvasGO = new GameObject(prefabName);
             Canvas canvas = canvasGO.AddComponent<Canvas>();
             canvas.renderMode = RenderMode.ScreenSpaceOverlay; 
             canvasGO.AddComponent<CanvasScaler>();
@@ -746,6 +818,14 @@ public class UISetup : Editor
             scaler.matchWidthOrHeight = 0.5f;
             
             populateAction?.Invoke(canvasGO);
+
+             // --- MODIFIED: Apply customizations before saving ---
+            if (customizations != null)
+            {
+                Debug.Log($"Applying extracted customizations to new Canvas prefab '{prefabName}'...");
+                ApplyCustomizations(canvasGO, customizations);
+            }
+            // --- END MODIFIED ---
             
             PrefabUtility.SaveAsPrefabAsset(canvasGO, fullPrefabPath);
             resultPath = fullPrefabPath; // Set path only on successful save
@@ -1083,4 +1163,133 @@ public class UISetup : Editor
 
         return inputField;
     }
+
+    // --- ADDED: Customization Extraction & Application Logic ---
+    
+    private static Dictionary<string, UICustomizationData> ExtractCustomizations(GameObject prefabRoot)
+    {
+        var customizations = new Dictionary<string, UICustomizationData>();
+        if (prefabRoot == null) return customizations;
+        
+        ExtractRecursively(prefabRoot.transform, "", customizations);
+        return customizations;
+    }
+    
+    private static void ExtractRecursively(Transform element, string currentPath, Dictionary<string, UICustomizationData> customizations)
+    {
+        string path = string.IsNullOrEmpty(currentPath) ? element.name : currentPath + "/" + element.name;
+        UICustomizationData data = new UICustomizationData();
+        bool dataAdded = false;
+        
+        RectTransform rect = element.GetComponent<RectTransform>();
+        if (rect != null)
+        {
+            data.hasRectTransform = true;
+            data.rectData = new RectTransformData
+            {
+                anchoredPosition = rect.anchoredPosition,
+                sizeDelta = rect.sizeDelta,
+                anchorMin = rect.anchorMin,
+                anchorMax = rect.anchorMax,
+                pivot = rect.pivot,
+                localScale = rect.localScale,
+                localRotation = rect.localRotation
+            };
+            dataAdded = true;
+        }
+        
+        Image image = element.GetComponent<Image>();
+        if (image != null)
+        {
+            data.hasImage = true;
+            string spritePath = string.Empty;
+            if (image.sprite != null)
+            {
+                spritePath = AssetDatabase.GetAssetPath(image.sprite);
+            }
+            data.imageData = new ImageData
+            {
+                spritePath = spritePath,
+                color = image.color
+                // materialPath = (image.material != null && image.material != image.defaultMaterial) ? AssetDatabase.GetAssetPath(image.material) : string.Empty
+            };
+             dataAdded = true;
+        }
+        
+        // Only store if we actually extracted something relevant
+        if (dataAdded)
+        {
+            customizations[path] = data;
+        }
+        
+        // Recurse for children
+        foreach (Transform child in element)
+        {
+            ExtractRecursively(child, path, customizations);
+        }
+    }
+    
+    private static void ApplyCustomizations(GameObject newPrefabRoot, Dictionary<string, UICustomizationData> customizations)
+    {
+        if (newPrefabRoot == null || customizations == null || customizations.Count == 0) return;
+        ApplyRecursively(newPrefabRoot.transform, "", customizations);
+    }
+    
+    private static void ApplyRecursively(Transform element, string currentPath, Dictionary<string, UICustomizationData> customizations)
+    {
+        string path = string.IsNullOrEmpty(currentPath) ? element.name : currentPath + "/" + element.name;
+        
+        if (customizations.TryGetValue(path, out UICustomizationData data))
+        {
+            // Apply RectTransform data if it exists in the stored data
+            if (data.hasRectTransform)
+            {
+                 RectTransform rect = element.GetComponent<RectTransform>();
+                 if (rect != null)
+                 {
+                    rect.anchoredPosition = data.rectData.anchoredPosition;
+                    rect.sizeDelta = data.rectData.sizeDelta;
+                    rect.anchorMin = data.rectData.anchorMin;
+                    rect.anchorMax = data.rectData.anchorMax;
+                    rect.pivot = data.rectData.pivot;
+                    rect.localScale = data.rectData.localScale;
+                    rect.localRotation = data.rectData.localRotation;
+                 }
+            }
+            
+            // Apply Image data if it exists in the stored data
+            if (data.hasImage)
+            {
+                Image image = element.GetComponent<Image>();
+                if (image != null)
+                {
+                    image.color = data.imageData.color;
+                    if (!string.IsNullOrEmpty(data.imageData.spritePath))
+                    {
+                        Sprite loadedSprite = AssetDatabase.LoadAssetAtPath<Sprite>(data.imageData.spritePath);
+                        if (loadedSprite != null)
+                        {
+                            image.sprite = loadedSprite;
+                        }
+                        else
+                        {
+                            Debug.LogWarning($"ApplyCustomizations: Could not reload sprite at path '{data.imageData.spritePath}' for element '{path}'. Sprite might have been moved or deleted.");
+                        }
+                    }
+                    else
+                    {
+                         image.sprite = null; // Ensure sprite is cleared if no path was stored
+                    }
+                    // Apply material later if needed
+                }
+            }
+        }
+        
+        // Recurse for children
+        foreach (Transform child in element)
+        {
+            ApplyRecursively(child, path, customizations);
+        }
+    }
+    // --- END ADDED ---
 } 
