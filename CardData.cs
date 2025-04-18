@@ -9,7 +9,8 @@ public class CardData : ScriptableObject
     
     [Header("Gameplay Effects")]
     public int damage = 0; // Amount of damage this card deals (0 if none)
-    // public int block = 0; // Example for later
+    public int block = 0; // Amount of block this card provides (0 if none)
+    public int energyGain = 0; // Amount of energy this card provides (0 if none)
     // Add other effects like buffs, debuffs, draw, etc.
 
     [Header("Upgrade Info")]

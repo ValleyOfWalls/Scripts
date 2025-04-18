@@ -18,14 +18,17 @@ public class CombatManager
     private TextMeshProUGUI playerNameText;
     private Slider playerHealthSlider;
     private TextMeshProUGUI playerHealthText;
+    private TextMeshProUGUI playerBlockText;
     private TextMeshProUGUI energyText;
     private TextMeshProUGUI opponentPetNameText;
     private Slider opponentPetHealthSlider;
     private TextMeshProUGUI opponentPetHealthText;
+    private TextMeshProUGUI opponentPetBlockText;
     private TextMeshProUGUI opponentPetIntentText;
     private TextMeshProUGUI ownPetNameText;
     private Slider ownPetHealthSlider;
     private TextMeshProUGUI ownPetHealthText;
+    private TextMeshProUGUI ownPetBlockText;
     private GameObject playerHandPanel;
     private TextMeshProUGUI deckCountText;
     private TextMeshProUGUI discardCountText;
@@ -64,6 +67,7 @@ public class CombatManager
         opponentPetNameText = opponentArea?.Find("OpponentPetNameText")?.GetComponent<TextMeshProUGUI>();
         opponentPetHealthSlider = opponentArea?.Find("OpponentPetHealthSlider")?.GetComponent<Slider>();
         opponentPetHealthText = opponentArea?.Find("OpponentPetHealthText")?.GetComponent<TextMeshProUGUI>();
+        opponentPetBlockText = opponentArea?.Find("OpponentPetBlockText")?.GetComponent<TextMeshProUGUI>();
         opponentPetIntentText = opponentArea?.Find("OpponentPetIntentText")?.GetComponent<TextMeshProUGUI>();
         
         // Find own pet area
@@ -72,12 +76,14 @@ public class CombatManager
         ownPetNameText = ownPetArea?.Find("OwnPetNameText")?.GetComponent<TextMeshProUGUI>();
         ownPetHealthSlider = ownPetArea?.Find("OwnPetHealthSlider")?.GetComponent<Slider>();
         ownPetHealthText = ownPetArea?.Find("OwnPetHealthText")?.GetComponent<TextMeshProUGUI>();
+        ownPetBlockText = ownPetArea?.Find("OwnPetBlockText")?.GetComponent<TextMeshProUGUI>();
 
         // Find elements within PlayerArea
         Transform statsRow = playerArea.Find("StatsRow");
         playerNameText = statsRow?.Find("PlayerNameText")?.GetComponent<TextMeshProUGUI>();
         playerHealthSlider = statsRow?.Find("PlayerHealthSlider")?.GetComponent<Slider>();
         playerHealthText = statsRow?.Find("PlayerHealthText")?.GetComponent<TextMeshProUGUI>();
+        playerBlockText = statsRow?.Find("PlayerBlockText")?.GetComponent<TextMeshProUGUI>();
         energyText = statsRow?.Find("EnergyText")?.GetComponent<TextMeshProUGUI>();
         
         Transform handPanelTransform = playerArea.Find("PlayerHandPanel");
@@ -156,6 +162,7 @@ public class CombatManager
     public void StartTurn()
     {
         Debug.Log("Starting Player Turn");
+        gameManager.GetPlayerManager().ResetAllBlock();
         gameManager.GetPlayerManager().SetCurrentEnergy(startingEnergy);
         UpdateEnergyUI();
 
@@ -194,17 +201,20 @@ public class CombatManager
     {
         PlayerManager playerManager = gameManager.GetPlayerManager();
         
-        // Player Health
+        // Player Health & Block
         if (playerHealthSlider) playerHealthSlider.value = (float)playerManager.GetLocalPlayerHealth() / startingPlayerHealth;
         if (playerHealthText) playerHealthText.text = $"{playerManager.GetLocalPlayerHealth()} / {startingPlayerHealth}";
+        if (playerBlockText) playerBlockText.text = $"Block: {playerManager.GetLocalPlayerBlock()}";
 
-        // Own Pet Health
+        // Own Pet Health & Block
         if (ownPetHealthSlider) ownPetHealthSlider.value = (float)playerManager.GetLocalPetHealth() / startingPetHealth;
         if (ownPetHealthText) ownPetHealthText.text = $"{playerManager.GetLocalPetHealth()} / {startingPetHealth}";
+        if (ownPetBlockText) ownPetBlockText.text = $"Block: {playerManager.GetLocalPetBlock()}";
 
-        // Opponent Pet Health
+        // Opponent Pet Health & Block
         if (opponentPetHealthSlider) opponentPetHealthSlider.value = (float)playerManager.GetOpponentPetHealth() / startingPetHealth;
         if (opponentPetHealthText) opponentPetHealthText.text = $"{playerManager.GetOpponentPetHealth()} / {startingPetHealth}";
+        if (opponentPetBlockText) opponentPetBlockText.text = $"Block: {playerManager.GetOpponentPetBlock()}";
     }
 
     public void UpdateHandUI()

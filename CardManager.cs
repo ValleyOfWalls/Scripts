@@ -279,10 +279,28 @@ public class CardManager
                 if (cardToPlay.damage > 0)
                 {
                     gameManager.GetPlayerManager().DamageLocalPlayer(cardToPlay.damage);
-                    Debug.Log($"Opponent Pet dealt {cardToPlay.damage} damage to Local Player. New health: {gameManager.GetPlayerManager().GetLocalPlayerHealth()}");
+                    Debug.Log($"Opponent Pet dealt {cardToPlay.damage} damage to Local Player. New health: {gameManager.GetPlayerManager().GetLocalPlayerHealth()}, Block: {gameManager.GetPlayerManager().GetLocalPlayerBlock()}");
                     // Player defeat check is handled in DamageLocalPlayer
                 }
-                // TODO: Add other pet card effects (block self, apply buffs/debuffs)
+                
+                // --- ADDED: Apply Opponent Pet Block --- 
+                if (cardToPlay.block > 0)
+                {
+                    // Apply block to the opponent's pet (from the local player's perspective)
+                    gameManager.GetPlayerManager().AddBlockToOpponentPet(cardToPlay.block);
+                    Debug.Log($"Opponent Pet gained {cardToPlay.block} block. New block (local sim): {gameManager.GetPlayerManager().GetOpponentPetBlock()}");
+                }
+                // --- END ADDED ---
+                
+                // --- ADDED: Apply Opponent Pet Energy Gain --- 
+                if (cardToPlay.energyGain > 0)
+                {
+                    // Note: This currently only affects the opponent's simulated energy for THIS turn's card playing.
+                    // If energy carries over, more complex tracking might be needed.
+                    opponentPetEnergy += cardToPlay.energyGain;
+                    Debug.Log($"Opponent Pet gained {cardToPlay.energyGain} energy. New energy: {opponentPetEnergy}");
+                }
+                // --- END ADDED ---
                 
                 // Move card from hand to discard
                 opponentPetHand.RemoveAt(cardIndex);
@@ -332,15 +350,42 @@ public class CardManager
             Debug.Log($"Played card '{cardData.cardName}'. Energy remaining: {gameManager.GetPlayerManager().GetCurrentEnergy()}");
             
             // Apply card effects based on cardData and targetType
-            if (targetType == CardDropZone.TargetType.EnemyPet && cardData.damage > 0)
+            // --- REVISED: Apply effects based on target --- 
+            switch (targetType)
             {
-                int damageDealt = cardData.damage;
-                gameManager.GetPlayerManager().DamageOpponentPet(damageDealt);
-                Debug.Log($"Dealt {damageDealt} damage to Opponent Pet. New health: {gameManager.GetPlayerManager().GetOpponentPetHealth()}");
-                
-                // Combat win check is handled in DamageOpponentPet
+                case CardDropZone.TargetType.EnemyPet:
+                    if (cardData.damage > 0)
+                    {
+                        int damageDealt = cardData.damage;
+                        gameManager.GetPlayerManager().DamageOpponentPet(damageDealt);
+                        Debug.Log($"Dealt {damageDealt} damage to Opponent Pet. New health: {gameManager.GetPlayerManager().GetOpponentPetHealth()}, Est. Block: {gameManager.GetPlayerManager().GetOpponentPetBlock()}");
+                        // Combat win check is handled in DamageOpponentPet
+                    }
+                    break;
+                    
+                case CardDropZone.TargetType.PlayerSelf:
+                    if (cardData.block > 0)
+                    {
+                        gameManager.GetPlayerManager().AddBlockToLocalPlayer(cardData.block);
+                    }
+                    break;
+                    
+                case CardDropZone.TargetType.OwnPet:
+                    if (cardData.block > 0)
+                    {
+                        gameManager.GetPlayerManager().AddBlockToLocalPet(cardData.block);
+                    }
+                    break;
+                    
+                // Add more cases if needed (e.g., TargetType.Self for non-combat effects)
             }
-            // TODO: Add other card effects
+            
+            // --- ADDED: Apply energy gain (target independent) --- 
+            if (cardData.energyGain > 0)
+            {
+                gameManager.GetPlayerManager().GainEnergy(cardData.energyGain);
+            }
+            // --- END ADDED ---
             
             Debug.Log($"Successfully processed effects for card '{cardData.cardName}' on target '{targetType}'. Moved to discard.");
             return true; // Indicate success

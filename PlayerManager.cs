@@ -17,6 +17,9 @@ public class PlayerManager
     private int opponentPetHealth;
     private int currentEnergy;
     private int startingEnergy;
+    private int localPlayerBlock = 0;
+    private int localPetBlock = 0;
+    private int opponentPetBlock = 0; // Note: This is only tracked locally for display/intent
     private Player opponentPlayer;
     private bool combatEndedForLocalPlayer = false;
     
@@ -163,6 +166,11 @@ public class PlayerManager
         localPlayerHealth = startingPlayerHealth;
         localPetHealth = startingPetHealth; // Reset local pet health too
         
+        // Reset Block
+        localPlayerBlock = 0;
+        localPetBlock = 0;
+        opponentPetBlock = 0; 
+        
         currentEnergy = startingEnergy;
         
         // *** Pass opponent pet deck info to CardManager ***
@@ -172,10 +180,22 @@ public class PlayerManager
     
     public void DamageLocalPlayer(int amount)
     {
-        localPlayerHealth -= amount;
-        if (localPlayerHealth < 0) localPlayerHealth = 0;
+        if (amount <= 0) return; // Can't deal negative damage
         
-        gameManager.UpdateHealthUI();
+        int damageAfterBlock = amount - localPlayerBlock;
+        int blockConsumed = Mathf.Min(amount, localPlayerBlock);
+        localPlayerBlock -= blockConsumed;
+        if (localPlayerBlock < 0) localPlayerBlock = 0;
+        
+        Debug.Log($"DamageLocalPlayer: Incoming={amount}, Block={blockConsumed}, RemainingDamage={damageAfterBlock}");
+        
+        if (damageAfterBlock > 0)
+        {
+            localPlayerHealth -= damageAfterBlock;
+            if (localPlayerHealth < 0) localPlayerHealth = 0;
+        }
+        
+        gameManager.UpdateHealthUI(); // Update both health and block display
         
         if (localPlayerHealth <= 0 && !combatEndedForLocalPlayer)
         {
@@ -185,12 +205,27 @@ public class PlayerManager
     
     public void DamageOpponentPet(int amount)
     {
-        opponentPetHealth -= amount;
-        if (opponentPetHealth < 0) opponentPetHealth = 0;
+        if (amount <= 0) return;
         
-        gameManager.UpdateHealthUI();
+        // Note: Opponent block isn't *truly* tracked here, just for local calc/display.
+        // Real block calculation happens on the opponent's client.
+        // However, we reduce our local representation of their block for prediction.
+        int damageAfterBlock = amount - opponentPetBlock;
+        int blockConsumed = Mathf.Min(amount, opponentPetBlock);
+        opponentPetBlock -= blockConsumed;
+        if (opponentPetBlock < 0) opponentPetBlock = 0;
         
-        // Notify the opponent that their pet took damage
+        Debug.Log($"DamageOpponentPet: Incoming={amount}, Est. Block={blockConsumed}, RemainingDamage={damageAfterBlock}");
+        
+        if (damageAfterBlock > 0)
+        {
+            opponentPetHealth -= damageAfterBlock;
+            if (opponentPetHealth < 0) opponentPetHealth = 0;
+        }
+        
+        gameManager.UpdateHealthUI(); // Update both health and block display
+        
+        // Notify the opponent that their pet took damage (send ORIGINAL amount, they calculate block)
         if (opponentPlayer != null)
         {
             Debug.Log($"Sending RpcTakePetDamage({amount}) to {opponentPlayer.NickName}");
@@ -205,10 +240,22 @@ public class PlayerManager
     
     public void DamageLocalPet(int amount)
     {
-        localPetHealth -= amount;
-        if (localPetHealth < 0) localPetHealth = 0;
+        if (amount <= 0) return;
         
-        gameManager.UpdateHealthUI();
+        int damageAfterBlock = amount - localPetBlock;
+        int blockConsumed = Mathf.Min(amount, localPetBlock);
+        localPetBlock -= blockConsumed;
+        if (localPetBlock < 0) localPetBlock = 0;
+        
+        Debug.Log($"DamageLocalPet: Incoming={amount}, Block={blockConsumed}, RemainingDamage={damageAfterBlock}");
+        
+        if (damageAfterBlock > 0)
+        {
+            localPetHealth -= damageAfterBlock;
+            if (localPetHealth < 0) localPetHealth = 0;
+        }
+        
+        gameManager.UpdateHealthUI(); // Update both health and block display
     }
     
     private void HandleCombatWin()
@@ -483,4 +530,82 @@ public class PlayerManager
         if (currentEnergy < 0) currentEnergy = 0;
         gameManager.UpdateEnergyUI();
     }
+    
+    // --- ADDED: Block Management ---
+    public void AddBlockToLocalPlayer(int amount)
+    {
+        if (amount <= 0) return;
+        localPlayerBlock += amount;
+        Debug.Log($"Added {amount} block to Local Player. New total: {localPlayerBlock}");
+        gameManager.UpdateHealthUI(); // Update block display
+    }
+
+    public void AddBlockToLocalPet(int amount)
+    {
+        if (amount <= 0) return;
+        localPetBlock += amount;
+        Debug.Log($"Added {amount} block to Local Pet. New total: {localPetBlock}");
+        gameManager.UpdateHealthUI(); // Update block display
+    }
+    
+    // Note: Opponent block is generally managed on their client.
+    // This might be used if an effect *predicts* opponent block gain or for AI.
+    public void AddBlockToOpponentPet(int amount)
+    {
+        if (amount <= 0) return;
+        opponentPetBlock += amount;
+        Debug.Log($"Added {amount} block to Opponent Pet (local sim). New total: {opponentPetBlock}");
+        gameManager.UpdateHealthUI(); // Update block display
+    }
+
+    public void ResetAllBlock()
+    {
+        Debug.Log($"Resetting block. Player: {localPlayerBlock} -> 0, Pet: {localPetBlock} -> 0, OpponentPet: {opponentPetBlock} -> 0");
+        localPlayerBlock = 0;
+        localPetBlock = 0;
+        opponentPetBlock = 0; 
+        gameManager.UpdateHealthUI(); // Update block display
+    }
+    // --- END ADDED ---
+    
+    // RPC received when our pet takes damage
+    [PunRPC]
+    private void RpcTakePetDamage(int damageAmount)
+    {
+        if (damageAmount <= 0) return;
+
+        Debug.Log($"RPC Received: My Pet taking {damageAmount} damage. Current Block: {localPetBlock}");
+        DamageLocalPet(damageAmount); // DamageLocalPet now correctly handles block
+    }
+    
+    // --- ADDED: Block Getters ---
+    public int GetLocalPlayerBlock()
+    {
+        return localPlayerBlock;
+    }
+    // --- END ADDED ---
+
+    public int GetLocalPetBlock()
+    {
+        return localPetBlock;
+    }
+    
+    // --- ADDED: Block Getters ---
+    public int GetOpponentPetBlock()
+    {
+        return opponentPetBlock; // Returns the locally tracked value
+    }
+    // --- END ADDED ---
+
+    // --- ADDED: Energy Gain ---
+    public void GainEnergy(int amount)
+    {
+        if (amount <= 0) return;
+        currentEnergy += amount;
+        // Optional: Add a max energy cap if desired
+        // if (currentEnergy > maxEnergy) currentEnergy = maxEnergy; 
+        Debug.Log($"Gained {amount} energy. New total: {currentEnergy}");
+        gameManager.UpdateEnergyUI(); // Call the UI update
+    }
+    // --- END ADDED ---
 }
