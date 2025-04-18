@@ -28,6 +28,9 @@ public class PlayerManager
     public const string PET_REFLECT_PERC_PROP = "petRefP"; // Pet Reflection Percentage
     public const string PET_REFLECT_TURNS_PROP = "petRefT"; // Pet Reflection Turns
     
+    // --- MODIFIED: Tracking for Opponent PET Last Card ---
+    private string lastCardPlayedByOpponentPetId = null;
+    
     public PlayerManager(GameManager gameManager)
     {
         this.gameManager = gameManager;
@@ -253,4 +256,17 @@ public class PlayerManager
     public int GetScalingAttackBonus(string identifier, int baseIncrease) => statusEffectManager.GetScalingAttackBonus(identifier, baseIncrease);
     
     #endregion
+
+    // --- MODIFIED: Methods for Opponent PET Last Card ---
+    public void SetLastCardPlayedByOpponentPet(string cardId)
+    {
+        lastCardPlayedByOpponentPetId = cardId;
+        Debug.Log($"Tracking opponent PET last played card ID: {cardId ?? "null"}");
+    }
+
+    public string GetLastCardPlayedByOpponentPetId()
+    {
+        return lastCardPlayedByOpponentPetId;
+    }
+    // --- END MODIFIED ---
 }

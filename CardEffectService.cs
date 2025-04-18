@@ -1,5 +1,6 @@
 using UnityEngine;
 using System.Collections.Generic;
+using System.Linq; // Added for LINQ operations like Where, OrderBy
 
 public class CardEffectService
 {
@@ -134,6 +135,20 @@ public class CardEffectService
         {
             gameManager.GetCardManager().GetCardModificationService().ApplyTemporaryHandUpgrade(cardData.upgradeHandCardCount, cardData.upgradeHandCardDuration, cardData.upgradeHandCardTargetRule);
         }
+
+        // --- ADDED: Handle Transform Effect ---
+        if (cardData.isTransformCard && cardData.transformTargetCount > 0)
+        {
+            ApplyTransformEffect(cardData);
+        }
+        // --- END ADDED ---
+
+        // --- ADDED: Handle Copy Effect ---
+        if (cardData.isCopyCard)
+        {
+            ApplyCopyEffect(cardData);
+        }
+        // --- END ADDED ---
 
         // --- SCALING ATTACK: Increment Counter AFTER effect resolves ---
         if (cardData.isScalingAttack && cardData.damage > 0 && !string.IsNullOrEmpty(cardData.scalingIdentifier))
@@ -327,4 +342,126 @@ public class CardEffectService
         gameManager.UpdateHealthUI(); // Update UI if health/block changed
         gameManager.UpdateEnergyUI(); // Update UI if energy changed
     }
+
+    // --- ADDED: Helper Method for Transform Effect ---
+    private void ApplyTransformEffect(CardData effectCardData)
+    {
+        CardManager cardManager = gameManager.GetCardManager();
+        DeckManager deckManager = cardManager.GetDeckManager();
+        List<CardData> currentHand = new List<CardData>(deckManager.GetHand()); // Copy hand to avoid modification issues during iteration
+        List<CardData> transformPool = cardManager.GetAllPlayerCardPool(); // Assuming player cards transform into player cards
+
+        if (currentHand.Count == 0)
+        {
+            Debug.LogWarning("Transform effect: Hand is empty.");
+            return;
+        }
+
+        List<CardData> potentialTargets = new List<CardData>(currentHand);
+        List<CardData> cardsToTransform = new List<CardData>();
+
+        // Select target cards based on rule
+        int count = Mathf.Min(effectCardData.transformTargetCount, potentialTargets.Count);
+        switch (effectCardData.transformTargetRule)
+        {
+            case UpgradeTargetRule.Cheapest:
+                cardsToTransform = potentialTargets.OrderBy(c => c.cost).Take(count).ToList();
+                break;
+            case UpgradeTargetRule.MostExpensive:
+                cardsToTransform = potentialTargets.OrderByDescending(c => c.cost).Take(count).ToList();
+                break;
+            case UpgradeTargetRule.Random:
+            default:
+                System.Random rng = new System.Random();
+                for (int i = 0; i < count; i++)
+                {
+                    if (potentialTargets.Count == 0) break;
+                    int index = rng.Next(potentialTargets.Count);
+                    cardsToTransform.Add(potentialTargets[index]);
+                    potentialTargets.RemoveAt(index);
+                }
+                break;
+        }
+
+        Debug.Log($"Transforming {cardsToTransform.Count} cards in hand.");
+
+        foreach (CardData cardToTransform in cardsToTransform)
+        {
+            // Determine target rarity
+            CardRarity currentRarity = cardToTransform.rarity;
+            int targetRarityLevel = (int)currentRarity + effectCardData.transformRarityIncrease;
+            CardRarity targetRarity = (CardRarity)Mathf.Clamp(targetRarityLevel, (int)CardRarity.Common, (int)CardRarity.Legendary);
+
+            // Find potential replacements
+            List<CardData> possibleReplacements = transformPool
+                .Where(c => c != null && c.rarity == targetRarity && c != cardToTransform && c != effectCardData) // Exclude self and the card causing the transform
+                .ToList();
+
+            if (possibleReplacements.Count > 0)
+            {
+                // Select a random replacement
+                System.Random rng = new System.Random();
+                CardData replacementCard = possibleReplacements[rng.Next(possibleReplacements.Count)];
+
+                // Perform the transformation in the deck manager
+                bool transformed = deckManager.TransformCardInHand(cardToTransform, replacementCard);
+                if (!transformed)
+                {
+                     Debug.LogError($"Transform effect failed for {cardToTransform.name} - card not found in hand by DeckManager?");
+                }
+            }
+            else
+            {
+                Debug.LogWarning($"Transform effect: Could not find any card of rarity {targetRarity} in the player pool to transform {cardToTransform.name} into.");
+                // Optionally, do nothing, or maybe upgrade the existing card?
+            }
+        }
+
+        // Update UI after all transformations are processed
+        gameManager.UpdateHandUI();
+    }
+    // --- END ADDED ---
+
+    // --- ADDED: Helper Method for Copy Effect ---
+    private void ApplyCopyEffect(CardData effectCardData)
+    {
+        PlayerManager playerManager = gameManager.GetPlayerManager();
+        CardManager cardManager = gameManager.GetCardManager();
+        DeckManager deckManager = cardManager.GetDeckManager();
+
+        // Use the new method to get the last card played by the PET
+        string lastOpponentCardId = playerManager.GetLastCardPlayedByOpponentPetId(); 
+        if (string.IsNullOrEmpty(lastOpponentCardId))
+        {
+            Debug.LogWarning("Copy effect: Opponent PET has not played a card yet this combat.");
+            return;
+        }
+
+        CardData cardToCopy = cardManager.FindCardDataByIdentifier(lastOpponentCardId);
+        if (cardToCopy == null)
+        {
+            Debug.LogError($"Copy effect: Could not find CardData for opponent PET's last played card identifier '{lastOpponentCardId}'.");
+            return;
+        }
+
+        // We have the CardData ScriptableObject reference. Since it's an asset, we don't need to instantiate it
+        // unless cards gain temporary state (like +damage this combat) that needs copying.
+        // For now, assume we can just add the reference.
+        CardData copiedCard = cardToCopy;
+
+        Debug.Log($"Copy effect: Copying opponent PET's last card '{copiedCard.name}'.");
+
+        switch (effectCardData.copyDestination)
+        {
+            case CopyDestination.Hand:
+                deckManager.AddCardToHand(copiedCard);
+                gameManager.UpdateHandUI();
+                break;
+            case CopyDestination.DiscardPile:
+                deckManager.AddCardToDiscard(copiedCard);
+                gameManager.UpdateDeckCountUI(); // Update discard count display
+                break;
+        }
+    }
+    // --- END ADDED ---
 }

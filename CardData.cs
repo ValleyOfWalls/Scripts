@@ -43,12 +43,33 @@ public enum UpgradeTargetRule
 }
 // --- END ADDED ---
 
+// --- ADDED: Rarity Enum ---
+public enum CardRarity
+{
+    Common,
+    Uncommon,
+    Rare,
+    Legendary 
+}
+// --- END ADDED ---
+
+// --- ADDED: Enum for Copy Destination ---
+public enum CopyDestination
+{
+    Hand,
+    DiscardPile
+}
+// --- END ADDED ---
+
 [CreateAssetMenu(fileName = "New Card", menuName = "Cards/Card Data")]
 public class CardData : ScriptableObject
 {
     public string cardName = "New Card";
     public int cost = 1;
     public string description = "Card Effect Description";
+    // --- ADDED: Rarity Field ---
+    public CardRarity rarity = CardRarity.Common;
+    // --- END ADDED ---
     
     [Header("Gameplay Effects")]
     public int damage = 0; // Amount of damage this card deals (0 if none)
@@ -108,6 +129,20 @@ public class CardData : ScriptableObject
     public bool isScalingAttack = false; // Does this attack scale with uses?
     public int scalingDamageIncrease = 0; // Damage increase per use this combat
     public string scalingIdentifier = ""; // Unique ID for this scaling card type
+
+    // --- ADDED: Transform Properties ---
+    [Header("Transform Effect")]
+    public bool isTransformCard = false; // Does this card transform another card?
+    public int transformTargetCount = 1; // How many cards in hand to transform
+    public UpgradeTargetRule transformTargetRule = UpgradeTargetRule.Random; // Which card(s) to target
+    public int transformRarityIncrease = 1; // How many steps higher in rarity (e.g., 1 = Common->Uncommon)
+    // --- END ADDED ---
+
+    // --- ADDED: Copy Properties ---
+    [Header("Copy Effect")]
+    public bool isCopyCard = false; // Does this card copy the opponent's last played card?
+    public CopyDestination copyDestination = CopyDestination.Hand; // Where does the copied card go?
+    // --- END ADDED ---
 
     // Add more properties later (e.g., damage, block, effects)
 } 

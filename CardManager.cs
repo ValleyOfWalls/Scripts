@@ -17,6 +17,10 @@ public class CardManager
     private List<CardData> allPetCardPool = new List<CardData>();
     private int cardsToDraw = 5;
     
+    // --- ADDED: Card Lookup --- 
+    private Dictionary<string, CardData> cardLookup = new Dictionary<string, CardData>();
+    // --- END ADDED ---
+
     // Manager instances
     private DeckManager deckManager;
     private PetDeckManager petDeckManager;
@@ -37,8 +41,8 @@ public class CardManager
         this.gameManager = gameManager;
         this.starterDeck = new List<CardData>(starterDeck);
         this.starterPetDeck = new List<CardData>(starterPetDeck);
-        this.allPlayerCardPool = new List<CardData>(allPlayerCardPool);
-        this.allPetCardPool = new List<CardData>(allPetCardPool);
+        this.allPlayerCardPool = new List<CardData>(allPlayerCardPool ?? new List<CardData>()); // Add null check
+        this.allPetCardPool = new List<CardData>(allPetCardPool ?? new List<CardData>()); // Add null check
         this.cardsToDraw = cardsToDraw;
         
         // Initialize sub-managers
@@ -47,7 +51,40 @@ public class CardManager
         this.cardEffectService = new CardEffectService(gameManager);
         this.cardModificationService = new CardModificationService(gameManager);
         this.draftService = new DraftService(gameManager, allPlayerCardPool, allPetCardPool);
+
+        // --- ADDED: Populate Card Lookup ---
+        BuildCardLookup();
+        // --- END ADDED ---
     }
+
+    // --- ADDED: Method to build lookup dictionary ---
+    private void BuildCardLookup()
+    {
+        cardLookup.Clear();
+        PopulateLookupFromList(starterDeck);
+        PopulateLookupFromList(starterPetDeck);
+        PopulateLookupFromList(allPlayerCardPool);
+        PopulateLookupFromList(allPetCardPool);
+        Debug.Log($"Built card lookup dictionary with {cardLookup.Count} entries.");
+    }
+
+    private void PopulateLookupFromList(List<CardData> cardList)
+    {
+        if (cardList == null) return;
+        foreach (CardData card in cardList)
+        {
+            if (card != null && !string.IsNullOrEmpty(card.name) && !cardLookup.ContainsKey(card.name))
+            {
+                cardLookup.Add(card.name, card);
+                // Also consider adding lookup for upgraded versions if their names differ
+                if (card.upgradedVersion != null && card.upgradedVersion.name != card.name && !cardLookup.ContainsKey(card.upgradedVersion.name))
+                {
+                    cardLookup.Add(card.upgradedVersion.name, card.upgradedVersion);
+                }
+            }
+        }
+    }
+    // --- END ADDED ---
     
     public void InitializeAndSyncLocalPetDeck()
     {
@@ -213,6 +250,10 @@ public class CardManager
     public List<CardData> GetAllOwnedPlayerCards() => deckManager.GetAllOwnedPlayerCards();
     public List<CardData> GetAllOwnedPetCards() => petDeckManager.GetAllOwnedPetCards();
     
+    // --- ADDED: Getter for all player cards (including pool) ---
+    public List<CardData> GetAllPlayerCardPool() => new List<CardData>(allPlayerCardPool);
+    // --- END ADDED ---
+    
     // Draft state access
     public bool IsWaitingForLocalPick() => draftService.IsWaitingForLocalPick();
     public void SetWaitingForLocalPick(bool value) => draftService.SetWaitingForLocalPick(value);
@@ -221,6 +262,30 @@ public class CardManager
     
     // Card modification checks
     public bool IsCardTemporarilyUpgraded(CardData card) => cardModificationService.IsCardTemporarilyUpgraded(card);
+    
+    // --- ADDED: Card Lookup Method ---
+    public CardData FindCardDataByIdentifier(string identifier)
+    {
+        if (string.IsNullOrEmpty(identifier))
+        {
+            Debug.LogWarning("FindCardDataByIdentifier called with null or empty identifier.");
+            return null;
+        }
+
+        if (cardLookup.TryGetValue(identifier, out CardData card))
+        {
+            return card;
+        }
+        else
+        {
+            Debug.LogWarning($"CardData with identifier '{identifier}' not found in lookup.");
+            // Optional: Fallback search in pools if lookup failed (e.g., after adding new cards dynamically?)
+            // card = allPlayerCardPool.FirstOrDefault(c => c != null && c.name == identifier) ?? 
+            //        allPetCardPool.FirstOrDefault(c => c != null && c.name == identifier);
+            return null;
+        }
+    }
+    // --- END ADDED ---
     
     // Manager accessors
     public DeckManager GetDeckManager() => deckManager;

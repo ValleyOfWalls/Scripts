@@ -342,6 +342,30 @@ public class GameManager : MonoBehaviourPunCallbacks
     }
     // --- END ADDED ---
 
+    // --- ADDED: RPC for Opponent Pet Card Effect ---
+    [PunRPC]
+    private void RpcApplyOpponentPetCardEffect(string cardIdentifier, string cardIdentifierForTracking)
+    {
+        Debug.Log($"RPC Received: Opponent Pet applying effect of card '{cardIdentifier}'. Tracking ID: '{cardIdentifierForTracking}'");
+        
+        // Find the card data
+        CardData cardData = cardManager?.FindCardDataByIdentifier(cardIdentifier);
+        if (cardData == null)
+        {
+            Debug.LogError($"RpcApplyOpponentPetCardEffect: Could not find CardData for identifier '{cardIdentifier}'. Cannot apply effect.");
+            return;
+        }
+
+        // Track the card identifier (even if effect fails)
+        playerManager?.SetLastCardPlayedByOpponentPet(cardIdentifierForTracking);
+
+        // Process the effect
+        cardManager?.ProcessOpponentPetCardEffect(cardData);
+        
+        // Note: ProcessOpponentPetCardEffect should ideally trigger necessary UI updates.
+    }
+    // --- END ADDED ---
+
     public PhotonView GetPhotonView()
     {
         return photonViewComponent;

@@ -141,6 +141,46 @@ public class DeckManager
         }
     }
     
+    // --- ADDED: Method to transform a card in hand ---
+    public bool TransformCardInHand(CardData oldCard, CardData newCard)
+    {
+        int index = hand.IndexOf(oldCard);
+        if (index != -1)
+        {
+            hand[index] = newCard;
+            Debug.Log($"Transformed card '{oldCard?.name ?? "NULL"}' into '{newCard?.name ?? "NULL"}' in hand.");
+            return true;
+        }
+        else
+        {
+            Debug.LogWarning($"TransformCardInHand: Could not find card '{oldCard?.name ?? "NULL"}' in hand.");
+            return false;
+        }
+    }
+    // --- END ADDED ---
+
+    // --- ADDED: Add card directly to hand ---
+    public void AddCardToHand(CardData card)
+    {
+        if (card != null)
+        {
+            hand.Add(card);
+            Debug.Log($"Added card '{card.name}' directly to hand.");
+        }
+    }
+    // --- END ADDED ---
+
+    // --- ADDED: Add card directly to discard pile ---
+    public void AddCardToDiscard(CardData card)
+    {
+        if (card != null)
+        {
+            discardPile.Add(card);
+            Debug.Log($"Added card '{card.name}' directly to discard pile.");
+        }
+    }
+    // --- END ADDED ---
+
     // Getters
     public List<CardData> GetDeck() => deck;
     public List<CardData> GetHand() => hand;

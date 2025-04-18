@@ -162,7 +162,8 @@ public class PhotonManager : MonoBehaviourPunCallbacks
             // We only care about updates from our current opponent
             if (targetPlayer == opponentPlayer && opponentPlayer != null)
             {
-                // Check if either percentage or turns changed for the PET
+                bool reflectionNeedsUpdate = false;
+                // Check if either percentage or turns changed for the PET reflection
                 if (changedProps.ContainsKey(PlayerManager.PET_REFLECT_PERC_PROP) || 
                     changedProps.ContainsKey(PlayerManager.PET_REFLECT_TURNS_PROP))
                 {
@@ -178,10 +179,23 @@ public class PhotonManager : MonoBehaviourPunCallbacks
 
                     // Update the StatusEffectManager with the potentially new state
                     playerManager.GetStatusEffectManager().UpdateOpponentPetReflectionStatus(newPerc, newTurns);
-                    uiNeedsUpdate = true;
+                    reflectionNeedsUpdate = true;
                 }
+
+                // --- REMOVED: Handle Opponent Last Card Played Update (handled via RPC now) ---
+                /*
+                if (changedProps.ContainsKey(PlayerManager.LAST_CARD_PLAYED_PROP))
+                {
+                    string cardId = changedProps[PlayerManager.LAST_CARD_PLAYED_PROP] as string;
+                    playerManager.SetLastCardPlayedByOpponentPet(cardId); // Use the renamed method
+                    Debug.Log($"Opponent {targetPlayer.NickName} updated LAST_CARD_PLAYED_PROP to {cardId ?? "null"}.");
+                }
+                */
+                // --- END REMOVED ---
+
+                if (reflectionNeedsUpdate) uiNeedsUpdate = true;
             }
-            // --- END ADDED ---
+            // --- END Opponent Specific Updates ---
         }
         
         // Score Update (can happen anytime after combat starts)

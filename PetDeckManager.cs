@@ -2,6 +2,7 @@ using UnityEngine;
 using System.Collections.Generic;
 using System.Linq;
 using Newtonsoft.Json;
+using Photon.Realtime;
 using Photon.Pun;
 using ExitGames.Client.Photon;
 
@@ -171,140 +172,206 @@ public class PetDeckManager
     }
     
     public void ReshuffleOpponentPetDiscardPile()
-{
-    Debug.Log("Reshuffling Opponent Pet discard pile into deck.");
-    opponentPetDeck.AddRange(opponentPetDiscard);
-    opponentPetDiscard.Clear();
-    ShuffleOpponentPetDeck();
-}
-
-public void ExecuteOpponentPetTurn(int startingEnergy)
-{
-    Debug.Log("---> Starting Opponent Pet Turn <---");
-    opponentPetEnergy = startingEnergy;
-    
-    // Process Turn Start Effects (handled by PlayerManager)
-    gameManager.GetPlayerManager().ProcessOpponentPetTurnStartEffects();
-    
-    // Determine how many cards the pet should draw
-    int petCardsToDraw = 3; // Example: Pet draws fewer cards
-    DrawOpponentPetHand(petCardsToDraw);
-    
-    // Simple AI: Play cards until out of energy or no playable cards left
-    bool cardPlayedThisLoop;
-    do
     {
-        cardPlayedThisLoop = false;
-        CardData cardToPlay = null;
-        int cardIndex = -1;
+        Debug.Log("Reshuffling Opponent Pet discard pile into deck.");
+        opponentPetDeck.AddRange(opponentPetDiscard);
+        opponentPetDiscard.Clear();
+        ShuffleOpponentPetDeck();
+    }
+
+    public void ExecuteOpponentPetTurn(int startingEnergy)
+    {
+        Debug.Log("---> Starting Opponent Pet Turn <---");
+        opponentPetEnergy = startingEnergy;
         
-        // Find the first playable card in hand
-        for(int i = 0; i < opponentPetHand.Count; i++)
+        // Process Turn Start Effects (handled by PlayerManager)
+        gameManager.GetPlayerManager().ProcessOpponentPetTurnStartEffects();
+        
+        // Determine how many cards the pet should draw
+        int petCardsToDraw = 3; // Example: Pet draws fewer cards
+        DrawOpponentPetHand(petCardsToDraw);
+        
+        // --- ADDED: Find the target player for this pet's attacks ---
+        Player targetPlayer = FindTargetPlayer();
+        if (targetPlayer == null)
         {
-            if (opponentPetHand[i].cost <= opponentPetEnergy)
+            Debug.LogError("ExecuteOpponentPetTurn: Could not find the player being targeted by this pet! Aborting turn.");
+            DiscardOpponentPetHand(); // Discard hand to prevent playing cards into the void
+            return;
+        }
+        // --- END ADDED ---
+
+        // Simple AI: Play cards until out of energy or no playable cards left
+        bool cardPlayedThisLoop;
+        do
+        {
+            cardPlayedThisLoop = false;
+            CardData cardToPlay = null;
+            int cardIndex = -1;
+            
+            // Find the first playable card in hand
+            for(int i = 0; i < opponentPetHand.Count; i++)
             {
-                cardToPlay = opponentPetHand[i];
-                cardIndex = i;
-                break; // Found one, stop looking
+                if (opponentPetHand[i].cost <= opponentPetEnergy)
+                {
+                    cardToPlay = opponentPetHand[i];
+                    cardIndex = i;
+                    break; // Found one, stop looking
+                }
+            }
+            
+            // If a playable card was found
+            if (cardToPlay != null)
+            {
+                Debug.Log($"Opponent Pet playing card: {cardToPlay.cardName} (Cost: {cardToPlay.cost}) targeting {targetPlayer.NickName}");
+                opponentPetEnergy -= cardToPlay.cost;
+                
+                // Apply effect locally for simulation (handled by CardEffectService)
+                // gameManager.GetCardManager().ProcessOpponentPetCardEffect(cardToPlay);
+
+                // --- MODIFIED: Send RPC to target player to apply effect and track card ---
+                gameManager.GetPhotonView().RPC("RpcApplyOpponentPetCardEffect", targetPlayer, cardToPlay.name, cardToPlay.name);
+                // --- END MODIFIED ---
+                
+                // Move card from hand to discard
+                opponentPetHand.RemoveAt(cardIndex);
+                opponentPetDiscard.Add(cardToPlay);
+                cardPlayedThisLoop = true; // Indicate a card was played, loop again
+                
+                Debug.Log($"Opponent Pet energy remaining: {opponentPetEnergy}");
+            }
+            
+        } while (cardPlayedThisLoop && opponentPetEnergy > 0); // Continue if a card was played and energy remains
+        
+        Debug.Log("Opponent Pet finished playing cards.");
+        DiscardOpponentPetHand();
+        Debug.Log("---> Ending Opponent Pet Turn <---");
+    }
+
+    // --- ADDED: Helper to find the player fighting this pet ---
+    private Player FindTargetPlayer()
+    {
+        // The current player (running this code) owns the pet.
+        // We need to find who is paired to fight *this* player's pet.
+        int myActorNumber = PhotonNetwork.LocalPlayer.ActorNumber;
+
+        if (PhotonNetwork.CurrentRoom.CustomProperties.TryGetValue(PlayerManager.COMBAT_PAIRINGS_PROP, out object pairingsObj))
+        {
+            try
+            {
+                string pairingsJson = pairingsObj as string;
+                var pairingsDict = JsonConvert.DeserializeObject<Dictionary<int, int>>(pairingsJson);
+                
+                // Find the player whose opponent pet owner actor number is MINE
+                foreach (var kvp in pairingsDict)
+                {
+                    int playerActorNum = kvp.Key;
+                    int opponentPetOwnerActorNum = kvp.Value;
+
+                    if (opponentPetOwnerActorNum == myActorNumber)
+                    {
+                        // Found the player who is fighting my pet
+                        Player target = PhotonNetwork.CurrentRoom.GetPlayer(playerActorNum);
+                        if (target != null) 
+                        {
+                            Debug.Log($"FindTargetPlayer: Found player {target.NickName} ({playerActorNum}) is fighting my pet.");
+                            return target;
+                        }
+                        else
+                        {
+                            Debug.LogError($"FindTargetPlayer: Found pairing where player {playerActorNum} fights my pet, but couldn't get Player object.");
+                            return null;
+                        }
+                    }
+                }
+                Debug.LogWarning("FindTargetPlayer: Couldn't find any player paired against my pet in pairings property.");
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogError($"FindTargetPlayer: Failed to deserialize combat pairings: {e.Message}");
+            }
+        }
+        else
+        {
+            Debug.LogWarning($"FindTargetPlayer: Room property {PlayerManager.COMBAT_PAIRINGS_PROP} not found.");
+        }
+
+        return null; // Target player not found
+    }
+    // --- END ADDED ---
+
+    private void SyncLocalPetDeckToCustomProperties()
+    {
+        // Convert List<CardData> to List<string> (card names)
+        List<string> petDeckCardNames = localPetDeck.Select(card => card.cardName).ToList();
+
+        // Serialize the list of names
+        string petDeckJson = JsonConvert.SerializeObject(petDeckCardNames);
+
+        // Set the custom property for the local player
+        Hashtable props = new Hashtable { { PLAYER_PET_DECK_PROP, petDeckJson } };
+        PhotonNetwork.LocalPlayer.SetCustomProperties(props);
+
+        Debug.Log($"Synced local pet deck to Player Properties. {petDeckCardNames.Count} cards. JSON: {petDeckJson}");
+    }
+
+    public void AddCardToPetDeck(CardData card)
+    {
+        if (card != null)
+        {
+            localPetDeck.Add(card);
+            SyncLocalPetDeckToCustomProperties();
+            Debug.Log($"Added {card.cardName} to pet deck. Current count: {localPetDeck.Count}");
+        }
+    }
+
+    public bool UpgradePetCard(CardData cardToUpgrade, CardData upgradedVersion)
+    {
+        int index = localPetDeck.FindIndex(card => card == cardToUpgrade);
+        if (index == -1)
+        {
+            // Fallback by name matching
+            index = localPetDeck.FindIndex(card => card.cardName == cardToUpgrade.cardName && card.upgradedVersion != null);
+        }
+        
+        if (index != -1 && upgradedVersion != null)
+        {
+            localPetDeck[index] = upgradedVersion;
+            SyncLocalPetDeckToCustomProperties();
+            return true;
+        }
+        return false;
+    }
+
+    public CardData FindCardDataByName(string cardName)
+    {
+        // First check pet card pools
+        CardData found = allPetCardPool.FirstOrDefault(c => c.cardName == cardName);
+        if (found == null)
+        {
+            found = starterPetDeck.FirstOrDefault(c => c.cardName == cardName);
+        }
+        
+        // Check upgraded versions
+        if (found == null)
+        {
+            foreach (var card in allPetCardPool.Concat(starterPetDeck))
+            {
+                if (card.upgradedVersion != null && card.upgradedVersion.cardName == cardName)
+                {
+                    return card.upgradedVersion;
+                }
             }
         }
         
-        // If a playable card was found
-        if (cardToPlay != null)
-        {
-            Debug.Log($"Opponent Pet playing card: {cardToPlay.cardName} (Cost: {cardToPlay.cost})");
-            opponentPetEnergy -= cardToPlay.cost;
-            
-            // Apply effect (delegated to CardEffectService via CardManager)
-            gameManager.GetCardManager().ProcessOpponentPetCardEffect(cardToPlay);
-            
-            // Move card from hand to discard
-            opponentPetHand.RemoveAt(cardIndex);
-            opponentPetDiscard.Add(cardToPlay);
-            cardPlayedThisLoop = true; // Indicate a card was played, loop again
-            
-            Debug.Log($"Opponent Pet energy remaining: {opponentPetEnergy}");
-        }
-        
-    } while (cardPlayedThisLoop && opponentPetEnergy > 0); // Continue if a card was played and energy remains
-    
-    Debug.Log("Opponent Pet finished playing cards.");
-    DiscardOpponentPetHand();
-    Debug.Log("---> Ending Opponent Pet Turn <---");
-}
-
-private void SyncLocalPetDeckToCustomProperties()
-{
-    // Convert List<CardData> to List<string> (card names)
-    List<string> petDeckCardNames = localPetDeck.Select(card => card.cardName).ToList();
-
-    // Serialize the list of names
-    string petDeckJson = JsonConvert.SerializeObject(petDeckCardNames);
-
-    // Set the custom property for the local player
-    Hashtable props = new Hashtable { { PLAYER_PET_DECK_PROP, petDeckJson } };
-    PhotonNetwork.LocalPlayer.SetCustomProperties(props);
-
-    Debug.Log($"Synced local pet deck to Player Properties. {petDeckCardNames.Count} cards. JSON: {petDeckJson}");
-}
-
-public void AddCardToPetDeck(CardData card)
-{
-    if (card != null)
-    {
-        localPetDeck.Add(card);
-        SyncLocalPetDeckToCustomProperties();
-        Debug.Log($"Added {card.cardName} to pet deck. Current count: {localPetDeck.Count}");
+        return found;
     }
-}
 
-public bool UpgradePetCard(CardData cardToUpgrade, CardData upgradedVersion)
-{
-    int index = localPetDeck.FindIndex(card => card == cardToUpgrade);
-    if (index == -1)
-    {
-        // Fallback by name matching
-        index = localPetDeck.FindIndex(card => card.cardName == cardToUpgrade.cardName && card.upgradedVersion != null);
-    }
-    
-    if (index != -1 && upgradedVersion != null)
-    {
-        localPetDeck[index] = upgradedVersion;
-        SyncLocalPetDeckToCustomProperties();
-        return true;
-    }
-    return false;
-}
-
-public CardData FindCardDataByName(string cardName)
-{
-    // First check pet card pools
-    CardData found = allPetCardPool.FirstOrDefault(c => c.cardName == cardName);
-    if (found == null)
-    {
-        found = starterPetDeck.FirstOrDefault(c => c.cardName == cardName);
-    }
-    
-    // Check upgraded versions
-    if (found == null)
-    {
-        foreach (var card in allPetCardPool.Concat(starterPetDeck))
-        {
-            if (card.upgradedVersion != null && card.upgradedVersion.cardName == cardName)
-            {
-                return card.upgradedVersion;
-            }
-        }
-    }
-    
-    return found;
-}
-
-// Getters
-public List<CardData> GetLocalPetDeck() => localPetDeck;
-public List<CardData> GetOpponentPetDeck() => opponentPetDeck;
-public List<CardData> GetOpponentPetHand() => opponentPetHand;
-public List<CardData> GetAllOwnedPetCards() => new List<CardData>(localPetDeck);
-public int GetOpponentPetEnergy() => opponentPetEnergy;
-public void SetOpponentPetEnergy(int energy) => opponentPetEnergy = energy;
+    // Getters
+    public List<CardData> GetLocalPetDeck() => localPetDeck;
+    public List<CardData> GetOpponentPetDeck() => opponentPetDeck;
+    public List<CardData> GetOpponentPetHand() => opponentPetHand;
+    public List<CardData> GetAllOwnedPetCards() => new List<CardData>(localPetDeck);
+    public int GetOpponentPetEnergy() => opponentPetEnergy;
+    public void SetOpponentPetEnergy(int energy) => opponentPetEnergy = energy;
 }
