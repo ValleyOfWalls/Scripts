@@ -140,8 +140,14 @@ public class CardManager
     
     public void DiscardHand()
     {
-        discardPile.AddRange(hand);
+        List<CardData> cardsToDiscard = new List<CardData>(hand); // Create a copy to iterate over
         hand.Clear();
+        foreach(CardData card in cardsToDiscard)
+        {
+            discardPile.Add(card);
+            HandleDiscardTrigger(card); // ADDED: Trigger discard effect
+        }
+        // UI update likely happens in CombatManager after calling this
     }
     
     public void ReshuffleDiscardPile()
@@ -229,8 +235,14 @@ public class CardManager
     
     public void DiscardOpponentPetHand()
     {
-        opponentPetDiscard.AddRange(opponentPetHand);
+        List<CardData> cardsToDiscard = new List<CardData>(opponentPetHand); // Create a copy
         opponentPetHand.Clear();
+        foreach(CardData card in cardsToDiscard)
+        {
+            opponentPetDiscard.Add(card);
+            // Note: We generally don't trigger opponent discard effects on the local client
+            // HandleDiscardTrigger(card); // Maybe only for specific effects or debugging?
+        }
     }
     
     public void ReshuffleOpponentPetDiscardPile()
@@ -302,9 +314,29 @@ public class CardManager
                 }
                 // --- END ADDED ---
                 
+                // --- ADDED: Apply Opponent Pet Draw --- 
+                if (cardToPlay.drawAmount > 0)
+                {
+                    Debug.Log($"Opponent Pet drawing {cardToPlay.drawAmount} cards.");
+                    for(int d=0; d < cardToPlay.drawAmount; d++)
+                    {
+                        DrawOpponentPetCard();
+                    }
+                }
+                // --- END ADDED ---
+                
+                // --- ADDED: Apply Opponent Pet Discard --- 
+                if (cardToPlay.discardRandomAmount > 0)
+                {
+                    Debug.Log($"Opponent Pet discarding {cardToPlay.discardRandomAmount} random cards.");
+                    DiscardRandomOpponentPetCards(cardToPlay.discardRandomAmount);
+                }
+                // --- END ADDED ---
+                
                 // Move card from hand to discard
                 opponentPetHand.RemoveAt(cardIndex);
                 opponentPetDiscard.Add(cardToPlay);
+                // Don't trigger discard effect for the played card itself
                 cardPlayedThisLoop = true; // Indicate a card was played, loop again
                 
                 Debug.Log($"Opponent Pet energy remaining: {opponentPetEnergy}");
@@ -387,7 +419,31 @@ public class CardManager
             }
             // --- END ADDED ---
             
+            // --- ADDED: Apply Draw Card --- 
+            if (cardData.drawAmount > 0)
+            {
+                Debug.Log($"Drawing {cardData.drawAmount} cards.");
+                for(int d=0; d < cardData.drawAmount; d++)
+                {
+                    DrawCard();
+                }
+                gameManager.UpdateHandUI(); // Update hand after drawing
+                gameManager.UpdateDeckCountUI();
+            }
+            // --- END ADDED ---
+            
+            // --- ADDED: Apply Discard Random --- 
+            if (cardData.discardRandomAmount > 0)
+            {
+                Debug.Log($"Discarding {cardData.discardRandomAmount} random cards from hand.");
+                DiscardRandomPlayerCards(cardData.discardRandomAmount);
+                gameManager.UpdateHandUI(); // Update hand after discarding
+                gameManager.UpdateDeckCountUI();
+            }
+            // --- END ADDED ---
+            
             Debug.Log($"Successfully processed effects for card '{cardData.cardName}' on target '{targetType}'. Moved to discard.");
+            // Note: Discard trigger for the PLAYED card is NOT activated here.
             return true; // Indicate success
         }
         else
@@ -987,6 +1043,85 @@ public class CardManager
         // Optional: Sort the list
         // allCards = allCards.OrderBy(card => card.cost).ThenBy(card => card.cardName).ToList();
         return allCards;
+    }
+    // --- END ADDED ---
+
+    // --- ADDED: Helper for Random Player Discard ---
+    private void DiscardRandomPlayerCards(int amount)
+    {
+        System.Random rng = new System.Random();
+        int cardsToDiscardCount = Mathf.Min(amount, hand.Count); // Can't discard more than in hand
+        
+        for (int i = 0; i < cardsToDiscardCount; i++)
+        {
+            if (hand.Count == 0) break; // Safety check
+            
+            int randomIndex = rng.Next(hand.Count);
+            CardData cardToDiscard = hand[randomIndex];
+            hand.RemoveAt(randomIndex);
+            discardPile.Add(cardToDiscard);
+            Debug.Log($"Randomly discarded player card: {cardToDiscard.cardName}");
+            HandleDiscardTrigger(cardToDiscard); // Check for discard trigger
+        }
+    }
+    // --- END ADDED ---
+    
+    // --- ADDED: Helper for Random Opponent Pet Discard ---
+    private void DiscardRandomOpponentPetCards(int amount)
+    {
+        System.Random rng = new System.Random();
+        int cardsToDiscardCount = Mathf.Min(amount, opponentPetHand.Count); 
+        
+        for (int i = 0; i < cardsToDiscardCount; i++)
+        {
+            if (opponentPetHand.Count == 0) break; 
+            
+            int randomIndex = rng.Next(opponentPetHand.Count);
+            CardData cardToDiscard = opponentPetHand[randomIndex];
+            opponentPetHand.RemoveAt(randomIndex);
+            opponentPetDiscard.Add(cardToDiscard);
+            Debug.Log($"Randomly discarded opponent pet card: {cardToDiscard.cardName}");
+            // HandleDiscardTrigger(cardToDiscard); // Usually don't trigger opponent effects here
+        }
+    }
+    // --- END ADDED ---
+    
+    // --- ADDED: Handle Discard Trigger Effects ---
+    private void HandleDiscardTrigger(CardData discardedCard)
+    {
+        if (discardedCard == null || discardedCard.discardEffectType == DiscardEffectType.None)
+        {
+            return; // No effect to trigger
+        }
+
+        Debug.Log($"Handling discard trigger for {discardedCard.cardName}: {discardedCard.discardEffectType}, Value: {discardedCard.discardEffectValue}");
+
+        PlayerManager playerManager = gameManager.GetPlayerManager();
+        int value = discardedCard.discardEffectValue;
+
+        switch (discardedCard.discardEffectType)
+        {
+            case DiscardEffectType.DealDamageToOpponentPet:
+                if (value > 0) playerManager.DamageOpponentPet(value);
+                break;
+            case DiscardEffectType.GainBlockPlayer:
+                if (value > 0) playerManager.AddBlockToLocalPlayer(value);
+                break;
+            case DiscardEffectType.GainBlockPet:
+                 if (value > 0) playerManager.AddBlockToLocalPet(value);
+                break;
+            case DiscardEffectType.DrawCard:
+                if (value > 0) {
+                    for(int i=0; i < value; i++) DrawCard();
+                    gameManager.UpdateHandUI();
+                    gameManager.UpdateDeckCountUI();
+                }
+                break;
+            case DiscardEffectType.GainEnergy:
+                if (value > 0) playerManager.GainEnergy(value);
+                break;
+            // Add cases for other effects
+        }
     }
     // --- END ADDED ---
 }
