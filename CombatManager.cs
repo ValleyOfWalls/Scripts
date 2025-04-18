@@ -45,6 +45,12 @@ public class CombatManager
 
     private TextMeshProUGUI opponentPetDotText;
 
+    // --- ADDED: UI References for Reflection ---
+    private TextMeshProUGUI playerReflectionText;
+    private TextMeshProUGUI ownPetReflectionText;
+    private TextMeshProUGUI opponentPetReflectionText;
+    // --- END ADDED ---
+
     public void Initialize(GameManager gameManager, int startingPlayerHealth, int startingPetHealth, int startingEnergy)
     {
         this.gameManager = gameManager;
@@ -75,6 +81,10 @@ public class CombatManager
         opponentPetBlockText = opponentArea?.Find("OpponentPetBlockText")?.GetComponent<TextMeshProUGUI>();
         opponentPetIntentText = opponentArea?.Find("OpponentPetIntentText")?.GetComponent<TextMeshProUGUI>();
         opponentPetDotText = opponentArea?.Find("OpponentPetDotText")?.GetComponent<TextMeshProUGUI>();
+        // --- ADDED: Find Opponent Reflection Text ---
+        opponentPetReflectionText = opponentArea?.Find("OpponentPetReflectionText")?.GetComponent<TextMeshProUGUI>();
+        if (opponentPetReflectionText != null) opponentPetReflectionText.gameObject.SetActive(false); // Start hidden
+        // --- END ADDED ---
         
         // Find own pet area
         Transform ownPetAreaContainer = topArea.Find("OwnPetAreaContainer");
@@ -84,6 +94,10 @@ public class CombatManager
         ownPetHealthText = ownPetArea?.Find("OwnPetHealthText")?.GetComponent<TextMeshProUGUI>();
         ownPetBlockText = ownPetArea?.Find("OwnPetBlockText")?.GetComponent<TextMeshProUGUI>();
         ownPetDotText = ownPetArea?.Find("OwnPetDotText")?.GetComponent<TextMeshProUGUI>();
+        // --- ADDED: Find Own Pet Reflection Text ---
+        ownPetReflectionText = ownPetArea?.Find("OwnPetReflectionText")?.GetComponent<TextMeshProUGUI>();
+        if (ownPetReflectionText != null) ownPetReflectionText.gameObject.SetActive(false); // Start hidden
+        // --- END ADDED ---
 
         // Find elements within PlayerArea
         Transform statsRow = playerArea.Find("StatsRow");
@@ -94,6 +108,10 @@ public class CombatManager
         energyText = statsRow?.Find("EnergyText")?.GetComponent<TextMeshProUGUI>();
         playerDotText = statsRow?.Find("PlayerDotText")?.GetComponent<TextMeshProUGUI>();
         comboCountText = statsRow?.Find("ComboCountText")?.GetComponent<TextMeshProUGUI>();
+        // --- ADDED: Find Player Reflection Text ---
+        playerReflectionText = statsRow?.Find("PlayerReflectionText")?.GetComponent<TextMeshProUGUI>();
+        if (playerReflectionText != null) playerReflectionText.gameObject.SetActive(false); // Start hidden
+        // --- END ADDED ---
         
         Transform handPanelTransform = playerArea.Find("PlayerHandPanel");
         playerHandPanel = handPanelTransform?.gameObject;
@@ -471,6 +489,16 @@ public class CombatManager
             playerDotText.gameObject.SetActive(dotTurns > 0);
         }
 
+        // --- ADDED: Player Reflection ---
+        if (playerReflectionText != null)
+        {
+            int reflectTurns = playerManager.GetPlayerReflectionTurns();
+            int reflectPercent = playerManager.GetPlayerReflectionPercentage();
+            playerReflectionText.text = (reflectTurns > 0) ? $"Reflect: {reflectPercent}% ({reflectTurns}t)" : "";
+            playerReflectionText.gameObject.SetActive(reflectTurns > 0);
+        }
+        // --- END ADDED ---
+
         // Combo Count
         if (comboCountText != null)
         {
@@ -488,6 +516,16 @@ public class CombatManager
             ownPetDotText.gameObject.SetActive(dotTurns > 0);
         }
 
+        // --- ADDED: Own Pet Reflection ---
+        if (ownPetReflectionText != null)
+        {
+            int reflectTurns = playerManager.GetLocalPetReflectionTurns();
+            int reflectPercent = playerManager.GetLocalPetReflectionPercentage();
+            ownPetReflectionText.text = (reflectTurns > 0) ? $"Reflect: {reflectPercent}% ({reflectTurns}t)" : "";
+            ownPetReflectionText.gameObject.SetActive(reflectTurns > 0);
+        }
+        // --- END ADDED ---
+
         // Opponent Pet DoT
         if (opponentPetDotText != null)
         {
@@ -496,6 +534,16 @@ public class CombatManager
             opponentPetDotText.text = (dotTurns > 0) ? $"DoT: {dotDmg} ({dotTurns}t)" : "";
             opponentPetDotText.gameObject.SetActive(dotTurns > 0);
         }
+
+        // --- ADDED: Opponent Pet Reflection ---
+        if (opponentPetReflectionText != null)
+        {
+            int reflectTurns = playerManager.GetOpponentPetReflectionTurns();
+            int reflectPercent = playerManager.GetOpponentPetReflectionPercentage();
+            opponentPetReflectionText.text = (reflectTurns > 0) ? $"Reflect: {reflectPercent}% ({reflectTurns}t)" : "";
+            opponentPetReflectionText.gameObject.SetActive(reflectTurns > 0);
+        }
+        // --- END ADDED ---
     }
     // --- END ADDED ---
 }

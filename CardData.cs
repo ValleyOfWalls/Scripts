@@ -71,8 +71,8 @@ public class CardData : ScriptableObject
 
     [Header("Combo Effect")]
     public bool isComboStarter = false; // Does this card contribute to/start a combo?
-    public int comboTriggerValue = 3; // How many combo cards needed to trigger the effect
-    public ComboEffectType comboEffectType = ComboEffectType.None;
+    public int comboTriggerValue = 0; // Required combo count to trigger combo effect
+    public ComboEffectType comboEffectType = ComboEffectType.None; // Effect to apply on combo trigger
     public int comboEffectValue = 0; // Value for the combo effect (e.g., damage, block)
     public CardDropZone.TargetType comboEffectTarget = CardDropZone.TargetType.EnemyPet; // Who does the combo effect hit?
 
@@ -98,6 +98,16 @@ public class CardData : ScriptableObject
 
     [Header("Upgrade Info")]
     public CardData upgradedVersion = null; // Link to the ScriptableObject representing the upgraded version of this card
+
+    // --- ADDED: Reflection Properties ---
+    public bool isReflectionCard = false; // Does this card apply reflection?
+    public int reflectionPercentage = 0; // % of damage reflected
+    public int reflectionDuration = 0; // Turns the reflection lasts
+
+    // --- ADDED: Scaling Attack Properties ---
+    public bool isScalingAttack = false; // Does this attack scale with uses?
+    public int scalingDamageIncrease = 0; // Damage increase per use this combat
+    public string scalingIdentifier = ""; // Unique ID for this scaling card type
 
     // Add more properties later (e.g., damage, block, effects)
 } 

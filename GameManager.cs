@@ -320,6 +320,28 @@ public class GameManager : MonoBehaviourPunCallbacks
     }
     // --- END ADDED ---
 
+    // --- ADDED: RPCs for Reflected Damage ---
+    [PunRPC]
+    private void RpcApplyReflectedDamageToPlayer(int amount)
+    {
+        if (amount <= 0) return;
+        Debug.Log($"RPC Received: Applying {amount} reflected damage to local player.");
+        // Access HealthManager via PlayerManager
+        playerManager?.GetHealthManager()?.ApplyReflectedDamageToPlayer(amount);
+        // Note: ApplyReflectedDamageToPlayer already handles UI update and death check.
+    }
+
+    [PunRPC]
+    private void RpcApplyReflectedDamageToPet(int amount)
+    {
+        if (amount <= 0) return;
+        Debug.Log($"RPC Received: Applying {amount} reflected damage to local pet.");
+        // Access HealthManager via PlayerManager
+        playerManager?.GetHealthManager()?.ApplyReflectedDamageToLocalPet(amount);
+        // Note: ApplyReflectedDamageToLocalPet already handles UI update.
+    }
+    // --- END ADDED ---
+
     public PhotonView GetPhotonView()
     {
         return photonViewComponent;
