@@ -333,6 +333,20 @@ public class CardManager
                 }
                 // --- END ADDED ---
                 
+                // --- ADDED: Apply Opponent Pet Healing --- 
+                if (cardToPlay.healingAmount > 0)
+                {
+                    gameManager.GetPlayerManager().HealOpponentPet(cardToPlay.healingAmount);
+                }
+                // --- END ADDED ---
+                
+                // --- ADDED: Apply Opponent Pet Temp Max HP --- 
+                if (cardToPlay.tempMaxHealthChange != 0)
+                {
+                    gameManager.GetPlayerManager().ApplyTempMaxHealthOpponentPet(cardToPlay.tempMaxHealthChange);
+                }
+                // --- END ADDED ---
+                
                 // Move card from hand to discard
                 opponentPetHand.RemoveAt(cardIndex);
                 opponentPetDiscard.Add(cardToPlay);
@@ -393,6 +407,15 @@ public class CardManager
                         Debug.Log($"Dealt {damageDealt} damage to Opponent Pet. New health: {gameManager.GetPlayerManager().GetOpponentPetHealth()}, Est. Block: {gameManager.GetPlayerManager().GetOpponentPetBlock()}");
                         // Combat win check is handled in DamageOpponentPet
                     }
+                    // --- ADDED: Healing & Temp Max HP for Enemy Pet --- 
+                    if (cardData.healingAmount > 0)
+                    {
+                         gameManager.GetPlayerManager().HealOpponentPet(cardData.healingAmount);
+                    }
+                     if (cardData.tempMaxHealthChange != 0)
+                    {
+                        gameManager.GetPlayerManager().ApplyTempMaxHealthOpponentPet(cardData.tempMaxHealthChange);
+                    }
                     break;
                     
                 case CardDropZone.TargetType.PlayerSelf:
@@ -400,12 +423,30 @@ public class CardManager
                     {
                         gameManager.GetPlayerManager().AddBlockToLocalPlayer(cardData.block);
                     }
+                    // --- ADDED: Healing & Temp Max HP for Player --- 
+                    if (cardData.healingAmount > 0)
+                    {
+                        gameManager.GetPlayerManager().HealLocalPlayer(cardData.healingAmount);
+                    }
+                    if (cardData.tempMaxHealthChange != 0)
+                    {
+                        gameManager.GetPlayerManager().ApplyTempMaxHealthPlayer(cardData.tempMaxHealthChange);
+                    }
                     break;
                     
                 case CardDropZone.TargetType.OwnPet:
                     if (cardData.block > 0)
                     {
                         gameManager.GetPlayerManager().AddBlockToLocalPet(cardData.block);
+                    }
+                    // --- ADDED: Healing & Temp Max HP for Own Pet --- 
+                    if (cardData.healingAmount > 0)
+                    {
+                        gameManager.GetPlayerManager().HealLocalPet(cardData.healingAmount);
+                    }
+                    if (cardData.tempMaxHealthChange != 0)
+                    {
+                        gameManager.GetPlayerManager().ApplyTempMaxHealthPet(cardData.tempMaxHealthChange);
                     }
                     break;
                     

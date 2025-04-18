@@ -20,6 +20,9 @@ public class PlayerManager
     private int localPlayerBlock = 0;
     private int localPetBlock = 0;
     private int opponentPetBlock = 0; // Note: This is only tracked locally for display/intent
+    private int localPlayerTempMaxHealthBonus = 0;
+    private int localPetTempMaxHealthBonus = 0;
+    private int opponentPetTempMaxHealthBonus = 0;
     private Player opponentPlayer;
     private bool combatEndedForLocalPlayer = false;
     
@@ -170,6 +173,12 @@ public class PlayerManager
         localPlayerBlock = 0;
         localPetBlock = 0;
         opponentPetBlock = 0; 
+        
+        // --- ADDED: Reset Temp Max Health Bonuses --- 
+        localPlayerTempMaxHealthBonus = 0;
+        localPetTempMaxHealthBonus = 0;
+        opponentPetTempMaxHealthBonus = 0;
+        // --- END ADDED ---
         
         currentEnergy = startingEnergy;
         
@@ -491,7 +500,7 @@ public class PlayerManager
     
     public int GetLocalPetHealth()
     {
-        return localPetHealth;
+       return localPetHealth;
     }
     
     public int GetOpponentPetHealth()
@@ -606,6 +615,126 @@ public class PlayerManager
         // if (currentEnergy > maxEnergy) currentEnergy = maxEnergy; 
         Debug.Log($"Gained {amount} energy. New total: {currentEnergy}");
         gameManager.UpdateEnergyUI(); // Call the UI update
+    }
+    // --- END ADDED ---
+
+    // --- ADDED: Healing Methods ---
+    public void HealLocalPlayer(int amount)
+    {
+        if (amount <= 0) return;
+        int effectiveMaxHP = GetEffectivePlayerMaxHealth();
+        localPlayerHealth += amount;
+        if (localPlayerHealth > effectiveMaxHP) localPlayerHealth = effectiveMaxHP;
+        Debug.Log($"Healed Local Player by {amount}. New health: {localPlayerHealth} / {effectiveMaxHP}");
+        gameManager.UpdateHealthUI();
+    }
+
+    public void HealLocalPet(int amount)
+    {
+        if (amount <= 0) return;
+        int effectiveMaxHP = GetEffectivePetMaxHealth();
+        localPetHealth += amount;
+        if (localPetHealth > effectiveMaxHP) localPetHealth = effectiveMaxHP;
+        Debug.Log($"Healed Local Pet by {amount}. New health: {localPetHealth} / {effectiveMaxHP}");
+        gameManager.UpdateHealthUI();
+    }
+    
+    // Heal opponent pet (local simulation only)
+    public void HealOpponentPet(int amount)
+    {
+        if (amount <= 0) return;
+        int effectiveMaxHP = GetEffectiveOpponentPetMaxHealth();
+        opponentPetHealth += amount;
+        if (opponentPetHealth > effectiveMaxHP) opponentPetHealth = effectiveMaxHP;
+        Debug.Log($"Healed Opponent Pet by {amount} (local sim). New health: {opponentPetHealth} / {effectiveMaxHP}");
+        gameManager.UpdateHealthUI();
+    }
+    // --- END ADDED ---
+    
+    // --- ADDED: Temporary Max Health Methods ---
+    public void ApplyTempMaxHealthPlayer(int amount)
+    {
+        localPlayerTempMaxHealthBonus += amount;
+        Debug.Log($"Applied Temp Max Health Player: {amount}. New Bonus: {localPlayerTempMaxHealthBonus}");
+        // If increasing max health, also heal by the same amount
+        if (amount > 0)
+        {
+            HealLocalPlayer(amount);
+        }
+        else
+        {
+            // If decreasing, clamp current health to new max
+            int effectiveMaxHP = GetEffectivePlayerMaxHealth();
+            if (localPlayerHealth > effectiveMaxHP) localPlayerHealth = effectiveMaxHP;
+            gameManager.UpdateHealthUI(); // Still need to update UI if only clamping
+        }
+        // Note: UpdateHealthUI is called within HealLocalPlayer if amount > 0
+    }
+
+    public void ApplyTempMaxHealthPet(int amount)
+    {
+        localPetTempMaxHealthBonus += amount;
+        Debug.Log($"Applied Temp Max Health Pet: {amount}. New Bonus: {localPetTempMaxHealthBonus}");
+        if (amount > 0)
+        {
+            HealLocalPet(amount);
+        }
+        else
+        {
+            int effectiveMaxHP = GetEffectivePetMaxHealth();
+            if (localPetHealth > effectiveMaxHP) localPetHealth = effectiveMaxHP;
+            gameManager.UpdateHealthUI(); 
+        }
+    }
+    
+    public void ApplyTempMaxHealthOpponentPet(int amount)
+    {
+        opponentPetTempMaxHealthBonus += amount;
+        Debug.Log($"Applied Temp Max Health Opponent Pet: {amount} (local sim). New Bonus: {opponentPetTempMaxHealthBonus}");
+        if (amount > 0)
+        {
+            HealOpponentPet(amount);
+        }
+        else
+        {
+            int effectiveMaxHP = GetEffectiveOpponentPetMaxHealth();
+            if (opponentPetHealth > effectiveMaxHP) opponentPetHealth = effectiveMaxHP;
+             gameManager.UpdateHealthUI();
+        }
+    }
+    // --- END ADDED ---
+    
+    // --- ADDED: Effective Max Health Getters ---
+    public int GetEffectivePlayerMaxHealth()
+    {
+        return gameManager.GetStartingPlayerHealth() + localPlayerTempMaxHealthBonus;
+    }
+    // --- END ADDED ---
+
+    // public int GetLocalPetHealth()
+    // {
+    //    return localPetHealth;
+    // }
+
+    // --- ADDED: Effective Max Health Getters ---
+    public int GetEffectivePetMaxHealth()
+    {
+        return gameManager.GetStartingPetHealth() + localPetTempMaxHealthBonus;
+    }
+    // --- END ADDED ---
+
+    // public int GetOpponentPetHealth()
+    // {
+    //     return opponentPetHealth;
+    // }
+    
+    // --- ADDED: Effective Max Health Getters ---
+    public int GetEffectiveOpponentPetMaxHealth()
+    {
+        // Opponent base health comes from their properties at start of combat, 
+        // but we need GameManager's base if we don't have an opponent player object (shouldn't happen in real combat)
+        int baseOpponentPetHP = (opponentPlayer != null && opponentPlayer.CustomProperties.TryGetValue(PLAYER_BASE_PET_HP_PROP, out object hp)) ? (int)hp : gameManager.GetStartingPetHealth();
+        return baseOpponentPetHP + opponentPetTempMaxHealthBonus;
     }
     // --- END ADDED ---
 }

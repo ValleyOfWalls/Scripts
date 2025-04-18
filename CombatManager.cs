@@ -202,18 +202,31 @@ public class CombatManager
         PlayerManager playerManager = gameManager.GetPlayerManager();
         
         // Player Health & Block
-        if (playerHealthSlider) playerHealthSlider.value = (float)playerManager.GetLocalPlayerHealth() / startingPlayerHealth;
-        if (playerHealthText) playerHealthText.text = $"{playerManager.GetLocalPlayerHealth()} / {startingPlayerHealth}";
+        int currentPlayerHealth = playerManager.GetLocalPlayerHealth();
+        int effectivePlayerMaxHealth = playerManager.GetEffectivePlayerMaxHealth();
+        if (playerHealthSlider) {
+             // Ensure max health is not zero to avoid division errors
+             playerHealthSlider.value = (effectivePlayerMaxHealth > 0) ? (float)currentPlayerHealth / effectivePlayerMaxHealth : 0;
+        }
+        if (playerHealthText) playerHealthText.text = $"{currentPlayerHealth} / {effectivePlayerMaxHealth}";
         if (playerBlockText) playerBlockText.text = $"Block: {playerManager.GetLocalPlayerBlock()}";
 
         // Own Pet Health & Block
-        if (ownPetHealthSlider) ownPetHealthSlider.value = (float)playerManager.GetLocalPetHealth() / startingPetHealth;
-        if (ownPetHealthText) ownPetHealthText.text = $"{playerManager.GetLocalPetHealth()} / {startingPetHealth}";
+        int currentPetHealth = playerManager.GetLocalPetHealth();
+        int effectivePetMaxHealth = playerManager.GetEffectivePetMaxHealth();
+        if (ownPetHealthSlider) {
+            ownPetHealthSlider.value = (effectivePetMaxHealth > 0) ? (float)currentPetHealth / effectivePetMaxHealth : 0;
+        }
+        if (ownPetHealthText) ownPetHealthText.text = $"{currentPetHealth} / {effectivePetMaxHealth}";
         if (ownPetBlockText) ownPetBlockText.text = $"Block: {playerManager.GetLocalPetBlock()}";
 
         // Opponent Pet Health & Block
-        if (opponentPetHealthSlider) opponentPetHealthSlider.value = (float)playerManager.GetOpponentPetHealth() / startingPetHealth;
-        if (opponentPetHealthText) opponentPetHealthText.text = $"{playerManager.GetOpponentPetHealth()} / {startingPetHealth}";
+        int currentOpponentPetHealth = playerManager.GetOpponentPetHealth();
+        int effectiveOpponentPetMaxHealth = playerManager.GetEffectiveOpponentPetMaxHealth();
+        if (opponentPetHealthSlider) {
+             opponentPetHealthSlider.value = (effectiveOpponentPetMaxHealth > 0) ? (float)currentOpponentPetHealth / effectiveOpponentPetMaxHealth : 0;
+        }
+        if (opponentPetHealthText) opponentPetHealthText.text = $"{currentOpponentPetHealth} / {effectiveOpponentPetMaxHealth}";
         if (opponentPetBlockText) opponentPetBlockText.text = $"Block: {playerManager.GetOpponentPetBlock()}";
     }
 
