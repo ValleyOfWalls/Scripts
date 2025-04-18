@@ -25,6 +25,24 @@ public enum ComboEffectType
 }
 // --- END ADDED ---
 
+// --- ADDED: Enum for Cost Change Target ---
+public enum CostChangeTargetType
+{
+    None,
+    PlayerHand,
+    OpponentHand
+}
+// --- END ADDED ---
+
+// --- ADDED: Enum for Upgrade Target Rule ---
+public enum UpgradeTargetRule
+{
+    Random,
+    Cheapest,
+    MostExpensive
+}
+// --- END ADDED ---
+
 [CreateAssetMenu(fileName = "New Card", menuName = "Cards/Card Data")]
 public class CardData : ScriptableObject
 {
@@ -57,6 +75,22 @@ public class CardData : ScriptableObject
     public ComboEffectType comboEffectType = ComboEffectType.None;
     public int comboEffectValue = 0; // Value for the combo effect (e.g., damage, block)
     public CardDropZone.TargetType comboEffectTarget = CardDropZone.TargetType.EnemyPet; // Who does the combo effect hit?
+
+    [Header("Cost Modification Effect")]
+    public CostChangeTargetType costChangeTarget = CostChangeTargetType.None;
+    public int costChangeAmount = 0; // e.g., +1 or -1
+    public int costChangeDuration = 1; // Turns the change lasts (e.g., 1 for opponent's next turn)
+    public int costChangeCardCount = 0; // How many cards targeted (0 = all, >0 = random count)
+
+    [Header("Critical Chance Buff Effect")]
+    public CardDropZone.TargetType critChanceBuffTarget = CardDropZone.TargetType.PlayerSelf;
+    public int critChanceBuffAmount = 0; // Percentage bonus (e.g., 20 for +20%)
+    public int critChanceBuffDuration = 0; // Duration in turns (0 = end of combat)
+
+    [Header("Temporary Card Upgrade Effect")]
+    public int upgradeHandCardCount = 0; // How many cards in hand to upgrade
+    public int upgradeHandCardDuration = 1; // Duration (0 = rest of combat, 1 = this turn only)
+    public UpgradeTargetRule upgradeHandCardTargetRule = UpgradeTargetRule.Random;
 
     [Header("Discard Trigger Effect")]
     public DiscardEffectType discardEffectType = DiscardEffectType.None;

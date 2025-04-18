@@ -7,6 +7,14 @@ using Photon.Pun;
 using Photon.Realtime;
 using ExitGames.Client.Photon;
 
+// --- ADDED: Struct for Temporary Upgrade Tracking ---
+struct TempUpgradeInfo
+{
+    public CardData originalCard;
+    public int durationTurns; // 0 = combat long, >0 = turns remaining
+}
+// --- END ADDED ---
+
 public class CardManager
 {
     private GameManager gameManager;
@@ -30,6 +38,12 @@ public class CardManager
     private List<CardData> opponentPetDeck = new List<CardData>();
     private List<CardData> opponentPetHand = new List<CardData>();
     private List<CardData> opponentPetDiscard = new List<CardData>();
+    
+    // --- ADDED: Tracking for Temporary Upgrades ---
+    // Key: The *instance* of the upgraded card currently in hand
+    // Value: Info about its original state and duration
+    private Dictionary<CardData, TempUpgradeInfo> tempUpgradedCardsInHand = new Dictionary<CardData, TempUpgradeInfo>();
+    // --- END ADDED ---
     
     // Draft state
     private List<SerializableDraftOption> localCurrentPack = new List<SerializableDraftOption>();
@@ -115,6 +129,9 @@ public class CardManager
     public void DrawHand()
     {
         hand.Clear();
+        // Before drawing, ensure no lingering temp upgrades from previous states (safety check)
+        // This might be redundant if EndTurn logic is robust, but safer.
+        RevertExpiredHandUpgrades(true); 
         for (int i = 0; i < cardsToDraw; i++)
         {
             DrawCard();
@@ -144,8 +161,20 @@ public class CardManager
         hand.Clear();
         foreach(CardData card in cardsToDiscard)
         {
-            discardPile.Add(card);
-            HandleDiscardTrigger(card); // ADDED: Trigger discard effect
+            // --- ADDED: Handle temp upgrade removal on discard ---
+            if (tempUpgradedCardsInHand.ContainsKey(card))
+            {
+                Debug.Log($"Removing temporary upgrade tracking for discarded card: {card.cardName} (was {tempUpgradedCardsInHand[card].originalCard.cardName})");
+                tempUpgradedCardsInHand.Remove(card);
+            }
+            // --- END ADDED ---
+
+            // --- ADDED: Remove cost modifier tracking on discard ---
+            gameManager.GetPlayerManager().RemoveCostModifierForCard(card);
+            // --- END ADDED ---
+
+            discardPile.Add(card); // Add the potentially upgraded card to discard
+            HandleDiscardTrigger(card); // Trigger discard effect
         }
         // UI update likely happens in CombatManager after calling this
     }
@@ -403,12 +432,21 @@ public class CardManager
             return false;
         }
         
-        // Energy check
-        if (cardData.cost > gameManager.GetPlayerManager().GetCurrentEnergy())
+        // --- REVISED: Energy Check with Modifier ---
+        PlayerManager playerManager = gameManager.GetPlayerManager();
+        // REMOVED: Global cost modifier fetch
+        // int currentCostModifier = playerManager.GetLocalHandCostModifier();
+        // --- MODIFIED: Get per-card modifier ---
+        int cardSpecificModifier = playerManager.GetLocalHandCostModifier(cardData);
+        int effectiveCost = Mathf.Max(0, cardData.cost + cardSpecificModifier); // Ensure cost doesn't go below 0
+
+        if (effectiveCost > playerManager.GetCurrentEnergy())
         {
-            Debug.LogWarning($"AttemptPlayCard: Cannot play card '{cardData.cardName}' - Cost ({cardData.cost}) exceeds current energy ({gameManager.GetPlayerManager().GetCurrentEnergy()}).");
+            // --- MODIFIED: Update log message ---
+            Debug.LogWarning($"AttemptPlayCard: Cannot play card '{cardData.cardName}' - Effective Cost ({effectiveCost}) (Base:{cardData.cost} + Mod:{cardSpecificModifier}) exceeds current energy ({playerManager.GetCurrentEnergy()}).");
             return false; // Not enough energy
         }
+        // --- END REVISED ---
         
         // Attempt to remove the card from the hand list
         bool removed = hand.Remove(cardData);
@@ -416,13 +454,17 @@ public class CardManager
         
         if (removed)
         {
+            // --- ADDED: Remove cost modifier tracking for played card ---
+            playerManager.RemoveCostModifierForCard(cardData);
+            // --- END ADDED ---
+
             discardPile.Add(cardData);
             gameManager.UpdateHandUI(); // Update visual hand
             gameManager.UpdateDeckCountUI(); // Update discard count display
             
-            // Consume energy
-            gameManager.GetPlayerManager().ConsumeEnergy(cardData.cost);
-            Debug.Log($"Played card '{cardData.cardName}'. Energy remaining: {gameManager.GetPlayerManager().GetCurrentEnergy()}");
+            // Consume energy (using effective cost)
+            playerManager.ConsumeEnergy(effectiveCost);
+            Debug.Log($"Played card '{cardData.cardName}'. Energy remaining: {playerManager.GetCurrentEnergy()}");
             
             // Apply card effects based on cardData and targetType
             // --- REVISED: Apply effects based on target --- 
@@ -553,7 +595,6 @@ public class CardManager
             // --- ADDED: Combo Check --- 
             if (cardData.isComboStarter)
             {
-                PlayerManager playerManager = gameManager.GetPlayerManager();
                 playerManager.IncrementComboCount();
                 if (playerManager.GetCurrentComboCount() >= cardData.comboTriggerValue)
                 {
@@ -562,6 +603,43 @@ public class CardManager
                     // Optional: Reset combo count immediately after trigger?
                     // playerManager.ResetComboCount(); 
                 }
+            }
+            // --- END ADDED ---
+            
+            // --- ADDED: Apply Cost Modifier Effect --- 
+            if (cardData.costChangeTarget != CostChangeTargetType.None && cardData.costChangeAmount != 0)
+            {
+                if (cardData.costChangeTarget == CostChangeTargetType.OpponentHand)
+                {
+                    playerManager.ApplyCostModifierToOpponentHand(cardData.costChangeAmount, cardData.costChangeDuration, cardData.costChangeCardCount);
+                }
+                else if (cardData.costChangeTarget == CostChangeTargetType.PlayerHand)
+                {
+                    // Typically applied by opponent, but adding here for completeness/testing?
+                    playerManager.ApplyCostModifierToLocalHand(cardData.costChangeAmount, cardData.costChangeDuration, cardData.costChangeCardCount);
+                }
+            }
+            // --- END ADDED ---
+
+            // --- ADDED: Apply Crit Chance Buff Effect --- 
+            if (cardData.critChanceBuffAmount > 0)
+            {
+                if (cardData.critChanceBuffTarget == CardDropZone.TargetType.PlayerSelf)
+                {
+                    playerManager.ApplyCritChanceBuffPlayer(cardData.critChanceBuffAmount, cardData.critChanceBuffDuration);
+                }
+                else if (cardData.critChanceBuffTarget == CardDropZone.TargetType.OwnPet)
+                {
+                    playerManager.ApplyCritChanceBuffPet(cardData.critChanceBuffAmount, cardData.critChanceBuffDuration);
+                }
+                // Note: Applying crit buff to opponent isn't currently handled, but could be added.
+            }
+            // --- END ADDED ---
+
+            // --- ADDED: Apply Temporary Hand Upgrade Effect --- 
+            if (cardData.upgradeHandCardCount > 0)
+            {
+                ApplyTemporaryHandUpgrade(cardData.upgradeHandCardCount, cardData.upgradeHandCardDuration, cardData.upgradeHandCardTargetRule);
             }
             // --- END ADDED ---
             
@@ -1279,6 +1357,171 @@ public class CardManager
             // TODO: Add more complex combo effects (e.g., apply status, heal based on target)
             // Need to potentially check comboTarget here if effects are target-dependent.
         }
+    }
+    // --- END ADDED ---
+
+    // --- ADDED: Apply Temporary Hand Upgrade Effect --- 
+    private void ApplyTemporaryHandUpgrade(int cardCount, int duration, UpgradeTargetRule targetRule)
+    {
+        if (cardCount <= 0 || hand.Count == 0) return;
+
+        Debug.Log($"Attempting to apply temporary hand upgrade: {cardCount} cards for {duration} turns, targeting {targetRule}");
+
+        // 1. Identify potential candidates in hand (not already temp upgraded, has upgrade path)
+        List<CardData> candidates = hand.Where(card => 
+            card.upgradedVersion != null && 
+            !tempUpgradedCardsInHand.ContainsKey(card) && // Exclude cards already temp upgraded
+            !tempUpgradedCardsInHand.Any(kvp => kvp.Value.originalCard == card) // Exclude cards that *are* temp upgrades of something else
+        ).ToList();
+
+        if (candidates.Count == 0) 
+        {
+            Debug.Log("No valid cards in hand to temporarily upgrade.");
+            return;
+        }
+
+        // 2. Select target cards based on rule
+        List<CardData> cardsToUpgrade = new List<CardData>();
+        System.Random rng = new System.Random();
+
+        switch (targetRule)
+        {
+            case UpgradeTargetRule.Random:
+                cardsToUpgrade = candidates.OrderBy(x => rng.Next()).Take(Mathf.Min(cardCount, candidates.Count)).ToList();
+                break;
+            case UpgradeTargetRule.Cheapest:
+                cardsToUpgrade = candidates.OrderBy(card => card.cost).Take(Mathf.Min(cardCount, candidates.Count)).ToList();
+                break;
+            case UpgradeTargetRule.MostExpensive:
+                cardsToUpgrade = candidates.OrderByDescending(card => card.cost).Take(Mathf.Min(cardCount, candidates.Count)).ToList();
+                break;
+        }
+
+        // 3. Perform the upgrade and track
+        foreach (CardData originalCard in cardsToUpgrade)
+        {
+            int handIndex = hand.IndexOf(originalCard);
+            if (handIndex != -1)
+            {
+                CardData upgradedCard = originalCard.upgradedVersion;
+                hand[handIndex] = upgradedCard;
+                
+                // Track it - Key is the *new* upgraded card instance in hand
+                TempUpgradeInfo info = new TempUpgradeInfo { originalCard = originalCard, durationTurns = duration };
+                tempUpgradedCardsInHand[upgradedCard] = info;
+
+                Debug.Log($"Temporarily upgraded hand card '{originalCard.cardName}' to '{upgradedCard.cardName}' at index {handIndex}. Duration: {duration} turns.");
+            }
+            else
+            {
+                Debug.LogWarning($"Could not find card '{originalCard.cardName}' in hand to upgrade (was it removed concurrently?)");
+            }
+        }
+
+        // 4. Update UI
+        if (cardsToUpgrade.Count > 0)
+        {
+            gameManager.UpdateHandUI();
+        }
+    }
+    // --- END ADDED ---
+
+    // --- ADDED: Process End of Turn Hand Effects (Called by CombatManager) ---
+    public void ProcessEndOfTurnHandEffects()
+    {
+        RevertExpiredHandUpgrades(false); // Decrement durations and revert if needed
+        // Potentially add other end-of-turn hand effects here
+    }
+
+    private void RevertExpiredHandUpgrades(bool forceRevertAll)
+    {
+        if (tempUpgradedCardsInHand.Count == 0) return;
+
+        Debug.Log($"Processing end-of-turn hand upgrades. Force Revert All: {forceRevertAll}");
+        List<CardData> upgradedCardsToRemove = new List<CardData>();
+        List<KeyValuePair<int, CardData>> cardsToRevertInHand = new List<KeyValuePair<int, CardData>>();
+
+        // Create a temporary list of keys to iterate over, allowing modification of the dictionary
+        List<CardData> currentUpgradedKeys = new List<CardData>(tempUpgradedCardsInHand.Keys);
+
+        foreach (CardData upgradedCard in currentUpgradedKeys)
+        {
+            if (tempUpgradedCardsInHand.TryGetValue(upgradedCard, out TempUpgradeInfo info))
+            {
+                bool revert = forceRevertAll;
+                if (!forceRevertAll && info.durationTurns > 0) // Only decrement if duration is turn-based
+                {
+                    info.durationTurns--;
+                    tempUpgradedCardsInHand[upgradedCard] = info; // Update duration in dictionary
+                    Debug.Log($"Decremented temp upgrade duration for {upgradedCard.cardName}. Turns remaining: {info.durationTurns}");
+                    if (info.durationTurns == 0)
+                    {
+                        revert = true;
+                    }
+                }
+                else if (!forceRevertAll && info.durationTurns == 0) // Combat-long effect, don't revert unless forced
+                {
+                     // Do nothing, combat-long effect persists until forced revert
+                }
+                else if (info.durationTurns < 0) // Should not happen, but handle defensively
+                {
+                     Debug.LogWarning($"Temp upgrade info for {upgradedCard.cardName} had negative duration ({info.durationTurns}), forcing revert.");
+                     revert = true; 
+                }
+
+                if (revert)
+                {
+                    // Find the card in the actual hand list to replace it
+                    int handIndex = hand.IndexOf(upgradedCard);
+                    if (handIndex != -1)
+                    {
+                        Debug.Log($"Reverting temporary upgrade: '{upgradedCard.cardName}' back to '{info.originalCard.cardName}' in hand.");
+                        // Schedule the revert to avoid modifying 'hand' while potentially iterating elsewhere
+                        cardsToRevertInHand.Add(new KeyValuePair<int, CardData>(handIndex, info.originalCard));
+                        upgradedCardsToRemove.Add(upgradedCard); // Mark for removal from tracking dict
+                    }
+                    else
+                    {
+                        // Card is no longer in hand (discarded?), just remove from tracking
+                        Debug.Log($"Temp upgraded card '{upgradedCard.cardName}' not found in hand during revert check (likely discarded). Removing tracking.");
+                        upgradedCardsToRemove.Add(upgradedCard);
+                    }
+
+                    // --- ADDED: Remove cost modifier for the *upgraded* card instance being removed/reverted ---
+                    gameManager.GetPlayerManager().RemoveCostModifierForCard(upgradedCard);
+                    // We are NOT attempting to restore/transfer the modifier to the original card here.
+                    // --- END ADDED ---
+                }
+            }
+        }
+
+        // Perform the scheduled reverts in the hand
+        foreach (var revertPair in cardsToRevertInHand)
+        {
+            if (revertPair.Key >= 0 && revertPair.Key < hand.Count) // Double check index validity
+            {
+                 hand[revertPair.Key] = revertPair.Value; // Revert card in hand
+            }
+        }
+
+        // Remove expired entries from the tracking dictionary
+        foreach (CardData keyToRemove in upgradedCardsToRemove)
+        {
+            tempUpgradedCardsInHand.Remove(keyToRemove);
+        }
+
+        // Update UI if any reverts happened
+        if (cardsToRevertInHand.Count > 0)
+        {
+            gameManager.UpdateHandUI();
+        }
+    }
+    // --- END ADDED ---
+
+    // --- ADDED: Public check for temporary upgrade status ---
+    public bool IsCardTemporarilyUpgraded(CardData cardInstanceInHand)
+    {
+        return tempUpgradedCardsInHand.ContainsKey(cardInstanceInHand);
     }
     // --- END ADDED ---
 }

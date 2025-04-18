@@ -310,6 +310,16 @@ public class GameManager : MonoBehaviourPunCallbacks
         playerManager.DamageLocalPet(damageAmount);
     }
 
+    // --- ADDED: RPC for Hand Cost Modifier ---
+    [PunRPC]
+    private void RpcApplyHandCostModifier(int amount, int duration, int cardCount)
+    {
+        Debug.Log($"RPC Received: Apply Hand Cost Modifier Amount={amount}, Duration={duration}, Count={cardCount}");
+        playerManager.ApplyCostModifierToLocalHand(amount, duration, cardCount);
+        // The UI will update implicitly when hand is redrawn or cost is checked
+    }
+    // --- END ADDED ---
+
     public PhotonView GetPhotonView()
     {
         return photonViewComponent;

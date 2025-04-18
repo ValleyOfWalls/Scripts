@@ -210,6 +210,10 @@ public class CombatManager
         Debug.Log("Ending Player Turn");
         if (endTurnButton) endTurnButton.interactable = false; // Prevent double clicks
 
+        // --- ADDED: Process End-of-Turn Hand Effects (Temp Upgrades, etc.) ---
+        gameManager.GetCardManager().ProcessEndOfTurnHandEffects();
+        // --- END ADDED ---
+
         // 1. Discard Hand
         gameManager.GetCardManager().DiscardHand();
         UpdateHandUI(); // Clear hand display
@@ -283,12 +287,21 @@ public class CombatManager
             }
         }
 
+        // --- ADDED: Get cost modifier ---
+        PlayerManager playerManager = gameManager.GetPlayerManager();
+        CardManager cardManager = gameManager.GetCardManager(); // Get CardManager for upgrade check
+        // --- END ADDED ---
+
         // Instantiate new card visuals for cards in hand
-        foreach (CardData card in gameManager.GetCardManager().GetHand())
+        foreach (CardData card in cardManager.GetHand()) // Use cardManager.GetHand()
         {
             GameObject cardGO = Object.Instantiate(cardPrefab, playerHandPanel.transform);
             cardGO.name = $"Card_{card.cardName}";
             
+            // --- ADDED: Check for temp upgrade --- 
+            bool isTempUpgrade = cardManager.IsCardTemporarilyUpgraded(card);
+            // --- END ADDED ---
+
             Transform headerPanel = cardGO.transform.Find("HeaderPanel");
             Transform descPanel = cardGO.transform.Find("DescPanel");
             Transform artPanel = cardGO.transform.Find("ArtPanel");
@@ -297,10 +310,46 @@ public class CombatManager
             TextMeshProUGUI costText = headerPanel?.Find("CostText")?.GetComponent<TextMeshProUGUI>();
             TextMeshProUGUI descText = descPanel?.Find("CardDescText")?.GetComponent<TextMeshProUGUI>();
             Image artImage = artPanel?.GetComponent<Image>();
+            Image cardBackground = cardGO.GetComponent<Image>(); // Get card background for potential color change
 
-            if (nameText != null) nameText.text = card.cardName;
-            if (costText != null) costText.text = card.cost.ToString();
+            if (nameText != null) 
+            {
+                nameText.text = card.cardName;
+                if (isTempUpgrade) nameText.text += " (T+)"; // Indicate temporary upgrade
+            }
+            
+            // --- REVISED: Handle Cost Display & Color ---
+            if (costText != null)
+            {
+                // --- MODIFIED: Get per-card modifier ---
+                int cardSpecificModifier = playerManager.GetLocalHandCostModifier(card);
+                int effectiveCost = Mathf.Max(0, card.cost + cardSpecificModifier);
+                costText.text = effectiveCost.ToString();
+                
+                // Change color based on cost difference
+                if (cardSpecificModifier > 0) // Check specific modifier
+                {
+                    costText.color = Color.red; // Higher cost
+                }
+                else if (cardSpecificModifier < 0) // Check specific modifier
+                {
+                     costText.color = Color.green; // Lower cost
+                }
+                else
+                {
+                    costText.color = Color.white; // Default cost color
+                }
+            }
+            // --- END REVISED ---
+
             if (descText != null) descText.text = card.description;
+
+            // --- ADDED: Visual indicator for temp upgrade ---
+            if (isTempUpgrade && cardBackground != null)
+            {
+                 cardBackground.color = new Color(0.3f, 0.2f, 0.4f); // Purple-ish tint for temp upgrade
+            }
+            // --- END ADDED ---
             
             // Get the handler and assign the data
             CardDragHandler handler = cardGO.GetComponent<CardDragHandler>();

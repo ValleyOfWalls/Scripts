@@ -53,6 +53,31 @@ public class PlayerManager
     private int opponentPetDotDamage = 0; // Local simulation
     // --- END ADDED ---
     
+    // --- ADDED: Struct for Cost Modifier Tracking ---
+    private struct CostModifierInfo
+    {
+        public int amount;
+        public int durationTurns;
+    }
+    // --- END ADDED ---
+
+    // --- ADDED: Cost Modifier Tracking ---
+    // REMOVED: Global modifier fields
+    // private int localHandCostModifierTurns = 0;
+    // private int localHandCostModifierAmount = 0;
+    private Dictionary<CardData, CostModifierInfo> cardCostModifiers = new Dictionary<CardData, CostModifierInfo>(); // Tracks modifiers per card instance in hand
+    private int opponentHandCostModifierTurns = 0; // Duration of modifier WE applied to them (Kept for turn decrement)
+    private int opponentHandCostModifierAmount = 0; // Amount of modifier WE applied to them (Kept for local state)
+    // --- END ADDED ---
+
+    // --- ADDED: Crit Chance Tracking ---
+    private int localPlayerCritChanceBonus = 0; // Combat-long bonus %
+    private int localPetCritChanceBonus = 0;    // Combat-long bonus %
+    private int opponentPetCritChanceBonus = 0; // Combat-long bonus % (local sim)
+    private const int BASE_CRIT_CHANCE = 5; // Base 5% crit chance? Or 0?
+    private const int CRIT_DAMAGE_MULTIPLIER = 2; // e.g., Crits deal double damage
+    // --- END ADDED ---
+    
     private Player opponentPlayer;
     private bool combatEndedForLocalPlayer = false;
     
@@ -86,6 +111,18 @@ public class PlayerManager
         localPetDotDamage = 0;
         opponentPetDotTurns = 0;
         opponentPetDotDamage = 0;
+        // --- END ADDED ---
+
+        // --- ADDED: Reset Cost Modifiers & Crit --- 
+        // REMOVED: Global modifier reset
+        // localHandCostModifierTurns = 0;
+        // localHandCostModifierAmount = 0;
+        cardCostModifiers.Clear(); // Clear per-card tracking
+        opponentHandCostModifierTurns = 0;
+        opponentHandCostModifierAmount = 0;
+        localPlayerCritChanceBonus = 0;
+        localPetCritChanceBonus = 0;
+        opponentPetCritChanceBonus = 0;
         // --- END ADDED ---
     }
     
@@ -273,6 +310,25 @@ public class PlayerManager
             if (localPlayerHealth < 0) localPlayerHealth = 0;
         }
         
+        // Apply Crit Damage if applicable (Opponent Pet attacking Player)
+        // TODO: Implement opponent crit chance tracking if needed for more accuracy
+        // For now, assume opponent has a base crit chance + bonus we track locally
+        // Note: This crit check is happening *after* block calculation.
+        // Move before block if crit should apply to pre-block damage.
+        int opponentCritChance = BASE_CRIT_CHANCE + opponentPetCritChanceBonus;
+        if (Random.Range(0, 100) < opponentCritChance)
+        {
+            Debug.LogWarning($"Opponent Pet CRITICAL HIT! (Chance: {opponentCritChance}%)");
+            // Re-apply damage (multiplier - 1) as additional damage post-block
+            // Or, recalculate pre-block damage with multiplier if desired.
+            // This way just adds extra damage.
+            int critDamage = damageAfterBlock * (CRIT_DAMAGE_MULTIPLIER - 1);
+            Debug.Log($"Applying additional {critDamage} critical damage.");
+            localPlayerHealth -= critDamage;
+            if (localPlayerHealth < 0) localPlayerHealth = 0;
+            // TODO: Add visual effect for crit
+        }
+
         gameManager.UpdateHealthUI(); // Update both health and block display
         
         if (localPlayerHealth <= 0 && !combatEndedForLocalPlayer)
@@ -310,6 +366,18 @@ public class PlayerManager
             if (opponentPetHealth < 0) opponentPetHealth = 0;
         }
         
+        // Apply Crit Damage if applicable (Player attacking Opponent Pet)
+        int playerCritChance = GetPlayerEffectiveCritChance();
+        if (Random.Range(0, 100) < playerCritChance)
+        {
+            Debug.LogWarning($"Player CRITICAL HIT! (Chance: {playerCritChance}%)");
+            int critDamage = damageAfterBlock * (CRIT_DAMAGE_MULTIPLIER - 1);
+            Debug.Log($"Applying additional {critDamage} critical damage to Opponent Pet.");
+            opponentPetHealth -= critDamage;
+            if (opponentPetHealth < 0) opponentPetHealth = 0;
+            // TODO: Add visual effect for crit
+        }
+
         gameManager.UpdateHealthUI(); // Update both health and block display
         
         // Notify the opponent that their pet took damage (send ORIGINAL amount, they calculate block)
@@ -987,12 +1055,44 @@ public class PlayerManager
             if (localPlayerDotTurns == 0) localPlayerDotDamage = 0; // Clear damage if duration ends
         }
         
-        // Then Decrement Status Effects
+        // Then Decrement Status Effects & Cost Modifiers
         if (localPlayerWeakTurns > 0) localPlayerWeakTurns--;
         if (localPlayerBreakTurns > 0) localPlayerBreakTurns--;
+
+        // --- REVISED: Decrement Per-Card Cost Modifier Durations ---
+        List<CardData> expiredModifiers = new List<CardData>();
+        List<CardData> currentModKeys = new List<CardData>(cardCostModifiers.Keys);
+        foreach (CardData card in currentModKeys)
+        {
+            if (cardCostModifiers.TryGetValue(card, out CostModifierInfo info))
+            {
+                info.durationTurns--;
+                if (info.durationTurns <= 0)
+                {
+                    expiredModifiers.Add(card);
+                    Debug.Log($"Cost modifier expired for card: {card.cardName}");
+                }
+                else
+                {
+                    cardCostModifiers[card] = info; // Update duration
+                }
+            }
+        }
+        foreach (CardData cardToRemove in expiredModifiers)
+        {
+            cardCostModifiers.Remove(cardToRemove);
+        }
+        bool modifiersChanged = expiredModifiers.Count > 0;
+        // --- END REVISED ---
+
+        Debug.Log($"Processed Player Turn Start. Weak: {localPlayerWeakTurns}, Break: {localPlayerBreakTurns}, DoT Turns: {localPlayerDotTurns}, ActiveCostMods: {cardCostModifiers.Count}");
         
-        Debug.Log($"Processed Player Turn Start. Weak: {localPlayerWeakTurns}, Break: {localPlayerBreakTurns}, DoT Turns: {localPlayerDotTurns}");
-        // TODO: Update UI
+        // Update UI if modifiers expired
+        if (modifiersChanged)
+        {
+            gameManager.UpdateHandUI();
+        }
+        // TODO: Update other UI elements (status icons etc.)
     }
     
     public void ProcessLocalPetTurnStartEffects()
@@ -1033,4 +1133,141 @@ public class PlayerManager
         // TODO: Update UI
     }
     // --- END REVISED ---
+
+    // --- ADDED: Cost Modifier Application & Decrement ---
+    // Called locally when WE apply a cost mod to the opponent
+    public void ApplyCostModifierToOpponentHand(int amount, int duration, int cardCount)
+    {
+        // Simple overwrite for now. Could stack/extend logic.
+        opponentHandCostModifierAmount = amount;
+        opponentHandCostModifierTurns = duration; 
+        Debug.Log($"Applying Cost Modifier to Opponent Hand: Amount={amount}, Duration={duration}, Count={cardCount}. (Local state set)");
+        // --- TODO: Send RPC to Opponent --- 
+        // gameManager.GetPhotonView().RPC("RpcApplyHandCostModifier", opponentPlayer, amount, duration, cardCount);
+        // We need the opponentPlayer reference here.
+        Player opponent = GetOpponentPlayer();
+        if (opponent != null)
+        {
+            // Placeholder for RPC call - Need to implement RpcApplyHandCostModifier
+            // gameManager.GetPhotonView().RPC("RpcApplyHandCostModifier", opponent, amount, duration, cardCount);
+            // Debug.LogWarning("TODO: Implement and call RpcApplyHandCostModifier RPC.");
+            // ---MODIFIED: Call the RPC --- 
+            gameManager.GetPhotonView().RPC("RpcApplyHandCostModifier", opponent, amount, duration, cardCount);
+            Debug.Log($"Sent RpcApplyHandCostModifier to {opponent.NickName}");
+            // --- END MODIFIED ---
+        }
+        else
+        {
+            Debug.LogError("ApplyCostModifierToOpponentHand: Cannot send RPC, opponentPlayer is null!");
+        }
+    }
+
+    // --- REVISED: Apply Cost Modifier to Local Hand (Handles cardCount) ---
+    public void ApplyCostModifierToLocalHand(int amount, int duration, int cardCount)
+    {
+        Debug.Log($"ApplyCostModifierToLocalHand called: Amount={amount}, Duration={duration}, Count={cardCount}");
+        List<CardData> currentHand = gameManager.GetCardManager().GetHand();
+        if (currentHand.Count == 0) return;
+
+        List<CardData> cardsToModify = new List<CardData>();
+
+        if (cardCount <= 0 || cardCount >= currentHand.Count) // Affect all cards
+        {
+            cardsToModify.AddRange(currentHand);
+            Debug.Log("Applying cost modifier to all cards in hand.");
+        }
+        else // Affect specific number of random cards
+        {
+            System.Random rng = new System.Random();
+            cardsToModify = currentHand.OrderBy(x => rng.Next()).Take(cardCount).ToList();
+            Debug.Log($"Applying cost modifier to {cardCount} random cards in hand.");
+        }
+
+        foreach (CardData card in cardsToModify)
+        {
+            // Overwrite existing modifier or add new one
+            cardCostModifiers[card] = new CostModifierInfo { amount = amount, durationTurns = duration };
+            Debug.Log($" -> Set cost modifier for '{card.cardName}': Amount={amount}, Duration={duration}");
+        }
+
+        // Trigger UI update as costs might have changed
+        gameManager.UpdateHandUI(); 
+    }
+
+    // --- REVISED: Get Cost Modifier for a Specific Card ---
+    public int GetLocalHandCostModifier(CardData card)
+    {
+        if (card != null && cardCostModifiers.TryGetValue(card, out CostModifierInfo info))
+        {
+            return info.amount;
+        }
+        return 0; // No modifier for this specific card
+    }
+
+    // --- ADDED: Method to explicitly remove modifier for a card ---
+    public void RemoveCostModifierForCard(CardData card)
+    {
+        if (card != null && cardCostModifiers.Remove(card))
+        {
+            Debug.Log($"Removed cost modifier tracking for card: {card.cardName}");
+            // Optionally trigger UI update if needed immediately?
+        }
+    }
+    // --- END ADDED ---
+
+    // --- ADDED: Crit Chance Application & Getters ---
+    public void ApplyCritChanceBuffPlayer(int amount, int duration)
+    {
+        // Duration 0 = combat long
+        if (duration == 0)
+        {
+            localPlayerCritChanceBonus += amount;
+            Debug.Log($"Applied combat-long Crit Chance Buff to Player: +{amount}%. New Bonus: {localPlayerCritChanceBonus}%");
+        }
+        else
+        {
+            // TODO: Implement temporary crit buffs if needed (track duration separately)
+             Debug.LogWarning("Temporary Crit Chance Buffs not yet implemented.");
+        }
+        // TODO: Update UI
+    }
+
+    public void ApplyCritChanceBuffPet(int amount, int duration)
+    {
+        if (duration == 0)
+        {
+            localPetCritChanceBonus += amount;
+             Debug.Log($"Applied combat-long Crit Chance Buff to Pet: +{amount}%. New Bonus: {localPetCritChanceBonus}%");
+        }
+        else
+        {
+             Debug.LogWarning("Temporary Crit Chance Buffs not yet implemented.");
+        }
+        // TODO: Update UI
+    }
+
+     public void ApplyCritChanceBuffOpponentPet(int amount, int duration)
+    {
+         if (duration == 0)
+        {
+            opponentPetCritChanceBonus += amount;
+            Debug.Log($"Applied combat-long Crit Chance Buff to Opponent Pet: +{amount}% (local sim). New Bonus: {opponentPetCritChanceBonus}%");
+        }
+        else
+        {
+            Debug.LogWarning("Temporary Crit Chance Buffs not yet implemented.");
+        }
+         // TODO: Update UI
+    }
+
+    public int GetPlayerEffectiveCritChance()
+    {
+        return BASE_CRIT_CHANCE + localPlayerCritChanceBonus;
+    }
+
+    public int GetPetEffectiveCritChance()
+    {
+        return BASE_CRIT_CHANCE + localPetCritChanceBonus;
+    }
+    // --- END ADDED ---
 }
