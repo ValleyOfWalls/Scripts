@@ -50,6 +50,7 @@ public class CombatManager
     private Button viewPetDeckButton;
     private Button viewOppPetDeckButton;
     private DeckViewController deckViewController;
+    private HandPanelHoverManager handPanelHoverManager;
 
     private TextMeshProUGUI opponentPetDotText;
 
@@ -146,6 +147,19 @@ public class CombatManager
         
         Transform handPanelTransform = playerArea.Find("PlayerHandPanel");
         playerHandPanel = handPanelTransform?.gameObject;
+        
+        // --- ADDED: Get HandPanelHoverManager --- 
+        if (playerHandPanel != null)
+        {
+            handPanelHoverManager = playerHandPanel.GetComponent<HandPanelHoverManager>();
+            if (handPanelHoverManager == null)
+            {
+                 Debug.LogError("HandPanelHoverManager component not found on PlayerHandPanel!");
+                 // Optionally add it if missing?
+                 // handPanelHoverManager = playerHandPanel.AddComponent<HandPanelHoverManager>();
+            }
+        }
+        // --- END ADDED ---
         
         Transform bottomBar = playerArea.Find("BottomBar");
         deckCountText = bottomBar?.Find("DeckCountText")?.GetComponent<TextMeshProUGUI>();
@@ -514,10 +528,31 @@ public class CombatManager
             // Apply Transformations
             cardRect.localPosition = new Vector3(posX, posY, 0);
             cardRect.localRotation = Quaternion.Euler(0, 0, angle);
+            
+            // --- ADDED: Store original transform in handler ---
+            CardDragHandler handler = cardGO.GetComponent<CardDragHandler>();
+            if (handler != null)
+            {
+                handler.originalPosition = cardRect.localPosition;
+                handler.originalRotation = cardRect.localRotation;
+                handler.originalScale = cardRect.localScale; // Store original scale too
+            }
+            else
+            {
+                 Debug.LogError($"CardDragHandler missing on {cardGO.name} during layout!");
+            }
+            // --- END ADDED ---
              
             // Ensure pivot is reasonable for rotation (e.g., bottom center)
             // This should ideally be set on the prefab, but can be forced here if needed:
             // cardRect.pivot = new Vector2(0.5f, 0f); 
+        }
+        // --- END ADDED ---
+
+        // --- ADDED: Update Hover Manager References ---
+        if (handPanelHoverManager != null)
+        {
+            handPanelHoverManager.UpdateCardReferences();
         }
         // --- END ADDED ---
     }
