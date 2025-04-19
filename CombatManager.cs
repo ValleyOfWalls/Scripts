@@ -14,6 +14,14 @@ public class CombatManager
     private int startingPetHealth;
     private int startingEnergy;
 
+    // --- ADDED: Hand Layout Parameters ---
+    [Header("Hand Layout Settings")]
+    [SerializeField] private float cardSpacing = 100f; // Horizontal space between card centers
+    [SerializeField] private float tiltAnglePerCard = 5f; // Degrees to tilt each card away from center
+    [SerializeField] private float offsetYPerCard = 10f; // Vertical offset downwards per card away from center
+    [SerializeField] private float curveFactor = 0.5f; // 0 = straight line, 1 = more curve outwards
+    // --- END ADDED ---
+
     // UI References
     private TextMeshProUGUI playerNameText;
     private Slider playerHealthSlider;
@@ -419,97 +427,157 @@ public class CombatManager
             return;
         }
 
-        // Clear existing card visuals
+        // --- MODIFIED: Collect existing cards before destroying ---
+        List<GameObject> existingCardGOs = new List<GameObject>();
         foreach (Transform child in playerHandPanel.transform)
         {
-            if (child.gameObject.name != "CardTemplate")
+            // Assume instantiated cards are not named "CardTemplate"
+            if (child.gameObject.name != "CardTemplate") 
             {
-                Object.Destroy(child.gameObject);
+                existingCardGOs.Add(child.gameObject);
             }
             else
             {
-                child.gameObject.SetActive(false);
+                child.gameObject.SetActive(false); // Keep template hidden
             }
         }
+        // --- END MODIFIED ---
 
-        // --- ADDED: Get cost modifier ---
         PlayerManager playerManager = gameManager.GetPlayerManager();
-        CardManager cardManager = gameManager.GetCardManager(); // Get CardManager for upgrade check
-        // --- END ADDED ---
+        CardManager cardManager = gameManager.GetCardManager(); 
+        List<CardData> currentHand = cardManager.GetHand();
+        List<GameObject> currentCardGOs = new List<GameObject>(); // To hold the GOs for layout
 
-        // Instantiate new card visuals for cards in hand
-        foreach (CardData card in cardManager.GetHand()) // Use cardManager.GetHand()
+        // --- MODIFIED: Reuse or Instantiate Card Visuals ---
+        for (int i = 0; i < currentHand.Count; i++)
         {
-            GameObject cardGO = Object.Instantiate(cardPrefab, playerHandPanel.transform);
-            cardGO.name = $"Card_{card.cardName}";
-            
-            // --- ADDED: Check for temp upgrade --- 
-            bool isTempUpgrade = cardManager.IsCardTemporarilyUpgraded(card);
-            // --- END ADDED ---
+            CardData card = currentHand[i];
+            GameObject cardGO = null;
 
-            Transform headerPanel = cardGO.transform.Find("HeaderPanel");
-            Transform descPanel = cardGO.transform.Find("DescPanel");
-            Transform artPanel = cardGO.transform.Find("ArtPanel");
+            // Try to find and reuse an existing GO for this card data instance
+            int existingIndex = existingCardGOs.FindIndex(go => go.GetComponent<CardDragHandler>()?.cardData == card);
 
-            TextMeshProUGUI nameText = headerPanel?.Find("CardNameText")?.GetComponent<TextMeshProUGUI>();
-            TextMeshProUGUI costText = headerPanel?.Find("CostText")?.GetComponent<TextMeshProUGUI>();
-            TextMeshProUGUI descText = descPanel?.Find("CardDescText")?.GetComponent<TextMeshProUGUI>();
-            Image artImage = artPanel?.GetComponent<Image>();
-            Image cardBackground = cardGO.GetComponent<Image>(); // Get card background for potential color change
-
-            if (nameText != null) 
+            if (existingIndex != -1)
             {
-                nameText.text = card.cardName;
-                if (isTempUpgrade) nameText.text += " (T+)"; // Indicate temporary upgrade
-            }
-            
-            // --- REVISED: Handle Cost Display & Color ---
-            if (costText != null)
-            {
-                // --- MODIFIED: Get per-card modifier ---
-                int cardSpecificModifier = playerManager.GetLocalHandCostModifier(card);
-                int effectiveCost = Mathf.Max(0, card.cost + cardSpecificModifier);
-                costText.text = effectiveCost.ToString();
-                
-                // Change color based on cost difference
-                if (cardSpecificModifier > 0) // Check specific modifier
-                {
-                    costText.color = Color.red; // Higher cost
-                }
-                else if (cardSpecificModifier < 0) // Check specific modifier
-                {
-                     costText.color = Color.green; // Lower cost
-                }
-                else
-                {
-                    costText.color = Color.white; // Default cost color
-                }
-            }
-            // --- END REVISED ---
-
-            if (descText != null) descText.text = card.description;
-
-            // --- ADDED: Visual indicator for temp upgrade ---
-            if (isTempUpgrade && cardBackground != null)
-            {
-                 cardBackground.color = new Color(0.3f, 0.2f, 0.4f); // Purple-ish tint for temp upgrade
-            }
-            // --- END ADDED ---
-            
-            // Get the handler and assign the data
-            CardDragHandler handler = cardGO.GetComponent<CardDragHandler>();
-            if (handler != null)
-            {
-                handler.cardData = card;
+                cardGO = existingCardGOs[existingIndex];
+                existingCardGOs.RemoveAt(existingIndex); // Remove from list so it's not destroyed later
+                cardGO.transform.SetSiblingIndex(i); // Maintain visual order roughly
+                cardGO.SetActive(true); // Ensure it's active
+                 // Re-apply visual updates in case state changed (like temp upgrade)
+                UpdateCardVisuals(cardGO, card, playerManager, cardManager);
             }
             else
             {
-                Debug.LogError($"CardDragHandler component not found on instantiated card prefab: {cardGO.name}");
+                // Instantiate a new card if not found or not reusable
+                cardGO = Object.Instantiate(cardPrefab, playerHandPanel.transform);
+                cardGO.name = $"Card_{card.cardName}_{i}"; // Unique name helpful for debug
+                UpdateCardVisuals(cardGO, card, playerManager, cardManager);
+                cardGO.SetActive(true);
             }
-
-            cardGO.SetActive(true);
+            currentCardGOs.Add(cardGO);
         }
+
+        // Destroy any remaining old card GOs that weren't reused
+        foreach (GameObject oldCardGO in existingCardGOs)
+        {
+            Object.Destroy(oldCardGO);
+        }
+        // --- END MODIFIED ---
+
+        // --- ADDED: Apply Custom Layout ---
+        int numCards = currentCardGOs.Count;
+        if (numCards == 0) return; // No layout needed for empty hand
+
+        float middleIndex = (numCards - 1) / 2.0f;
+
+        for (int i = 0; i < numCards; i++)
+        {
+            GameObject cardGO = currentCardGOs[i];
+            RectTransform cardRect = cardGO.GetComponent<RectTransform>();
+            if (cardRect == null) continue;
+
+            float offsetFromCenter = i - middleIndex;
+
+            // Calculate Position
+            float posX = offsetFromCenter * cardSpacing;
+             // Apply outward curve based on distance from center
+            posX += Mathf.Sign(offsetFromCenter) * Mathf.Pow(Mathf.Abs(offsetFromCenter), 2) * curveFactor * cardSpacing * 0.1f; // Adjust multiplier for curve strength
+            float posY = -Mathf.Abs(offsetFromCenter) * offsetYPerCard; 
+           
+            // Apply slight curve to Y as well
+            posY -= Mathf.Pow(offsetFromCenter, 2) * offsetYPerCard * 0.1f; // Make center higher
+
+
+            // Calculate Rotation
+            float angle = -offsetFromCenter * tiltAnglePerCard; // Negative tilt for Unity's Z rotation (clockwise positive)
+
+            // Apply Transformations
+            cardRect.localPosition = new Vector3(posX, posY, 0);
+            cardRect.localRotation = Quaternion.Euler(0, 0, angle);
+             
+            // Ensure pivot is reasonable for rotation (e.g., bottom center)
+            // This should ideally be set on the prefab, but can be forced here if needed:
+            // cardRect.pivot = new Vector2(0.5f, 0f); 
+        }
+        // --- END ADDED ---
     }
+    
+    // --- ADDED: Helper function to update visuals ---
+    private void UpdateCardVisuals(GameObject cardGO, CardData card, PlayerManager playerManager, CardManager cardManager)
+    {
+         bool isTempUpgrade = cardManager.IsCardTemporarilyUpgraded(card);
+
+         Transform headerPanel = cardGO.transform.Find("HeaderPanel");
+         Transform descPanel = cardGO.transform.Find("DescPanel");
+         Transform artPanel = cardGO.transform.Find("ArtPanel"); // Assuming you might have art
+
+         TextMeshProUGUI nameText = headerPanel?.Find("CardNameText")?.GetComponent<TextMeshProUGUI>();
+         TextMeshProUGUI costText = headerPanel?.Find("CostText")?.GetComponent<TextMeshProUGUI>();
+         TextMeshProUGUI descText = descPanel?.Find("CardDescText")?.GetComponent<TextMeshProUGUI>();
+         // Image artImage = artPanel?.GetComponent<Image>(); // Example if using art
+         Image cardBackground = cardGO.GetComponent<Image>(); 
+
+         if (nameText != null) 
+         {
+             nameText.text = card.cardName;
+             if (isTempUpgrade) nameText.text += " (T+)"; 
+         }
+         
+         if (costText != null)
+         {
+             int cardSpecificModifier = playerManager.GetLocalHandCostModifier(card);
+             int effectiveCost = Mathf.Max(0, card.cost + cardSpecificModifier);
+             costText.text = effectiveCost.ToString();
+             
+             // Cost color logic (remains the same)
+             if (cardSpecificModifier > 0) costText.color = Color.red; 
+             else if (cardSpecificModifier < 0) costText.color = Color.green; 
+             else costText.color = Color.white; 
+         }
+
+         if (descText != null) descText.text = card.description;
+
+         if (cardBackground != null) // Reset background color first
+         {
+            cardBackground.color = Color.white; // Or your default card background color
+            if (isTempUpgrade)
+            {
+                 cardBackground.color = new Color(0.8f, 0.7f, 1.0f, cardBackground.color.a); // Light purple tint for temp upgrade
+            }
+         }
+        
+         // Ensure CardDragHandler has the correct CardData
+         CardDragHandler handler = cardGO.GetComponent<CardDragHandler>();
+         if (handler != null)
+         {
+             handler.cardData = card;
+         }
+         else
+         {
+             Debug.LogError($"CardDragHandler component not found on card GameObject: {cardGO.name}");
+         }
+    }
+    // --- END ADDED ---
 
     public void UpdateDeckCountUI()
     {
