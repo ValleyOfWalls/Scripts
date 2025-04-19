@@ -2,6 +2,8 @@ using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
 using System.Collections; // Added for Coroutines
+using System.Collections.Generic;
+using System.Linq;
 
 public class CardDragHandler : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDragHandler
 {
@@ -14,15 +16,20 @@ public class CardDragHandler : MonoBehaviour, IBeginDragHandler, IDragHandler, I
     private static readonly float hoverOffsetY = 30f;
     private static readonly float neighborOffsetX = 40f;
     private static readonly float hoverScaleFactor = 1.1f;
-    private int originalSiblingIndex;
+    private int originalSiblingIndex = -1; // Initialize to -1
     private bool isHovering = false;
     // --- END ADDED ---
 
     // --- ADDED: Animation fields ---
     private static readonly float hoverAnimDuration = 0.15f; // Duration for hover animation
-    private Coroutine currentPosScaleRotCoroutine = null;
-    private Coroutine currentNeighborLeftCoroutine = null;
-    private Coroutine currentNeighborRightCoroutine = null;
+    private Coroutine animationCoroutine = null; // Single coroutine for self-animation
+    // --- END ADDED ---
+
+    // --- ADDED: Target State Fields ---
+    private Vector3 targetPosition;
+    private Quaternion targetRotation;
+    private Vector3 targetScale;
+    private Vector3 currentNeighborOffset = Vector3.zero; // Offset applied by neighbors
     // --- END ADDED ---
 
     private RectTransform rectTransform;
@@ -50,6 +57,13 @@ public class CardDragHandler : MonoBehaviour, IBeginDragHandler, IDragHandler, I
 
         // Ensure originalScale is initialized if Awake runs before first CombatManager layout
         originalScale = rectTransform.localScale;
+
+        // --- ADDED: Initialize target state to current state ---
+        targetPosition = rectTransform.localPosition;
+        targetRotation = rectTransform.localRotation;
+        targetScale = rectTransform.localScale;
+        currentNeighborOffset = Vector3.zero;
+        // --- END ADDED ---
     }
 
     public void OnBeginDrag(PointerEventData eventData)
@@ -63,16 +77,13 @@ public class CardDragHandler : MonoBehaviour, IBeginDragHandler, IDragHandler, I
         // --- ADDED: Stop animations and reset hover state if dragging starts mid-hover ---
         if (isHovering)
         {
-            StopAllCardAnimations(); // Stop own animation & neighbor animations *started by this card*
-            
-            // Reset own visuals instantly before drag starts
-            rectTransform.localPosition = originalPosition;
-            rectTransform.localRotation = originalRotation;
-            rectTransform.localScale = originalScale;
+            // Reset state instantly, neighbours will be reset by HoverManager potentially
+            ResetToOriginalStateInstantly(false); // false = don't tell neighbors 
             isHovering = false;
         }
-         originalSiblingIndex = transform.GetSiblingIndex(); // Store index before reparenting
-        // --- END ADDED ---
+        
+        // Store index *after* potential reset and *before* reparenting
+        originalSiblingIndex = transform.GetSiblingIndex(); 
 
         startPosition = rectTransform.position;
         originalParent = transform.parent;
@@ -109,21 +120,30 @@ public class CardDragHandler : MonoBehaviour, IBeginDragHandler, IDragHandler, I
         if (!playedSuccessfully)
         {
             // --- MODIFIED: Snap back instantly, ensure correct sibling index ---
-            StopAllCardAnimations(); // Ensure no lingering animations
+            StopCoroutineIfRunning(ref animationCoroutine); // Stop self-animation
             rectTransform.localPosition = originalPosition;
             rectTransform.localRotation = originalRotation;
             rectTransform.localScale = originalScale;
-            // Use the sibling index stored *before* the drag started
+
+            // Reset target state as well
+            targetPosition = originalPosition;
+            targetRotation = originalRotation;
+            targetScale = originalScale;
+            currentNeighborOffset = Vector3.zero;
+            
+            // --- REMOVED Sibling Index Restoration from Drag End --- 
+            /*
             if(originalParent != null && originalSiblingIndex >= 0 && originalSiblingIndex < originalParent.childCount)
             {
-                 transform.SetSiblingIndex(originalSiblingIndex);
+                transform.SetSiblingIndex(originalSiblingIndex);
             }
             else
             {
-                // Fallback if something went wrong with index
-                 transform.SetAsLastSibling(); 
+                // If index is invalid, maybe just set as last for safety?
+                if(originalParent != null) transform.SetAsLastSibling();
             }
-            // --- END MODIFIED ---
+            */
+            // --- END REMOVED ---
         }
         // If played successfully, GameManager's UpdateHandUI will handle removal/re-layout
     }
@@ -132,54 +152,68 @@ public class CardDragHandler : MonoBehaviour, IBeginDragHandler, IDragHandler, I
     public void EnterHoverState()
     {
         if (canvasGroup.blocksRaycasts == false || isHovering) return;
+        // Debug.Log($"EnterHover: {name}");
         isHovering = true;
-        originalSiblingIndex = transform.GetSiblingIndex();
+
+        // Store index only if not already stored (might happen if quickly re-hovering)
+        if(originalSiblingIndex < 0) originalSiblingIndex = transform.GetSiblingIndex();
 
         // --- MODIFIED: Use Animation --- 
-        StopAllCardAnimations(); // Stop existing animations first
+        currentNeighborOffset = Vector3.zero; // Reset any neighbor offset
         
         // Calculate target state
-        Vector3 targetPosition = originalPosition + Vector3.up * hoverOffsetY;
-        Quaternion targetRotation = originalRotation; // Or Quaternion.identity if you want it straight
-        Vector3 targetScale = originalScale * hoverScaleFactor;
+        targetPosition = originalPosition + Vector3.up * hoverOffsetY;
+        targetRotation = originalRotation; // Keep original rotation
+        targetScale = originalScale * hoverScaleFactor;
 
-        // Start animation for this card
-        currentPosScaleRotCoroutine = StartCoroutine(AnimateTransformCoroutine(targetPosition, targetRotation, targetScale, true));
+        // Start animation towards target & bring to front
+        transform.SetAsLastSibling(); // Bring to front immediately
+        UpdateAnimationTargetAndStart(); // Start animation
         
         // Start neighbor animations
         AffectNeighbors(neighborOffsetX, true);
-        // --- END MODIFIED ---
     }
 
     public void ExitHoverState()
     {
         if (!isHovering || canvasGroup.blocksRaycasts == false) return;
+        // Debug.Log($"ExitHover: {name}");
         isHovering = false;
 
         // --- MODIFIED: Use Animation --- 
-        StopAllCardAnimations(); // Stop existing animations first
+        currentNeighborOffset = Vector3.zero; // Reset any neighbor offset
 
         // Target state is the original state
-        currentPosScaleRotCoroutine = StartCoroutine(AnimateTransformCoroutine(originalPosition, originalRotation, originalScale, false));
+        targetPosition = originalPosition;
+        targetRotation = originalRotation;
+        targetScale = originalScale;
+
+        // Start animation back towards target & restore layer order
+        UpdateAnimationTargetAndStart(); // Just animate, layer order restored at end of coroutine
 
         // Start neighbor animations back to original
         AffectNeighbors(0f, false);
         // --- END MODIFIED ---
+        
+        originalSiblingIndex = -1; // Reset stored index upon exiting hover
     }
     
-    // --- ADDED: Coroutine for smooth transform animation ---
-    private IEnumerator AnimateTransformCoroutine(Vector3 targetPosition, Quaternion targetRotation, Vector3 targetScale, bool bringToFront)
+    // --- ADDED: Helper to manage animation start/stop ---
+    private void UpdateAnimationTargetAndStart()
+    {
+        // Stop existing animation
+        StopCoroutineIfRunning(ref animationCoroutine);
+        // Start new one
+        animationCoroutine = StartCoroutine(AnimateTransformCoroutine());
+    }
+    
+    // --- MODIFIED: Coroutine animates towards target fields ---
+    private IEnumerator AnimateTransformCoroutine()
     {
         float elapsedTime = 0f;
         Vector3 startPosition = rectTransform.localPosition;
         Quaternion startRotation = rectTransform.localRotation;
         Vector3 startScale = rectTransform.localScale;
-
-        // Bring to front immediately if entering hover
-        if (bringToFront)
-        {
-            transform.SetAsLastSibling();
-        }
 
         while (elapsedTime < hoverAnimDuration)
         {
@@ -199,118 +233,165 @@ public class CardDragHandler : MonoBehaviour, IBeginDragHandler, IDragHandler, I
         rectTransform.localRotation = targetRotation;
         rectTransform.localScale = targetScale;
 
-        // Restore original sibling index if exiting hover
-        if (!bringToFront && originalParent != null && originalSiblingIndex >= 0 && originalSiblingIndex < originalParent.childCount)
+        // --- MODIFIED: Layering Handling at End of Animation --- 
+        if (isHovering) 
         {
-            // Check parent again, might have changed during animation?
-            if (transform.parent == originalParent) {
-                 transform.SetSiblingIndex(originalSiblingIndex);
+             // If still hovering, ensure it's on top
+             transform.SetAsLastSibling(); 
+        }
+        else // If not hovering (exit animation finished)
+        {
+            // Use current parent for checks
+            Transform currentParent = transform.parent;
+            // Ensure index was validly stored and parent exists
+            if (currentParent != null && originalSiblingIndex >= 0 && originalSiblingIndex < currentParent.childCount)
+            {
+                transform.SetSiblingIndex(originalSiblingIndex); 
+                // Debug.Log($"Restored {name} to sibling index {originalSiblingIndex} after hover exit anim");
+            }
+            else
+            {
+                // If index is invalid, maybe just set as last for safety?
+                if(currentParent != null) transform.SetAsLastSibling();
             }
         }
-        currentPosScaleRotCoroutine = null; // Mark as finished
+        animationCoroutine = null; // Mark as finished
+        // --- END MODIFIED ---
     }
-    // --- END ADDED ---
     
-    // --- MODIFIED: AffectNeighbors to use animation and fix parent issue ---
+    // --- MODIFIED: AffectNeighbors calls ApplyNeighborOffset ---
     private void AffectNeighbors(float horizontalOffset, bool enteringHover)
     {
         CardDragHandler leftNeighbor, rightNeighbor;
         FindNeighbors(out leftNeighbor, out rightNeighbor);
 
         // Animate Left Neighbor
-        if (leftNeighbor != null && !leftNeighbor.isHovering)
+        if (leftNeighbor != null)
         {
-            leftNeighbor.StopCoroutineIfRunning(ref leftNeighbor.currentPosScaleRotCoroutine); // Stop any running animation on the neighbor
-            Vector3 targetPos = leftNeighbor.originalPosition + Vector3.left * horizontalOffset;
-            // Start animation *on the neighbor*, store coroutine locally to stop it if *this* card exits hover
-            currentNeighborLeftCoroutine = leftNeighbor.StartCoroutine(leftNeighbor.AnimateTransformCoroutine(targetPos, leftNeighbor.originalRotation, leftNeighbor.originalScale, false)); 
+            // Apply offset (positive offset means move left)
+            leftNeighbor.ApplyNeighborOffset(Vector3.left * horizontalOffset);
         }
 
         // Animate Right Neighbor
-        if (rightNeighbor != null && !rightNeighbor.isHovering)
+        if (rightNeighbor != null)
         {
-            rightNeighbor.StopCoroutineIfRunning(ref rightNeighbor.currentPosScaleRotCoroutine);
-            Vector3 targetPos = rightNeighbor.originalPosition + Vector3.right * horizontalOffset;
-            currentNeighborRightCoroutine = rightNeighbor.StartCoroutine(rightNeighbor.AnimateTransformCoroutine(targetPos, rightNeighbor.originalRotation, rightNeighbor.originalScale, false));
+             // Apply offset (positive offset means move right)
+             rightNeighbor.ApplyNeighborOffset(Vector3.right * horizontalOffset);
         }
     }
     
-    // --- ADDED: Helper to find neighbors --- 
+    // --- ADDED: Method for neighbors to apply offset ---
+    public void ApplyNeighborOffset(Vector3 offset)
+    {
+        // Don't apply if currently hovering/being dragged
+        if (isHovering || canvasGroup.blocksRaycasts == false) return;
+
+        currentNeighborOffset = offset;
+        // Recalculate target position based on original + offset
+        targetPosition = originalPosition + currentNeighborOffset;
+        // Rotation and Scale remain original when offset by neighbor
+        targetRotation = originalRotation;
+        targetScale = originalScale;
+
+        // Start animation towards the new target position
+        UpdateAnimationTargetAndStart(); // Don't bring neighbor to front
+    }
+    
+    // --- MODIFIED: FindNeighbors based on original X position --- 
     private void FindNeighbors(out CardDragHandler leftNeighbor, out CardDragHandler rightNeighbor)
     {   
         leftNeighbor = null;
         rightNeighbor = null;
-        // --- MODIFIED: Use current transform.parent --- 
-        Transform parent = transform.parent; 
-        // --- END MODIFIED ---
-        if (parent == null) return;
+        Transform parent = transform.parent;
 
-        int myIndex = transform.GetSiblingIndex(); // Use current index in the loop
-        int count = parent.childCount;
+        if (parent == null) 
+        {   
+            Debug.LogWarning($"FindNeighbors ({name}): Parent is null!");
+            return;
+        }
 
-        // Find immediate left neighbor (that's not the template)
-        for (int i = myIndex - 1; i >= 0; i--)
+        // 1. Get all active CardDragHandler siblings
+        List<CardDragHandler> siblings = parent.GetComponentsInChildren<CardDragHandler>(false) // false = don't include inactive
+                                              .Where(h => h != null && h.gameObject.activeSelf && h.gameObject.name != "CardTemplate")
+                                              .ToList();
+
+        if (siblings.Count <= 1) return; // No neighbors if only one card
+
+        // 2. Sort siblings based on their calculated original X position
+        siblings.Sort((a, b) => a.originalPosition.x.CompareTo(b.originalPosition.x));
+
+        // 3. Find the index of this card in the sorted list
+        int mySortedIndex = -1;
+        for (int i = 0; i < siblings.Count; i++)
         {
-            Transform child = parent.GetChild(i);
-            if (child.gameObject.name != "CardTemplate" && child.gameObject.activeSelf)
+            if (siblings[i] == this)
             {
-                leftNeighbor = child.GetComponent<CardDragHandler>();
+                mySortedIndex = i;
                 break;
             }
         }
 
-        // Find immediate right neighbor (that's not the template)
-        for (int i = myIndex + 1; i < count; i++)
+        if (mySortedIndex == -1)
         {
-            Transform child = parent.GetChild(i);
-            if (child.gameObject.name != "CardTemplate" && child.gameObject.activeSelf)
-            {
-                rightNeighbor = child.GetComponent<CardDragHandler>();
-                break;
-            }
+            Debug.LogError($"FindNeighbors ({name}): Could not find self in sorted sibling list!");
+            return;
+        }
+
+        // Debug.Log($"FindNeighbors ({name}): Sorted Index={mySortedIndex}, Count={siblings.Count}");
+
+        // 4. Identify neighbors from the sorted list
+        if (mySortedIndex > 0)
+        {
+            leftNeighbor = siblings[mySortedIndex - 1];
+            // Debug.Log($"  - Found Left Neighbor: {leftNeighbor?.name} at sorted index {mySortedIndex - 1}");
+        }
+
+        if (mySortedIndex < siblings.Count - 1)
+        {
+            rightNeighbor = siblings[mySortedIndex + 1];
+            // Debug.Log($"  - Found Right Neighbor: {rightNeighbor?.name} at sorted index {mySortedIndex + 1}");
         }
     }
-    // --- END ADDED ---
     
     // --- ADDED: Helper to stop coroutine ---
     private void StopCoroutineIfRunning(ref Coroutine coroutineRef)
     {
-        if (coroutineRef != null)
+        // Check if the coroutine is still running on this MonoBehaviour
+        if (coroutineRef != null && this != null && this.enabled)
         {
             StopCoroutine(coroutineRef);
             coroutineRef = null;
         }
     }
     
-    // --- ADDED: Method to stop all animations on this card ---
-    private void StopAllCardAnimations()
+    // --- MODIFIED: Method to reset card state instantly ---
+    public void ResetToOriginalStateInstantly(bool affectNeighbors = true)
     {
-        StopCoroutineIfRunning(ref currentPosScaleRotCoroutine);
-        // Stop neighbor animations *started by this card*
-        StopCoroutineIfRunning(ref currentNeighborLeftCoroutine);
-        StopCoroutineIfRunning(ref currentNeighborRightCoroutine);
-    }
-    
-    // --- ADDED: Method to reset card state instantly (e.g., if neighbor hover stops abruptly) ---
-    public void ResetToOriginalStateInstantly()
-    {
-        StopAllCardAnimations(); // Stop any animations running ON this card
+        // Debug.Log($"ResetInstant: {name}");
+        StopCoroutineIfRunning(ref animationCoroutine); // Stop self-animation
         isHovering = false; // Ensure hover state is off
 
-        // Only reset if rectTransform exists and original values are plausible
-        if (rectTransform != null && originalScale != Vector3.zero) 
-        {
-            rectTransform.localPosition = originalPosition;
-            rectTransform.localRotation = originalRotation;
-            rectTransform.localScale = originalScale;
-
-            // Attempt to restore sibling index if parent is valid
-            Transform currentParent = transform.parent; // Use current parent
-            if (currentParent != null && originalSiblingIndex >= 0 && originalSiblingIndex < currentParent.childCount)
-            {
-                transform.SetSiblingIndex(originalSiblingIndex);
-            }
+        // Restore original transform values
+        if (rectTransform != null && originalScale != Vector3.zero) {
+             rectTransform.localPosition = originalPosition;
+             rectTransform.localRotation = originalRotation;
+             rectTransform.localScale = originalScale;
         }
+
+        // Reset target state
+        targetPosition = originalPosition;
+        targetRotation = originalRotation;
+        targetScale = originalScale;
+        currentNeighborOffset = Vector3.zero;
+
+        // Optionally tell neighbours to also reset (e.g., called from HoverManager exit)
+        if (affectNeighbors) {
+             // Find neighbors first before potentially resetting them
+             CardDragHandler leftNeighbor, rightNeighbor;
+             FindNeighbors(out leftNeighbor, out rightNeighbor);
+             if(leftNeighbor != null) leftNeighbor.ApplyNeighborOffset(Vector3.zero);
+             if(rightNeighbor != null) rightNeighbor.ApplyNeighborOffset(Vector3.zero);
+        }
+        originalSiblingIndex = -1; // Reset stored index
     }
-    // --- END ADDED ---
 } 

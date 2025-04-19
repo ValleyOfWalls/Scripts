@@ -552,13 +552,29 @@ public class CombatManager
         }
         // --- END ADDED ---
         
-        // --- ADDED: Sort children by X position to ensure correct sibling order for hover --- 
+        // --- REMOVED: Explicit sorting/hover handling from UpdateHandUI --- 
+        /*
+        CardDragHandler hoveredCard = handPanelHoverManager?.GetCurrentlyHoveredCard(); // Get hovered card
+ 
         currentCardGOs = currentCardGOs.OrderBy(go => go.GetComponent<RectTransform>().localPosition.x).ToList();
+ 
+        int siblingIndexCounter = 0;
         for(int i = 0; i < currentCardGOs.Count; i++)
         {
-            currentCardGOs[i].transform.SetSiblingIndex(i);
+            GameObject cardGO = currentCardGOs[i];
+            // Skip setting index for the hovered card (it will be set last)
+            if (hoveredCard != null && cardGO == hoveredCard.gameObject) {
+                continue;
+            }
+            cardGO.transform.SetSiblingIndex(siblingIndexCounter++);
         }
-        // --- END ADDED ---
+         
+        // Ensure hovered card is last (on top)
+        if (hoveredCard != null) {
+            hoveredCard.transform.SetAsLastSibling();
+        }
+        */
+        // --- END MODIFIED ---
 
         // --- ADDED: Update Hover Manager References ---
         if (handPanelHoverManager != null)

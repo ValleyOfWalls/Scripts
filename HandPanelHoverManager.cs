@@ -60,11 +60,13 @@ public class HandPanelHoverManager : MonoBehaviour, IPointerMoveHandler, IPointe
     public void OnPointerExit(PointerEventData eventData)
     {
         // When mouse leaves the panel area, stop hovering the current card
-        if (currentlyHoveredCard != null)
+        CardDragHandler cardToExit = currentlyHoveredCard; // Store reference
+        currentlyHoveredCard = null; // Clear reference *before* calling ExitHoverState
+
+        if (cardToExit != null) 
         {
-            currentlyHoveredCard.ExitHoverState();
+            cardToExit.ExitHoverState(); // Call exit on the stored reference
             // Debug.Log($"[HandPanelHoverManager] Exited hover on {currentlyHoveredCard.name} (Panel Exit)");
-            currentlyHoveredCard = null;
         }
     }
 
@@ -105,4 +107,11 @@ public class HandPanelHoverManager : MonoBehaviour, IPointerMoveHandler, IPointe
 
         return closest;
     }
+
+    // --- ADDED: Getter for CombatManager --- 
+    public CardDragHandler GetCurrentlyHoveredCard()
+    {
+        return currentlyHoveredCard;
+    }
+    // --- END ADDED ---
 } 
