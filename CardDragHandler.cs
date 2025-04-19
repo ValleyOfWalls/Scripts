@@ -152,11 +152,15 @@ public class CardDragHandler : MonoBehaviour, IBeginDragHandler, IDragHandler, I
     public void EnterHoverState()
     {
         if (canvasGroup.blocksRaycasts == false || isHovering) return;
-        // Debug.Log($"EnterHover: {name}");
+        Debug.Log($"[{Time.frameCount}] EnterHoverState START: {name}");
         isHovering = true;
 
         // Store index only if not already stored (might happen if quickly re-hovering)
-        if(originalSiblingIndex < 0) originalSiblingIndex = transform.GetSiblingIndex();
+        if(originalSiblingIndex < 0) 
+        {
+            originalSiblingIndex = transform.GetSiblingIndex();
+            Debug.Log($"[{Time.frameCount}] EnterHoverState: Stored originalSiblingIndex = {originalSiblingIndex}");
+        }
 
         // --- MODIFIED: Use Animation --- 
         currentNeighborOffset = Vector3.zero; // Reset any neighbor offset
@@ -177,7 +181,7 @@ public class CardDragHandler : MonoBehaviour, IBeginDragHandler, IDragHandler, I
     public void ExitHoverState()
     {
         if (!isHovering || canvasGroup.blocksRaycasts == false) return;
-        // Debug.Log($"ExitHover: {name}");
+        Debug.Log($"[{Time.frameCount}] ExitHoverState START: {name}");
         isHovering = false;
 
         // --- MODIFIED: Use Animation --- 
@@ -195,15 +199,17 @@ public class CardDragHandler : MonoBehaviour, IBeginDragHandler, IDragHandler, I
         AffectNeighbors(0f, false);
         // --- END MODIFIED ---
         
-        originalSiblingIndex = -1; // Reset stored index upon exiting hover
+        // originalSiblingIndex = -1; // <-- MOVE THIS LINE
     }
     
     // --- ADDED: Helper to manage animation start/stop ---
     private void UpdateAnimationTargetAndStart()
     {
+        Debug.Log($"[{Time.frameCount}] UpdateAnimationTargetAndStart: Stopping existing coroutine for {name}");
         // Stop existing animation
         StopCoroutineIfRunning(ref animationCoroutine);
         // Start new one
+        Debug.Log($"[{Time.frameCount}] UpdateAnimationTargetAndStart: Starting AnimateTransformCoroutine for {name}. TargetPos={targetPosition}, TargetScale={targetScale}");
         animationCoroutine = StartCoroutine(AnimateTransformCoroutine());
     }
     
@@ -233,28 +239,10 @@ public class CardDragHandler : MonoBehaviour, IBeginDragHandler, IDragHandler, I
         rectTransform.localRotation = targetRotation;
         rectTransform.localScale = targetScale;
 
-        // --- MODIFIED: Layering Handling at End of Animation --- 
-        if (isHovering) 
-        {
-             // If still hovering, ensure it's on top
-             transform.SetAsLastSibling(); 
-        }
-        else // If not hovering (exit animation finished)
-        {
-            // Use current parent for checks
-            Transform currentParent = transform.parent;
-            // Ensure index was validly stored and parent exists
-            if (currentParent != null && originalSiblingIndex >= 0 && originalSiblingIndex < currentParent.childCount)
-            {
-                transform.SetSiblingIndex(originalSiblingIndex); 
-                // Debug.Log($"Restored {name} to sibling index {originalSiblingIndex} after hover exit anim");
-            }
-            else
-            {
-                // If index is invalid, maybe just set as last for safety?
-                if(currentParent != null) transform.SetAsLastSibling();
-            }
-        }
+        // --- MODIFIED: Layering Handling at End of Animation ---
+        // Layering is now handled by HandPanelHoverManager.ResortSiblingIndices()
+        // Coroutine just ensures the final transform state is set.
+        
         animationCoroutine = null; // Mark as finished
         // --- END MODIFIED ---
     }

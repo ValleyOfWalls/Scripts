@@ -15,7 +15,7 @@ Search Folders: Assets/Prefabs
     - Visual (Components: MeshFilter, BoxCollider, MeshRenderer)
 
 --- Prefab: Assets/Prefabs/UI/CardTemplate.prefab ---
-- CardTemplate (Components: CanvasRenderer, Image, CanvasGroup, CardDragHandler)
+- CardTemplate (Components: CanvasRenderer, CanvasGroup, CardDragHandler)
     - ArtPanel (Components: CanvasRenderer, Image)
     - BG (Components: CanvasRenderer, Image)
     - HeaderPanel (Components: CanvasRenderer, Image)
@@ -62,8 +62,8 @@ Search Folders: Assets/Prefabs
         - OthersStatusArea (Components: CanvasRenderer, Image, VerticalLayoutGroup, ContentSizeFitter)
             - OtherStatusTitle (Components: CanvasRenderer, TextMeshProUGUI, ContentSizeFitter)
             - OtherPlayerStatusTemplate (Components: CanvasRenderer, TextMeshProUGUI, ContentSizeFitter)
-    - PlayerArea (Components: CanvasRenderer, Image, VerticalLayoutGroup, ContentSizeFitter)
-        - StatsRow (Components: CanvasRenderer, Image, LayoutElement, HorizontalLayoutGroup, ContentSizeFitter)
+    - PlayerArea (Components: CanvasRenderer, Image)
+        - StatsRow (Components: CanvasRenderer, Image)
             - PlayerNameText (Components: CanvasRenderer, TextMeshProUGUI, ContentSizeFitter, LayoutElement)
             - PlayerHealthSlider (Components: Slider)
                 - Background (Components: CanvasRenderer, Image)
@@ -76,7 +76,7 @@ Search Folders: Assets/Prefabs
             - PlayerDotText (Components: CanvasRenderer, TextMeshProUGUI, ContentSizeFitter, LayoutElement)
             - ComboCountText (Components: CanvasRenderer, TextMeshProUGUI, ContentSizeFitter, LayoutElement)
             - EnergyText (Components: CanvasRenderer, TextMeshProUGUI, ContentSizeFitter, LayoutElement)
-        - PlayerHandPanel (Components: CanvasRenderer, Image, LayoutElement, HorizontalLayoutGroup, ContentSizeFitter)
+        - PlayerHandPanel (Components: CanvasRenderer, Image, HandPanelHoverManager)
         - BottomBar (Components: CanvasRenderer, Image, LayoutElement, HorizontalLayoutGroup, ContentSizeFitter)
             - DeckCountText (Components: CanvasRenderer, TextMeshProUGUI, ContentSizeFitter, LayoutElement)
             - DiscardCountText (Components: CanvasRenderer, TextMeshProUGUI, ContentSizeFitter, LayoutElement)

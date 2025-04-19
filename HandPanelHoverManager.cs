@@ -55,6 +55,10 @@ public class HandPanelHoverManager : MonoBehaviour, IPointerMoveHandler, IPointe
                 // Debug.Log($"[HandPanelHoverManager] Entered hover on {currentlyHoveredCard.name}");
             }
         }
+        
+        // --- ADDED: Resort sibling indices after hover state change ---
+        ResortSiblingIndices();
+        // --- END ADDED ---
     }
 
     public void OnPointerExit(PointerEventData eventData)
@@ -66,8 +70,12 @@ public class HandPanelHoverManager : MonoBehaviour, IPointerMoveHandler, IPointe
         if (cardToExit != null) 
         {
             cardToExit.ExitHoverState(); // Call exit on the stored reference
-            // Debug.Log($"[HandPanelHoverManager] Exited hover on {currentlyHoveredCard.name} (Panel Exit)");
+            // Debug.Log($"[HandPanelHoverManager] Exited hover on {cardToExit.name} (Panel Exit)"); // Use cardToExit here
         }
+        
+        // --- ADDED: Resort sibling indices after hover state change ---
+        ResortSiblingIndices();
+        // --- END ADDED ---
     }
 
     private CardDragHandler FindClosestCard(Vector2 screenPosition)
@@ -107,6 +115,49 @@ public class HandPanelHoverManager : MonoBehaviour, IPointerMoveHandler, IPointe
 
         return closest;
     }
+
+    // --- ADDED: Function to resort sibling indices ---
+    private void ResortSiblingIndices()
+    {
+        // 1. Get all active CardDragHandler siblings from the panel
+        //    Use GetComponentsInChildren as UpdateCardReferences might not be perfectly synced
+        List<CardDragHandler> activeCards = GetComponentsInChildren<CardDragHandler>(false) // false = don't include inactive
+                                                .Where(h => h != null && h.gameObject.activeSelf && h.gameObject.name != "CardTemplate")
+                                                .ToList();
+
+        if (activeCards.Count <= 1) return; // No sorting needed for 0 or 1 card
+
+        // 2. Sort cards based on their original X position (left to right)
+        activeCards.Sort((a, b) => a.originalPosition.x.CompareTo(b.originalPosition.x));
+
+        // 3. Set sibling indices based on sorted order
+        for (int i = 0; i < activeCards.Count; i++)
+        {
+            // Set the sibling index. Lower index = rendered first (behind)
+            // Higher index = rendered later (in front)
+            activeCards[i].transform.SetSiblingIndex(i);
+        }
+
+        // 4. Ensure the currently hovered card is always rendered last (on top)
+        if (currentlyHoveredCard != null && currentlyHoveredCard.gameObject.activeSelf)
+        {
+            // Check if it's still in the active list (it should be)
+            if (activeCards.Contains(currentlyHoveredCard))
+            {
+                currentlyHoveredCard.transform.SetAsLastSibling();
+                // Debug.Log($"[HandPanelHoverManager] ResortSiblingIndices: Set {currentlyHoveredCard.name} as last sibling.");
+            }
+            else
+            {
+                Debug.LogWarning($"[HandPanelHoverManager] ResortSiblingIndices: currentlyHoveredCard '{currentlyHoveredCard.name}' not found in active children during resort!");
+            }
+        }
+        // else
+        // {
+            // Debug.Log($"[HandPanelHoverManager] ResortSiblingIndices: No card hovered.");
+        // }
+    }
+    // --- END ADDED ---
 
     // --- ADDED: Getter for CombatManager --- 
     public CardDragHandler GetCurrentlyHoveredCard()
