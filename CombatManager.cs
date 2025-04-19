@@ -60,6 +60,11 @@ public class CombatManager
     private int currentTurnNumber = 0;
     // --- END ADDED ---
 
+    // --- ADDED: State for Deck View Toggle ---
+    private enum DeckViewType { None, Player, Pet, OpponentPet }
+    private DeckViewType currentDeckViewType = DeckViewType.None;
+    // --- END ADDED ---
+
     public void Initialize(GameManager gameManager, int startingPlayerHealth, int startingPetHealth, int startingEnergy)
     {
         this.gameManager = gameManager;
@@ -684,50 +689,72 @@ public class CombatManager
     private void ShowPlayerDeck()
     {
         if (deckViewController == null) return;
+
+        // Toggle Logic
+        if (deckViewController.gameObject.activeSelf && currentDeckViewType == DeckViewType.Player)
+        {
+            deckViewController.HideDeck();
+            currentDeckViewType = DeckViewType.None;
+            return;
+        }
+
+        // Show Logic (or switch view)
         CardManager cardManager = gameManager.GetCardManager();
         if (cardManager == null) return;
 
-        // Combine deck and discard for a full view
         List<CardData> fullPlayerDeck = new List<CardData>(cardManager.GetDeck());
         fullPlayerDeck.AddRange(cardManager.GetDiscardPile());
-        // Optional: Sort the deck for display?
-        // fullPlayerDeck = fullPlayerDeck.OrderBy(card => card.cost).ThenBy(card => card.cardName).ToList();
-
-        deckViewController.ShowDeck($"{PhotonNetwork.LocalPlayer.NickName}'s Deck ({fullPlayerDeck.Count})", fullPlayerDeck);
+        string title = $"{PhotonNetwork.LocalPlayer.NickName}'s Deck ({fullPlayerDeck.Count})";
+        deckViewController.ShowDeck(title, fullPlayerDeck);
+        currentDeckViewType = DeckViewType.Player;
     }
 
     private void ShowPetDeck()
     {
         if (deckViewController == null) return;
+
+        // Toggle Logic
+        if (deckViewController.gameObject.activeSelf && currentDeckViewType == DeckViewType.Pet)
+        {
+            deckViewController.HideDeck();
+            currentDeckViewType = DeckViewType.None;
+            return;
+        }
+
+        // Show Logic (or switch view)
         CardManager cardManager = gameManager.GetCardManager();
         if (cardManager == null) return;
 
         List<CardData> petDeck = cardManager.GetLocalPetDeck() ?? new List<CardData>();
-        // Optional: Sort the deck for display?
-        // petDeck = petDeck.OrderBy(card => card.cost).ThenBy(card => card.cardName).ToList();
-
-        deckViewController.ShowDeck($"{gameManager.GetPlayerManager().GetLocalPetName()}'s Deck ({petDeck.Count})", petDeck);
+        string title = $"{gameManager.GetPlayerManager().GetLocalPetName()}'s Deck ({petDeck.Count})";
+        deckViewController.ShowDeck(title, petDeck);
+        currentDeckViewType = DeckViewType.Pet;
     }
 
     private void ShowOpponentPetDeck()
     {
         if (deckViewController == null) return;
+
+        // Toggle Logic
+        if (deckViewController.gameObject.activeSelf && currentDeckViewType == DeckViewType.OpponentPet)
+        {
+            deckViewController.HideDeck();
+            currentDeckViewType = DeckViewType.None;
+            return;
+        }
+
+        // Show Logic (or switch view)
         Player opponent = gameManager.GetPlayerManager().GetOpponentPlayer();
         CardManager cardManager = gameManager.GetCardManager();
         if (opponent == null || cardManager == null) return;
 
-        List<CardData> opponentPetDeck = cardManager.GetOpponentPetDeck() ?? new List<CardData>(); // Get directly from CardManager state
-        // Construct the pet name based on opponent's nickname
-        string opponentPetName = opponent.NickName + "'s Pet"; // Simple construction
-        // Fallback if opponent somehow becomes null after check (unlikely but safe)
+        List<CardData> opponentPetDeck = cardManager.GetOpponentPetDeck() ?? new List<CardData>();
+        string opponentPetName = opponent.NickName + "'s Pet";
         if (string.IsNullOrEmpty(opponent.NickName)) opponentPetName = "Opponent Pet";
-        
         string title = $"{opponentPetName} Deck ({opponentPetDeck.Count})";
 
-        // Optional: Sort the deck for display?
-        // opponentPetDeck = opponentPetDeck.OrderBy(card => card.cost).ThenBy(card => card.cardName).ToList();
-
         deckViewController.ShowDeck(title, opponentPetDeck);
+        currentDeckViewType = DeckViewType.OpponentPet;
     }
     // --- END ADDED Deck Viewing Methods ---
 

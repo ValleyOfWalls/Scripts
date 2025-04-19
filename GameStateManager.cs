@@ -53,6 +53,11 @@ public class GameStateManager
     private bool userInitiatedConnection = false;
     private bool isWaitingToStartCombatRPC = false;
     
+    // --- ADDED: State for Draft Deck View Toggle ---
+    private enum DeckViewType { None, Player, Pet } // Simpler enum for draft screen
+    private DeckViewType currentDraftDeckViewType = DeckViewType.None;
+    // --- END ADDED ---
+    
     // Constructor for dependency injection
     public GameStateManager(GameManager gameManager, GameObject startScreenCanvasPrefab, GameObject lobbyCanvasPrefab, 
                            GameObject combatCanvasPrefab, GameObject draftCanvasPrefab)
@@ -478,6 +483,16 @@ public class GameStateManager
             Debug.LogError("DeckViewController is null in ShowDraftPlayerDeck");
             return;
         }
+        
+        // Toggle Logic
+        if (deckViewController.gameObject.activeSelf && currentDraftDeckViewType == DeckViewType.Player)
+        {
+            deckViewController.HideDeck();
+            currentDraftDeckViewType = DeckViewType.None;
+            return;
+        }
+        
+        // Show Logic (or switch view)
         CardManager cardManager = gameManager.GetCardManager();
         if (cardManager == null) 
         {
@@ -485,16 +500,22 @@ public class GameStateManager
             return;
         }
 
-        List<CardData> playerDeck = cardManager.GetAllOwnedPlayerCards(); // <-- NEW: Get combined deck/hand/discard
-        if (playerDeck != null && playerDeck.Count > 0) // Added count check
+        List<CardData> playerDeck = cardManager.GetAllOwnedPlayerCards(); 
+        if (playerDeck != null && playerDeck.Count > 0) 
         {
-             Debug.Log("GameStateManager.ShowDraftPlayerDeck: Calling deckViewController.ShowDeck..."); // ADDED LOG
+             Debug.Log("GameStateManager.ShowDraftPlayerDeck: Calling deckViewController.ShowDeck...");
              deckViewController.ShowDeck("My Deck", playerDeck);
-             Debug.Log("GameStateManager.ShowDraftPlayerDeck: deckViewController.ShowDeck call finished."); // ADDED LOG
+             currentDraftDeckViewType = DeckViewType.Player; // Update state
+             Debug.Log("GameStateManager.ShowDraftPlayerDeck: deckViewController.ShowDeck call finished.");
         }
         else
         {
             Debug.LogWarning("Player deck is null or empty, cannot show.");
+            // Optionally hide the deck view if it was showing the other deck
+            if (deckViewController.gameObject.activeSelf) {
+                deckViewController.HideDeck();
+                currentDraftDeckViewType = DeckViewType.None;
+            }
         }
     }
 
@@ -505,6 +526,16 @@ public class GameStateManager
             Debug.LogError("DeckViewController is null in ShowDraftPetDeck");
             return;
         }
+        
+        // Toggle Logic
+        if (deckViewController.gameObject.activeSelf && currentDraftDeckViewType == DeckViewType.Pet)
+        {
+            deckViewController.HideDeck();
+            currentDraftDeckViewType = DeckViewType.None;
+            return;
+        }
+
+        // Show Logic (or switch view)
         CardManager cardManager = gameManager.GetCardManager();
         if (cardManager == null) 
         {
@@ -512,14 +543,20 @@ public class GameStateManager
             return;
         }
         
-        List<CardData> petDeck = cardManager.GetAllOwnedPetCards(); // <-- NEW: Get all pet cards
-        if (petDeck != null && petDeck.Count > 0) // Added count check
+        List<CardData> petDeck = cardManager.GetAllOwnedPetCards(); 
+        if (petDeck != null && petDeck.Count > 0) 
         {
             deckViewController.ShowDeck("Pet Deck", petDeck);
+            currentDraftDeckViewType = DeckViewType.Pet; // Update state
         }
          else
         {
             Debug.LogWarning("Pet deck is null or empty, cannot show.");
+            // Optionally hide the deck view if it was showing the other deck
+            if (deckViewController.gameObject.activeSelf) {
+                deckViewController.HideDeck();
+                currentDraftDeckViewType = DeckViewType.None;
+            }
         }
     }
     // --- END ADDED SECTION ---
