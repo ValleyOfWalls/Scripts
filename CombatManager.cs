@@ -494,6 +494,9 @@ public class CombatManager
         // Destroy any remaining old card GOs that weren't reused
         foreach (GameObject oldCardGO in existingCardGOs)
         {
+            // --- ADDED: Stop coroutines before destroying ---
+            oldCardGO.GetComponent<CardDragHandler>()?.StopAllCoroutines(); // Stop animations running ON this card
+            // --- END ADDED ---
             Object.Destroy(oldCardGO);
         }
         // --- END MODIFIED ---
@@ -546,6 +549,14 @@ public class CombatManager
             // Ensure pivot is reasonable for rotation (e.g., bottom center)
             // This should ideally be set on the prefab, but can be forced here if needed:
             // cardRect.pivot = new Vector2(0.5f, 0f); 
+        }
+        // --- END ADDED ---
+        
+        // --- ADDED: Sort children by X position to ensure correct sibling order for hover --- 
+        currentCardGOs = currentCardGOs.OrderBy(go => go.GetComponent<RectTransform>().localPosition.x).ToList();
+        for(int i = 0; i < currentCardGOs.Count; i++)
+        {
+            currentCardGOs[i].transform.SetSiblingIndex(i);
         }
         // --- END ADDED ---
 

@@ -63,12 +63,7 @@ public class CardDragHandler : MonoBehaviour, IBeginDragHandler, IDragHandler, I
         // --- ADDED: Stop animations and reset hover state if dragging starts mid-hover ---
         if (isHovering)
         {
-            StopAllCardAnimations(); // Stop own animation
-            // Force neighbors back instantly if they were animating
-            CardDragHandler leftNeighbor, rightNeighbor;
-            FindNeighbors(out leftNeighbor, out rightNeighbor);
-            if(leftNeighbor != null) leftNeighbor.StopAllCardAnimationsAndReset();
-            if(rightNeighbor != null) rightNeighbor.StopAllCardAnimationsAndReset();
+            StopAllCardAnimations(); // Stop own animation & neighbor animations *started by this card*
             
             // Reset own visuals instantly before drag starts
             rectTransform.localPosition = originalPosition;
@@ -296,25 +291,26 @@ public class CardDragHandler : MonoBehaviour, IBeginDragHandler, IDragHandler, I
         StopCoroutineIfRunning(ref currentNeighborRightCoroutine);
     }
     
-    // --- ADDED: Method to stop animations and reset instantly (used by other cards) ---
-    public void StopAllCardAnimationsAndReset()
+    // --- ADDED: Method to reset card state instantly (e.g., if neighbor hover stops abruptly) ---
+    public void ResetToOriginalStateInstantly()
     {
-        StopAllCardAnimations();
-        // Reset transform if it was potentially mid-animation
-        if(isHovering) // If was hovering, reset fully
+        StopAllCardAnimations(); // Stop any animations running ON this card
+        isHovering = false; // Ensure hover state is off
+
+        // Only reset if rectTransform exists and original values are plausible
+        if (rectTransform != null && originalScale != Vector3.zero) 
         {
-             isHovering = false; // Force state off
-             rectTransform.localPosition = originalPosition;
-             rectTransform.localRotation = originalRotation;
-             rectTransform.localScale = originalScale;
-             if(originalParent != null && originalSiblingIndex >= 0 && originalSiblingIndex < originalParent.childCount)
-             { 
-                 if (transform.parent == originalParent) transform.SetSiblingIndex(originalSiblingIndex);
-             }
-        } else { // If wasn't hovering, just ensure neighbors are reset
-             AffectNeighbors(0f, false); 
+            rectTransform.localPosition = originalPosition;
+            rectTransform.localRotation = originalRotation;
+            rectTransform.localScale = originalScale;
+
+            // Attempt to restore sibling index if parent is valid
+            Transform currentParent = transform.parent; // Use current parent
+            if (currentParent != null && originalSiblingIndex >= 0 && originalSiblingIndex < currentParent.childCount)
+            {
+                transform.SetSiblingIndex(originalSiblingIndex);
+            }
         }
-       
     }
     // --- END ADDED ---
 } 
