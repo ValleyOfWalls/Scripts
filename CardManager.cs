@@ -76,16 +76,28 @@ public class CardManager
     public void DiscardHand()
     {
         List<CardData> cardsToDiscard = new List<CardData>(deckManager.GetHand());
+
+        // Trigger discard animations *before* actually discarding
+        CombatUIManager combatUIManager = gameManager.GetCombatUIManager();
+        if (combatUIManager != null)
+        {
+            foreach(CardData card in cardsToDiscard)
+            {
+                combatUIManager.TriggerDiscardAnimation(card);
+            }
+        }
+        else
+        {
+            Debug.LogWarning("CombatUIManager not found, cannot trigger discard animations.");
+        }
+
         deckManager.DiscardHand();
         
-        // Process discard triggers for each card
+        // Process discard triggers for each card (after they are moved to discard pile)
         foreach(CardData card in cardsToDiscard)
         {
             // Remove any temporary upgrade tracking
-            if (cardModificationService.IsCardTemporarilyUpgraded(card))
-            {
-                // This will be handled by CardModificationService during end of turn processing
-            }
+            // This is now handled by CardModificationService during end of turn processing
             
             // Remove cost modifier tracking
             gameManager.GetPlayerManager().RemoveCostModifierForCard(card);

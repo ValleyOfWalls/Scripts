@@ -5,6 +5,7 @@ using System.Collections;
 using System.Collections.Generic;
 using Photon.Pun;
 using Photon.Realtime;
+using DG.Tweening; // Added DOTween
 
 public class CombatUIManager
 {
@@ -44,7 +45,7 @@ public class CombatUIManager
     private float tiltAnglePerCard = 5f;
     private float offsetYPerCard = 10f;
     private float curveFactor = 0.5f;
-    
+
     public CombatUIManager(GameManager gameManager)
     {
         this.gameManager = gameManager;
@@ -309,113 +310,223 @@ public class CombatUIManager
     public void UpdateHandUI()
     {
         GameObject cardPrefab = gameManager.GetCardPrefab();
+        PlayerManager playerManager = gameManager.GetPlayerManager();
+        CardManager cardManager = gameManager.GetCardManager(); 
+        List<CardData> currentHand = cardManager.GetHand();
+
         if (playerHandPanel == null || cardPrefab == null)
         {
             Debug.LogError("Cannot UpdateHandUI - PlayerHandPanel or CardPrefab is missing!");
             return;
         }
 
-        // Always destroy all existing card objects first
+        // --- Refactored Logic --- 
+
+        // 1. Get Existing GOs currently in the panel
+        List<GameObject> existingGOs = new List<GameObject>();
+        Dictionary<GameObject, CardData> currentGOMap = new Dictionary<GameObject, CardData>();
         foreach (Transform child in playerHandPanel.transform)
         {
-            // Don't destroy the template
-            if (child.gameObject.name != "CardTemplate") 
+            if (child.gameObject.name != "CardTemplate")
             {
-                // Stop any coroutines before destroying
-                CardDragHandler handler = child.GetComponent<CardDragHandler>();
-                if (handler != null)
+                var handler = child.GetComponent<CardDragHandler>();
+                if (handler != null && handler.cardData != null)
                 {
-                    handler.StopAllCoroutines();
+                    existingGOs.Add(child.gameObject);
+                    currentGOMap[child.gameObject] = handler.cardData;
                 }
-                Object.Destroy(child.gameObject);
+                else if (child.gameObject.activeSelf) // Only destroy if active & invalid
+                {
+                    Debug.LogWarning($"[UpdateHandUI] Destroying invalid/unexpected card GO: {child.name}");
+                    Object.Destroy(child.gameObject);
+                }
             }
             else
             {
-                child.gameObject.SetActive(false); // Keep template hidden
+                 child.gameObject.SetActive(false); // Keep template hidden
             }
         }
 
-        PlayerManager playerManager = gameManager.GetPlayerManager();
-        CardManager cardManager = gameManager.GetCardManager(); 
-        List<CardData> currentHand = cardManager.GetHand();
-        List<GameObject> currentCardGOs = new List<GameObject>(); // To hold the GOs for layout
-        Debug.Log($"[UpdateHandUI] Creating {currentHand.Count} new card GameObjects");
+        // 2. Prepare for matching
+        List<System.Tuple<Vector3, Quaternion, Vector3>> targetTransforms = CalculateLayoutTransforms(currentHand.Count);
+        List<GameObject> finalGOs = new List<GameObject>(currentHand.Count); // GOs in the final layout order
+        List<GameObject> availableGOs = new List<GameObject>(existingGOs); // Copy list of GOs available to be reused
+        bool[] handCardMatched = new bool[currentHand.Count]; // Track which hand slots have been filled
 
-        // Create fresh card objects for each card in hand
+        // 3. Match and Animate/Create GOs
+        // Prioritize matching existing GOs to their corresponding CardData first
+        List<GameObject> reusedGOs = new List<GameObject>();
         for (int i = 0; i < currentHand.Count; i++)
         {
-            CardData card = currentHand[i];
-            GameObject cardGO = Object.Instantiate(cardPrefab, playerHandPanel.transform);
-            cardGO.name = $"Card_{card.cardName}_{i}"; // Unique name helpful for debug
-            Debug.Log($"[UpdateHandUI] Instantiating new GO '{cardGO.name}' for card '{card.cardName}' at index {i}.");
-            UpdateCardVisuals(cardGO, card, playerManager, cardManager);
-            
-            // Store the card's index in hand
-            CardDragHandler handler = cardGO.GetComponent<CardDragHandler>();
-            if (handler != null) {
-                handler.cardHandIndex = i;
+            CardData cardData = currentHand[i];
+            GameObject goForThisCard = null;
+
+            // Try find a matching, available GO
+            int foundIndex = -1;
+            for (int j = 0; j < availableGOs.Count; j++)
+            {
+                // Check if the GO's data matches the current hand card AND it hasn't been claimed by an earlier slot
+                if (currentGOMap.ContainsKey(availableGOs[j]) && currentGOMap[availableGOs[j]] == cardData)
+                {
+                    goForThisCard = availableGOs[j];
+                    foundIndex = j;
+                    break; // Found the first available match for this card data
+                }
             }
-            
-            cardGO.SetActive(true);
-            currentCardGOs.Add(cardGO);
+
+            if (goForThisCard != null)
+            {
+                availableGOs.RemoveAt(foundIndex); // Mark as used for this update cycle
+                UpdateCardVisuals(goForThisCard, cardData, playerManager, cardManager); // Update visuals
+
+                // Animate to new position
+                RectTransform cardRect = goForThisCard.GetComponent<RectTransform>();
+                System.Tuple<Vector3, Quaternion, Vector3> target = targetTransforms[i];
+                DOTween.Kill(cardRect); // Kill potential previous tweens (like discard fade)
+                goForThisCard.SetActive(true); // Ensure it's active
+                // If it was fading out via discard, reset alpha
+                 CanvasGroup cg = goForThisCard.GetComponent<CanvasGroup>();
+                 if (cg != null) { 
+                     DOTween.Kill(cg); // Kill fade tween
+                     cg.alpha = 1f; 
+                     cg.blocksRaycasts = true;
+                 }
+
+                cardRect.DOLocalMove(target.Item1, 0.3f).SetEase(Ease.OutQuad);
+                cardRect.DOLocalRotateQuaternion(target.Item2, 0.3f).SetEase(Ease.OutQuad);
+                CardDragHandler handler = goForThisCard.GetComponent<CardDragHandler>();
+                if (handler != null) { handler.originalPosition = target.Item1; handler.originalRotation = target.Item2; handler.originalScale = target.Item3; handler.cardData = cardData; /*Ensure data is current*/ }
+                
+                // Add to final list in the correct order
+                 if (finalGOs.Count > i) finalGOs[i] = goForThisCard; else finalGOs.Add(goForThisCard);
+                 reusedGOs.Add(goForThisCard);
+                 handCardMatched[i] = true;
+            }
         }
 
-        // Apply Custom Layout
-        ApplyHandLayout(currentCardGOs);
-
-        Debug.Log($"[UpdateHandUI] After layout. Final child count in PlayerHandPanel: {playerHandPanel.transform.childCount}");
-
-        // Update Hover Manager References
-        if (handPanelHoverManager != null)
+        // 4. Create new GOs for any hand cards that didn't find a match
+        for (int i = 0; i < currentHand.Count; i++)
         {
-            handPanelHoverManager.UpdateCardReferences();
+            if (handCardMatched[i]) continue; // Already handled by reuse
+
+            CardData cardData = currentHand[i];
+            GameObject newGO = Object.Instantiate(cardPrefab, playerHandPanel.transform);
+            newGO.name = $"Card_{cardData.cardName}_{System.Guid.NewGuid()}";
+            UpdateCardVisuals(newGO, cardData, playerManager, cardManager);
+            CardDragHandler handler = newGO.GetComponent<CardDragHandler>();
+            if (handler != null) handler.cardData = cardData;
+            else Debug.LogError($"CardDragHandler missing on {newGO.name}!");
+            newGO.SetActive(true);
+
+            // Animate In
+            System.Tuple<Vector3, Quaternion, Vector3> target = targetTransforms[i];
+            AnimateCardDraw(newGO, i, target.Item1, target.Item2, target.Item3);
+            
+            // Add to final list in the correct order
+            if (finalGOs.Count > i) finalGOs[i] = newGO; else finalGOs.Add(newGO);
+        }
+
+        // 5. Destroy Unused Existing GOs
+        foreach (GameObject unusedGO in availableGOs) // These GOs were in the panel but are not in the current hand
+        {
+            // Check if the GO is currently animating its discard
+            CardDragHandler unusedHandler = unusedGO?.GetComponent<CardDragHandler>();
+            bool isCurrentlyDiscarding = unusedHandler != null && unusedHandler.isDiscarding;
+
+            if (!isCurrentlyDiscarding && unusedGO != null) // Only destroy if *not* discarding 
+            { 
+                Debug.LogWarning($"[UpdateHandUI] Destroying unused GO: {unusedGO.name} (Card: {currentGOMap.GetValueOrDefault(unusedGO)?.cardName ?? "Unknown"})");
+                 DOTween.Kill(unusedGO.transform, true); // Kill tweens immediately
+                 Object.Destroy(unusedGO);
+            }
+            else if (isCurrentlyDiscarding)
+            {
+                 Debug.Log($"[UpdateHandUI] Skipping destruction of {unusedGO.name} because it is animating discard.");
+            }
+        }
+
+        // 6. Update Hover Manager
+        if (handPanelHoverManager != null)
+        { 
+            handPanelHoverManager.UpdateCardReferences(finalGOs);
         }
     }
     
-    private void ApplyHandLayout(List<GameObject> cardGameObjects)
+    private IEnumerator DelayedHoverManagerUpdate(List<GameObject> cardGOs)
     {
-        int numCards = cardGameObjects.Count;
-        if (numCards == 0) return; // No layout needed for empty hand
+        yield return new WaitForSeconds(0.4f); // Wait for reposition animations
+        if (handPanelHoverManager != null)
+        {
+             handPanelHoverManager.UpdateCardReferences(cardGOs);
+        }
+    }
+    
+    private List<System.Tuple<Vector3, Quaternion, Vector3>> CalculateLayoutTransforms(int numCards)
+    {
+        List<System.Tuple<Vector3, Quaternion, Vector3>> transforms = new List<System.Tuple<Vector3, Quaternion, Vector3>>();
+        if (numCards == 0) return transforms;
 
         float middleIndex = (numCards - 1) / 2.0f;
+        Vector3 baseScale = gameManager.GetCardPrefab()?.GetComponent<RectTransform>().localScale ?? Vector3.one;
 
         for (int i = 0; i < numCards; i++)
         {
-            GameObject cardGO = cardGameObjects[i];
-            RectTransform cardRect = cardGO.GetComponent<RectTransform>();
-            if (cardRect == null) continue;
-
             float offsetFromCenter = i - middleIndex;
 
             // Calculate Position
             float posX = offsetFromCenter * cardSpacing;
-            // Apply outward curve based on distance from center
             posX += Mathf.Sign(offsetFromCenter) * Mathf.Pow(Mathf.Abs(offsetFromCenter), 2) * curveFactor * cardSpacing * 0.1f;
             float posY = -Mathf.Abs(offsetFromCenter) * offsetYPerCard; 
-           
-            // Apply slight curve to Y as well
-            posY -= Mathf.Pow(offsetFromCenter, 2) * offsetYPerCard * 0.1f; // Make center higher
+            posY -= Mathf.Pow(offsetFromCenter, 2) * offsetYPerCard * 0.1f; 
 
             // Calculate Rotation
-            float angle = -offsetFromCenter * tiltAnglePerCard; // Negative tilt for Unity's Z rotation
+            float angle = -offsetFromCenter * tiltAnglePerCard; 
 
-            // Apply Transformations
-            cardRect.localPosition = new Vector3(posX, posY, 0);
-            cardRect.localRotation = Quaternion.Euler(0, 0, angle);
-            
-            // Store original transform in handler
+            Vector3 position = new Vector3(posX, posY, 0);
+            Quaternion rotation = Quaternion.Euler(0, 0, angle);
+            Vector3 scale = baseScale; // Assuming uniform scale for now
+
+            transforms.Add(System.Tuple.Create(position, rotation, scale));
+        }
+        return transforms;
+    }
+    
+    private void AnimateCardDraw(GameObject cardGO, int index, Vector3 targetPos, Quaternion targetRot, Vector3 targetScale)
+    {
+        RectTransform cardRect = cardGO.GetComponent<RectTransform>();
+        if (cardRect == null) return;
+
+        float drawAnimDuration = 0.4f;
+        float staggerDelay = index * 0.08f;
+
+        // Initial state (off-screen below, slightly smaller, zero rotation)
+        cardRect.localPosition = targetPos + Vector3.down * 400f;
+        cardRect.localRotation = Quaternion.identity;
+        cardRect.localScale = targetScale * 0.7f;
+        
+        // Kill existing tweens just in case
+        DOTween.Kill(cardRect);
+
+        // Create Sequence
+        Sequence drawSequence = DOTween.Sequence();
+        drawSequence.SetTarget(cardRect); // Associate tween with the RectTransform
+        drawSequence.AppendInterval(staggerDelay);
+        drawSequence.Append(cardRect.DOLocalMove(targetPos, drawAnimDuration).SetEase(Ease.OutBack));
+        drawSequence.Join(cardRect.DOLocalRotateQuaternion(targetRot, drawAnimDuration).SetEase(Ease.OutBack));
+        drawSequence.Join(cardRect.DOScale(targetScale, drawAnimDuration).SetEase(Ease.OutBack));
+        
+        // Update handler's original transform once animation is complete
+        drawSequence.OnComplete(() => {
             CardDragHandler handler = cardGO.GetComponent<CardDragHandler>();
             if (handler != null)
             {
-                handler.originalPosition = cardRect.localPosition;
-                handler.originalRotation = cardRect.localRotation;
-                handler.originalScale = cardRect.localScale;
+                handler.originalPosition = targetPos;
+                handler.originalRotation = targetRot;
+                handler.originalScale = targetScale;
             }
-            else
-            {
-                 Debug.LogError($"CardDragHandler missing on {cardGO.name} during layout!");
-            }
-        }
+        });
+
+        drawSequence.Play();
     }
     
     private void UpdateCardVisuals(GameObject cardGO, CardData card, PlayerManager playerManager, CardManager cardManager)
@@ -609,18 +720,16 @@ public class CombatUIManager
     public void ClearAllHandCardObjects()
     {
         if (playerHandPanel == null) return;
-        
+
         foreach (Transform child in playerHandPanel.transform)
         {
             if (child.gameObject.name != "CardTemplate")
             {
-                CardDragHandler handler = child.GetComponent<CardDragHandler>();
-                if (handler != null)
-                {
-                    handler.StopAllCoroutines();
-                }
-                Object.Destroy(child.gameObject);
-            }
+                 if (child.gameObject != null) {
+                    DOTween.Kill(child.transform, true); // Kill tweens
+                    Object.Destroy(child.gameObject);
+                 }
+            } else { child.gameObject.SetActive(false); }
         }
         Debug.Log("ClearAllHandCardObjects: Destroyed all card GameObjects in hand panel");
     }
@@ -633,4 +742,106 @@ public class CombatUIManager
     }
     
     public Button GetEndTurnButton() => endTurnButton;
+
+    /// <summary>
+    /// Call this method *BEFORE* removing the card data from the CardManager's hand list.
+    /// It finds the associated GameObject and starts the discard animation.
+    /// </summary>
+    public void TriggerDiscardAnimation(CardData cardData)
+    {
+        GameObject cardGOToDiscard = null;
+        // Find the *first* active, non-animating GO matching the card data
+        foreach (Transform child in playerHandPanel.transform)
+        {
+            if (child.gameObject.name == "CardTemplate") continue;
+
+            CardDragHandler handler = child.GetComponent<CardDragHandler>();
+            CanvasGroup cg = child.GetComponent<CanvasGroup>();
+
+            // Check if GO matches data, is active, and is not already fading out (alpha > 0)
+            if (handler != null && handler.cardData == cardData && child.gameObject.activeSelf && (cg == null || cg.alpha > 0.1f))
+            {
+                // Check if it's already animating a discard (e.g., via DOTween ID or check active tweens)
+                 // Simple check: If a tween is active on its RectTransform, assume it might be animating.
+                 // This isn't perfect but avoids starting a second discard animation.
+                 if (!DOTween.IsTweening(child.GetComponent<RectTransform>()))
+                 {
+                    cardGOToDiscard = child.gameObject;
+                    break; // Found a suitable GO to animate
+                 }
+            }
+        }
+
+        if (cardGOToDiscard != null)
+        {
+            Debug.Log($"[TriggerDiscardAnimation] Found GO {cardGOToDiscard.name} for {cardData.cardName}. Starting animation.");
+            // Start animation - AnimateCardDiscardAndRemove will destroy the GO
+            gameManager.StartCoroutine(AnimateCardDiscardAndRemove(cardData, cardGOToDiscard));
+        }
+        else
+        {
+            Debug.LogWarning($"[TriggerDiscardAnimation] Card {cardData.cardName} not found or already animating discard in hand panel.");
+        }
+    }
+
+    private IEnumerator AnimateCardDiscardAndRemove(CardData cardData, GameObject cardGO)
+    {
+        if (cardGO == null) yield break; // GO already destroyed
+
+        // --- ADDED: Get handler and set discarding flag --- 
+        CardDragHandler handler = cardGO.GetComponent<CardDragHandler>();
+        if (handler != null) 
+        {
+            handler.isDiscarding = true;
+        }
+        else
+        {
+            Debug.LogWarning($"[AnimateCardDiscardAndRemove] Could not find CardDragHandler on {cardGO.name} to set isDiscarding flag.");
+            // Proceed with animation anyway, but UpdateHandUI might destroy it early if called mid-animation.
+        }
+        // --- END ADDED ---
+
+        // Ensure cardGO is still active before starting animation
+        if (!cardGO.activeSelf)
+        {
+            Debug.LogWarning($"[AnimateCardDiscardAndRemove] CardGO {cardGO.name} for {cardData.cardName} is inactive. Destroying immediately.");
+            if (cardGO != null) Object.Destroy(cardGO); // Destroy if somehow still exists
+            yield break;
+        }
+
+        RectTransform cardRect = cardGO.GetComponent<RectTransform>();
+        CanvasGroup canvasGroup = cardGO.GetComponent<CanvasGroup>() ?? cardGO.AddComponent<CanvasGroup>();
+        canvasGroup.blocksRaycasts = false; // Disable interaction during animation
+
+        float discardAnimDuration = 0.5f;
+        float moveDistance = 300f;
+        float randomAngle = Random.Range(-90f, 90f);
+        Vector3 targetPosOffset = Quaternion.Euler(0, 0, Random.Range(-30f, 30f)) * Vector3.up * moveDistance;
+
+        // Kill existing tweens
+        DOTween.Kill(cardRect); 
+        DOTween.Kill(canvasGroup);
+
+        Sequence discardSequence = DOTween.Sequence();
+        discardSequence.SetTarget(cardRect); // Associate tween
+
+        // Playful burst animation
+        discardSequence.Append(cardRect.DOLocalMove(cardRect.localPosition + targetPosOffset, discardAnimDuration).SetEase(Ease.OutQuad));
+        discardSequence.Join(cardRect.DOLocalRotate(new Vector3(0, 0, randomAngle), discardAnimDuration).SetEase(Ease.OutQuad));
+        discardSequence.Join(cardRect.DOScale(cardRect.localScale * 1.2f, discardAnimDuration * 0.4f).SetEase(Ease.OutQuad).SetLoops(2, LoopType.Yoyo)); // Optional pulse
+        discardSequence.Insert(discardAnimDuration * 0.5f, canvasGroup.DOFade(0f, discardAnimDuration * 0.5f).SetEase(Ease.InQuad)); // Fade out in the second half
+
+        // Set OnComplete to destroy the GameObject
+        discardSequence.OnComplete(() => {
+            if (cardGO != null) // Check if not already destroyed
+            { 
+                Object.Destroy(cardGO);
+            }
+        });
+
+        discardSequence.Play();
+
+        // Wait for the animation duration before the coroutine finishes (optional, but good practice)
+        yield return new WaitForSeconds(discardAnimDuration);
+    }
 } 

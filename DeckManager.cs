@@ -102,6 +102,18 @@ public class DeckManager
     
     public bool DiscardCard(CardData card)
     {
+        // Trigger animation *before* removing from hand list
+        CombatUIManager combatUIManager = gameManager.GetCombatUIManager();
+        if (combatUIManager != null)
+        {
+            combatUIManager.TriggerDiscardAnimation(card);
+        }
+        else
+        {
+            Debug.LogWarning("CombatUIManager not found, cannot trigger discard animation for single card discard.");
+        }
+        
+        // Now attempt to remove from hand and add to discard
         if (hand.Remove(card))
         {
             discardPile.Add(card);

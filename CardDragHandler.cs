@@ -9,6 +9,7 @@ public class CardDragHandler : MonoBehaviour, IBeginDragHandler, IDragHandler, I
 {
     public CardData cardData { get; set; } // Set by GameManager when instantiated
     public int cardHandIndex { get; set; } = -1; // Track position in hand list to differentiate identical cards
+    public bool isDiscarding { get; set; } = false; // ADDED: Flag for discard animation
 
     // --- ADDED: Hover effect fields ---
     public Vector3 originalPosition { get; set; }

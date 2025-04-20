@@ -540,8 +540,8 @@ public class GameManager : MonoBehaviourPunCallbacks
             playerManager?.GetHealthManager()?.ResetLocalPetBlockOnly();
         }
         else
-        {
-             Debug.LogWarning($"RPC: Received RpcResetMyPetBlock from unexpected sender ({info.Sender?.NickName ?? "null"}) or opponent is null. Ignoring.");
+        {           
+            Debug.LogWarning($"RPC: Received RpcResetMyPetBlock from unexpected sender ({info.Sender?.NickName ?? "null"}) or opponent is null. Ignoring.");
         }
     }
 
@@ -740,6 +740,14 @@ public class GameManager : MonoBehaviourPunCallbacks
     {
         return draftManager;
     }
+
+    // --- ADDED: Getter for CombatUIManager ---
+    public CombatUIManager GetCombatUIManager()
+    {
+        // We access CombatUIManager via CombatManager
+        return combatManager?.GetCombatUIManager(); 
+    }
+    // --- END ADDED ---
 
     public int GetStartingPlayerHealth()
     {
