@@ -363,28 +363,61 @@ public class CardEffectService
     {
         PlayerManager playerManager = gameManager.GetPlayerManager();
         int value = triggeringCard.comboEffectValue;
+        if (value <= 0) return; // No effect if value is zero or less
+
+        CardDropZone.TargetType target = triggeringCard.comboEffectTarget;
 
         switch (triggeringCard.comboEffectType)
         {
-            case ComboEffectType.DealDamageToOpponentPet:
-                if (value > 0) playerManager.DamageOpponentPet(value);
-                break;
-            case ComboEffectType.GainBlockPlayer:
-                if (value > 0) playerManager.AddBlockToLocalPlayer(value);
-                break;
-            case ComboEffectType.GainBlockPet:
-                if (value > 0) playerManager.AddBlockToLocalPet(value);
-                break;
-            case ComboEffectType.DrawCard:
-                if (value > 0) {
-                    DeckManager deckManager = gameManager.GetCardManager().GetDeckManager();
-                    for(int i=0; i < value; i++) deckManager.DrawCard();
-                    gameManager.UpdateHandUI();
-                    gameManager.UpdateDeckCountUI();
+            case ComboEffectType.DealDamage:
+                // Apply damage based on target
+                if (target == CardDropZone.TargetType.EnemyPet) {
+                    playerManager.DamageOpponentPet(value);
+                    Debug.Log($"Combo Effect: Dealt {value} damage to Opponent Pet.");
+                }
+                // Add cases for other potential damage targets if needed (e.g., PlayerSelf, OwnPet)
+                else {
+                     Debug.LogWarning($"Combo Effect: DealDamage targeted {target}, which is not implemented for this effect.");
                 }
                 break;
+
+            case ComboEffectType.GainBlock:
+                // Apply block based on target
+                if (target == CardDropZone.TargetType.PlayerSelf) {
+                    playerManager.AddBlockToLocalPlayer(value);
+                     Debug.Log($"Combo Effect: Gained {value} block for PlayerSelf.");
+                }
+                else if (target == CardDropZone.TargetType.OwnPet) {
+                    playerManager.AddBlockToLocalPet(value);
+                    Debug.Log($"Combo Effect: Gained {value} block for OwnPet.");
+                }
+                // Add case for EnemyPet if block can target them via combo
+                // else if (target == CardDropZone.TargetType.EnemyPet) {
+                //     playerManager.AddBlockToOpponentPet(value);
+                // }
+                else {
+                     Debug.LogWarning($"Combo Effect: GainBlock targeted {target}, which is not implemented for this effect.");
+                }
+                break;
+
+            case ComboEffectType.DrawCard:
+                // DrawCard implicitly targets the player
+                DeckManager deckManager = gameManager.GetCardManager().GetDeckManager();
+                for(int i=0; i < value; i++) deckManager.DrawCard();
+                gameManager.UpdateHandUI();
+                gameManager.UpdateDeckCountUI();
+                Debug.Log($"Combo Effect: Drew {value} cards.");
+                break;
+
             case ComboEffectType.GainEnergy:
-                if (value > 0) playerManager.GainEnergy(value);
+                // GainEnergy implicitly targets the player
+                playerManager.GainEnergy(value);
+                 Debug.Log($"Combo Effect: Gained {value} energy.");
+                break;
+
+            case ComboEffectType.None:
+            default:
+                 Debug.LogWarning($"Combo Effect: Triggered with type {triggeringCard.comboEffectType}, but no action defined.");
                 break;
         }
     }

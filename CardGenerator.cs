@@ -131,14 +131,14 @@ public class CardGenerator : MonoBehaviour
             card.damage = 4;
             card.isComboStarter = true;
             card.comboTriggerValue = 3;
-            card.comboEffectType = ComboEffectType.DealDamageToOpponentPet;
+            card.comboEffectType = ComboEffectType.DealDamage;
             card.comboEffectValue = 10;
             card.comboEffectTarget = CardDropZone.TargetType.EnemyPet;
         }, "Hypertrophic Sequence+", "Deal 5 damage. Combo: After 3 combo cards, deal 15 damage.", 1, card => {
             card.damage = 5;
             card.isComboStarter = true;
             card.comboTriggerValue = 3;
-            card.comboEffectType = ComboEffectType.DealDamageToOpponentPet;
+            card.comboEffectType = ComboEffectType.DealDamage;
             card.comboEffectValue = 15;
             card.comboEffectTarget = CardDropZone.TargetType.EnemyPet;
         });
@@ -148,14 +148,14 @@ public class CardGenerator : MonoBehaviour
             card.block = 4;
             card.isComboStarter = true;
             card.comboTriggerValue = 3;
-            card.comboEffectType = ComboEffectType.GainBlockPlayer;
+            card.comboEffectType = ComboEffectType.GainBlock;
             card.comboEffectValue = 10;
             card.comboEffectTarget = CardDropZone.TargetType.PlayerSelf;
         }, "Chitin Synthesis+", "Gain 5 block. Combo: After 3 combo cards, gain 15 block.", 1, card => {
             card.block = 5;
             card.isComboStarter = true;
             card.comboTriggerValue = 3;
-            card.comboEffectType = ComboEffectType.GainBlockPlayer;
+            card.comboEffectType = ComboEffectType.GainBlock;
             card.comboEffectValue = 15;
             card.comboEffectTarget = CardDropZone.TargetType.PlayerSelf;
         });
@@ -167,14 +167,12 @@ public class CardGenerator : MonoBehaviour
             card.comboTriggerValue = 3;
             card.comboEffectType = ComboEffectType.DrawCard;
             card.comboEffectValue = 3;
-            card.comboEffectTarget = CardDropZone.TargetType.PlayerSelf;
         }, "Prismatic Illumination+", "Draw 2 cards. Combo: After 3 combo cards, draw 4 cards.", 1, card => {
             card.drawAmount = 2;
             card.isComboStarter = true;
             card.comboTriggerValue = 3;
             card.comboEffectType = ComboEffectType.DrawCard;
             card.comboEffectValue = 4;
-            card.comboEffectTarget = CardDropZone.TargetType.PlayerSelf;
         });
     }
 
@@ -415,7 +413,7 @@ public class CardGenerator : MonoBehaviour
             card.damage = 3;
             card.isComboStarter = true;
             card.comboTriggerValue = 3;
-            card.comboEffectType = ComboEffectType.DealDamageToOpponentPet;
+            card.comboEffectType = ComboEffectType.DealDamage;
             card.comboEffectValue = 8;
             card.comboEffectTarget = CardDropZone.TargetType.EnemyPet;
             // Would need a way to support secondary combo effects
@@ -423,7 +421,7 @@ public class CardGenerator : MonoBehaviour
             card.damage = 4;
             card.isComboStarter = true;
             card.comboTriggerValue = 3;
-            card.comboEffectType = ComboEffectType.DealDamageToOpponentPet;
+            card.comboEffectType = ComboEffectType.DealDamage;
             card.comboEffectValue = 10;
             card.comboEffectTarget = CardDropZone.TargetType.EnemyPet;
         });
@@ -433,14 +431,14 @@ public class CardGenerator : MonoBehaviour
             card.damage = 3;
             card.isComboStarter = true;
             card.comboTriggerValue = 2;
-            card.comboEffectType = ComboEffectType.DealDamageToOpponentPet;
+            card.comboEffectType = ComboEffectType.DealDamage;
             card.comboEffectValue = 6;
             card.comboEffectTarget = CardDropZone.TargetType.EnemyPet;
         }, "Catalytic Reaction+", "Deal 4 damage. Combo: After 2 combo cards, deal 8 damage.", 1, card => {
             card.damage = 4;
             card.isComboStarter = true;
             card.comboTriggerValue = 2;
-            card.comboEffectType = ComboEffectType.DealDamageToOpponentPet;
+            card.comboEffectType = ComboEffectType.DealDamage;
             card.comboEffectValue = 8;
             card.comboEffectTarget = CardDropZone.TargetType.EnemyPet;
         });

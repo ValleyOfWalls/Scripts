@@ -16,11 +16,10 @@ public enum DiscardEffectType
 public enum ComboEffectType
 {
     None,
-    DealDamageToOpponentPet,
-    GainBlockPlayer,
-    GainBlockPet,
-    DrawCard,
-    GainEnergy
+    DealDamage,        // Renamed from DealDamageToOpponentPet
+    GainBlock,         // Renamed from GainBlockPlayer/GainBlockPet
+    DrawCard,          // Target is implicitly Player
+    GainEnergy         // Target is implicitly Player
     // Add more complex combo effects later
 }
 // --- END ADDED ---

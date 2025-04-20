@@ -63,7 +63,7 @@ Search Folders: Assets/Prefabs
             - OtherStatusTitle (Components: CanvasRenderer, TextMeshProUGUI, ContentSizeFitter)
             - OtherPlayerStatusTemplate (Components: CanvasRenderer, TextMeshProUGUI, ContentSizeFitter)
     - PlayerArea (Components: CanvasRenderer, Image)
-        - StatsRow (Components: CanvasRenderer, Image)
+        - StatsRow (Components: CanvasRenderer, Image, CardDropZone)
             - PlayerNameText (Components: CanvasRenderer, TextMeshProUGUI, ContentSizeFitter, LayoutElement)
             - PlayerHealthSlider (Components: Slider)
                 - Background (Components: CanvasRenderer, Image)
