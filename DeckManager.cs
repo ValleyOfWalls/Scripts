@@ -45,27 +45,48 @@ public class DeckManager
     public void DrawHand()
     {
         hand.Clear();
+        Debug.Log($"DrawHand START: Attempting to draw {cardsToDraw} cards. Current state - Deck: {deck.Count}, Discard: {discardPile.Count}");
+        int cardsDrawnThisTurn = 0;
         for (int i = 0; i < cardsToDraw; i++)
         {
-            DrawCard();
+            if (!DrawCard()) // If DrawCard returns false, stop drawing
+            {
+                Debug.Log($"Could not draw card {i+1} of {cardsToDraw} (deck/discard likely empty). Stopping draw.");
+                break;
+            }
+            cardsDrawnThisTurn++;
         }
+        Debug.Log($"DrawHand END: Finished drawing. Hand size: {hand.Count}. Cards drawn this turn: {cardsDrawnThisTurn}. Final state - Deck: {deck.Count}, Discard: {discardPile.Count}");
     }
     
-    public void DrawCard()
+    /// <summary>
+    /// Draws a single card from the deck into the hand.
+    /// Handles reshuffling the discard pile if the deck is empty.
+    /// </summary>
+    /// <returns>True if a card was successfully drawn, false otherwise (deck and discard are empty).</returns>
+    public bool DrawCard()
     {
         if (deck.Count == 0)
         {
             if (discardPile.Count == 0)
             {
-                Debug.Log("No cards left to draw!");
-                return; // Out of cards
+                Debug.Log("DrawCard: Deck and discard pile are both empty. Cannot draw.");
+                return false; // Out of cards entirely
             }
             ReshuffleDiscardPile();
+             // After reshuffling, check if the deck is *still* empty (shouldn't happen if discard wasn't empty, but safety check)
+            if (deck.Count == 0) 
+            {
+                 Debug.LogWarning("DrawCard: Deck is still empty after reshuffling non-empty discard pile. This should not happen.");
+                 return false;
+            }
         }
         
         CardData drawnCard = deck[0];
         deck.RemoveAt(0);
         hand.Add(drawnCard);
+        Debug.Log($"DrawCard SUCCESS: Drew '{drawnCard.cardName}'. New state - Deck: {deck.Count}, Hand: {hand.Count}, Discard: {discardPile.Count}");
+        return true;
     }
     
     public void DiscardHand()
@@ -91,10 +112,11 @@ public class DeckManager
     
     public void ReshuffleDiscardPile()
     {
-        Debug.Log("Reshuffling discard pile into deck.");
+        Debug.Log($"ReshuffleDiscardPile START: Reshuffling {discardPile.Count} cards from discard into deck (current deck size: {deck.Count}).");
         deck.AddRange(discardPile);
         discardPile.Clear();
         ShuffleDeck();
+        Debug.Log($"ReshuffleDiscardPile END: Deck size after reshuffle: {deck.Count}, Discard size: {discardPile.Count}");
     }
     
     public void ShuffleDeck()

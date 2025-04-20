@@ -14,12 +14,10 @@ public class DeckViewController : MonoBehaviour
     [SerializeField] private Transform cardContentArea; // The "Content" child of the ScrollView
     [SerializeField] private GameObject cardPrefab; // The Card Template prefab
 
-    // --- Public Setters for UISetup ---
-    public void SetTitleText(TMP_Text text) => titleText = text;
-    public void SetCloseButton(Button button) => closeButton = button;
-    public void SetCardContentArea(Transform transform) => cardContentArea = transform;
-    public void SetCardPrefab(GameObject prefab) => cardPrefab = prefab;
-    // --- End Public Setters ---
+    public GameObject cardEntryPrefab;
+    public Transform contentPanel;
+
+    private List<GameObject> spawnedCardEntries = new List<GameObject>();
 
     private void Awake()
     {

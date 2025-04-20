@@ -331,6 +331,18 @@ public class GameManager : MonoBehaviourPunCallbacks
     }
     // --- END ADDED ---
 
+    // --- ADDED: RPC for Opponent's Pet taking damage (e.g., from player attacking their own pet) ---
+    [PunRPC]
+    private void RpcOpponentPetTookDamage(int damageAmount)
+    {
+        if (damageAmount <= 0) return;
+
+        Debug.Log($"RPC Received: Opponent Pet (the one I'm fighting) taking {damageAmount} damage.");
+        // Apply this damage to the pet we are fighting, WITHOUT triggering another RPC
+        playerManager.GetHealthManager().ApplyDamageToOpponentPetLocally(damageAmount);
+    }
+    // --- END ADDED ---
+
     public PhotonView GetPhotonView()
     {
         return photonViewComponent;

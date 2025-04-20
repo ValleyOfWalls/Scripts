@@ -1,5 +1,6 @@
 using UnityEngine;
 using System.Collections.Generic;
+using Photon.Realtime;
 
 public class CardEffectService
 {
@@ -57,6 +58,19 @@ public class CardEffectService
                 break;
                 
             case CardDropZone.TargetType.PlayerSelf:
+                if (cardData.damage > 0)
+                {
+                    // Check Attacker (Player) Weakness
+                    int actualDamage = cardData.damage;
+                    if (playerManager.IsPlayerWeak()) {
+                        int reduction = Mathf.FloorToInt(actualDamage * 0.25f);
+                        actualDamage = Mathf.Max(0, actualDamage - reduction);
+                        Debug.Log($"Player is Weak! Reducing self-damage from {cardData.damage} to {actualDamage}");
+                    }
+                    playerManager.DamageLocalPlayer(actualDamage);
+                    Debug.Log($"Dealt {actualDamage} damage to PlayerSelf. New health: {playerManager.GetLocalPlayerHealth()}, Block: {playerManager.GetLocalPlayerBlock()}");
+                }
+                
                 if (cardData.block > 0)
                 {
                     playerManager.AddBlockToLocalPlayer(cardData.block);
@@ -87,6 +101,32 @@ public class CardEffectService
                 break;
                 
             case CardDropZone.TargetType.OwnPet:
+                if (cardData.damage > 0)
+                {
+                    // Check Attacker (Player) Weakness
+                    int actualDamage = cardData.damage;
+                    if (playerManager.IsPlayerWeak()) {
+                        int reduction = Mathf.FloorToInt(actualDamage * 0.25f);
+                        actualDamage = Mathf.Max(0, actualDamage - reduction);
+                        Debug.Log($"Player is Weak! Reducing pet damage from {cardData.damage} to {actualDamage}");
+                    }
+                    playerManager.DamageLocalPet(actualDamage);
+                    Debug.Log($"Dealt {actualDamage} damage to OwnPet. New health: {playerManager.GetLocalPetHealth()}, Block: {playerManager.GetLocalPetBlock()}");
+
+                    // --- ADDED: Notify opponent about this damage ---
+                    Photon.Realtime.Player opponentPlayer = gameManager.GetPlayerManager().GetOpponentPlayer();
+                    if (opponentPlayer != null)
+                    {
+                        Debug.Log($"Sending RpcOpponentPetTookDamage({actualDamage}) to opponent {opponentPlayer.NickName} because local pet took damage from card effect.");
+                        gameManager.GetPhotonView().RPC("RpcOpponentPetTookDamage", opponentPlayer, actualDamage);
+                    }
+                    else
+                    {
+                         Debug.LogWarning("CardEffectService (OwnPet): Could not find opponent player to notify about pet damage.");
+                    }
+                    // --- END ADDED ---
+                }
+                
                 if (cardData.block > 0)
                 {
                     playerManager.AddBlockToLocalPet(cardData.block);

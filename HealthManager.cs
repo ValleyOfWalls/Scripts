@@ -134,23 +134,40 @@ public class HealthManager
 
         gameManager.UpdateHealthUI(); // Update both health and block display
         
+        // --- ADDED: Update player custom property for other UIs ---
+        if (PhotonNetwork.InRoom)
+        {
+            ExitGames.Client.Photon.Hashtable healthProp = new ExitGames.Client.Photon.Hashtable 
+            {
+                { CombatStateManager.PLAYER_COMBAT_PLAYER_HP_PROP, localPlayerHealth } 
+            };
+            PhotonNetwork.LocalPlayer.SetCustomProperties(healthProp);
+            // Debug.Log($"Updated {CombatStateManager.PLAYER_COMBAT_PLAYER_HP_PROP} to {localPlayerHealth}");
+        }
+        // --- END ADDED ---
+
         if (localPlayerHealth <= 0)
         {
             gameManager.GetPlayerManager().GetCombatStateManager().HandleCombatLoss();
         }
     }
     
-    public void DamageOpponentPet(int amount)
+    /// <summary>
+    /// Applies damage to the opponent's pet based on the local simulation state and checks for win condition.
+    /// This method performs the actual health/block modification and UI update.
+    /// It does NOT send any network notifications.
+    /// </summary>
+    public void ApplyDamageToOpponentPetLocally(int amount)
     {
         if (amount <= 0) return;
-        
+
         int damageAfterBlock = amount - opponentPetBlock;
         int blockConsumed = Mathf.Min(amount, opponentPetBlock);
         opponentPetBlock -= blockConsumed;
         if (opponentPetBlock < 0) opponentPetBlock = 0;
-        
-        Debug.Log($"DamageOpponentPet: Incoming={amount}, Est. Block={blockConsumed}, RemainingDamage={damageAfterBlock}");
-        
+
+        // Debug.Log($"ApplyDamageToOpponentPetLocally: Incoming={amount}, Est. Block={blockConsumed}, RemainingDamage={damageAfterBlock}"); // Optional: More granular log
+
         if (damageAfterBlock > 0)
         {
             // Check for Break
@@ -167,11 +184,14 @@ public class HealthManager
         }
         
         // Apply Crit Damage if applicable (Player attacking Opponent Pet)
+        // Crit is applied here because the *attacker's* crit chance determines it.
         int playerCritChance = GetPlayerEffectiveCritChance();
         if (Random.Range(0, 100) < playerCritChance)
         {
             Debug.LogWarning($"Player CRITICAL HIT! (Chance: {playerCritChance}%)");
-            int critDamage = damageAfterBlock * (CRIT_DAMAGE_MULTIPLIER - 1);
+            // Crit damage applies to the damage that got through block
+            int critDamage = damageAfterBlock > 0 ? damageAfterBlock * (CRIT_DAMAGE_MULTIPLIER - 1) : amount * (CRIT_DAMAGE_MULTIPLIER - 1);
+            if (critDamage < 0) critDamage = 0; // Ensure crit damage isn't negative if base damage was 0
             Debug.Log($"Applying additional {critDamage} critical damage to Opponent Pet.");
             opponentPetHealth -= critDamage;
             if (opponentPetHealth < 0) opponentPetHealth = 0;
@@ -179,17 +199,38 @@ public class HealthManager
 
         gameManager.UpdateHealthUI(); // Update both health and block display
         
-        // Notify the opponent that their pet took damage (send ORIGINAL amount, they calculate block)
-        Player opponentPlayer = gameManager.GetPlayerManager().GetOpponentPlayer();
-        if (opponentPlayer != null)
-        {
-            Debug.Log($"Sending RpcTakePetDamage({amount}) to {opponentPlayer.NickName}");
-            gameManager.GetPhotonView().RPC("RpcTakePetDamage", opponentPlayer, amount);
-        }
-        
+        // Check for win condition after applying damage
         if (opponentPetHealth <= 0)
         {
             gameManager.GetPlayerManager().GetCombatStateManager().HandleCombatWin();
+        }
+    }
+
+    /// <summary>
+    /// Processes damage dealt by the local player to the opponent's pet.
+    /// Applies the damage locally and notifies the opponent via RPC.
+    /// </summary>
+    public void DamageOpponentPet(int amount)
+    {
+        if (amount <= 0) return;
+        
+        Debug.Log($"DamageOpponentPet: Processing {amount} damage dealt by local player.");
+
+        // Apply the damage locally first (handles block, break, crit, health update, UI, win check)
+        ApplyDamageToOpponentPetLocally(amount);
+
+        // Only notify the opponent if the opponent pet is still alive (prevent redundant RPCs after win)
+        // And ensure we have an opponent to notify
+        Player opponentPlayer = gameManager.GetPlayerManager().GetOpponentPlayer();
+        if (opponentPetHealth > 0 && opponentPlayer != null)
+        {
+            // Notify the opponent that their pet took damage (send ORIGINAL amount, they calculate block/reductions locally)
+            Debug.Log($"Sending RpcTakePetDamage({amount}) to {opponentPlayer.NickName}");
+            gameManager.GetPhotonView().RPC("RpcTakePetDamage", opponentPlayer, amount);
+        }
+        else if (opponentPlayer == null)
+        {
+             Debug.LogWarning("DamageOpponentPet: Cannot send RPC, opponentPlayer is null.");
         }
     }
     
