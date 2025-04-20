@@ -326,12 +326,20 @@ public class HealthManager
 
     public void ResetAllBlock()
     {
-        Debug.Log($"Resetting block. Player: {localPlayerBlock} -> 0, Pet: {localPetBlock} -> 0, OpponentPet: {opponentPetBlock} -> 0");
+        Debug.Log($"Resetting block. Player: {localPlayerBlock} -> 0, Pet: {localPetBlock} -> 0");
         localPlayerBlock = 0;
         localPetBlock = 0;
-        opponentPetBlock = 0; 
         gameManager.UpdateHealthUI(); // Update block display
     }
+    
+    // --- ADDED: Reset only opponent pet block ---
+    public void ResetOpponentPetBlockOnly()
+    {
+        Debug.Log($"Resetting Opponent Pet Block: {opponentPetBlock} -> 0");
+        opponentPetBlock = 0;
+        // Don't call UpdateHealthUI here, it will be called by the turn logic
+    }
+    // --- END ADDED ---
     
     #endregion
     

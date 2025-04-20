@@ -1,6 +1,7 @@
 using UnityEngine;
 using System.Collections.Generic;
 using Photon.Realtime;
+using Photon.Pun;
 
 public class CardEffectService
 {
@@ -63,6 +64,15 @@ public class CardEffectService
                 {
                     playerManager.ApplyDotOpponentPet(cardData.dotDamageAmount, cardData.dotDuration);
                 }
+                
+                // --- MOVED/ADDED: Apply Energy Gain to Enemy Pet ---
+                if (cardData.energyGain > 0)
+                {
+                    // Update local simulation and notify owner
+                    gameManager.GetCardManager().GetPetDeckManager().AddEnergyToOpponentPet(cardData.energyGain);
+                    Debug.Log($"Applied {cardData.energyGain} energy to Opponent Pet (local sim).");
+                }
+                // --- END MOVED/ADDED ---
                 break;
                 
             case CardDropZone.TargetType.PlayerSelf:
@@ -106,6 +116,13 @@ public class CardEffectService
                 {
                     playerManager.ApplyDotLocalPlayer(cardData.dotDamageAmount, cardData.dotDuration);
                 }
+                
+                // --- MOVED: Apply Energy Gain to Player ---
+                if (cardData.energyGain > 0)
+                {
+                    playerManager.GainEnergy(cardData.energyGain);
+                }
+                // --- END MOVED ---
                 break;
                 
             case CardDropZone.TargetType.OwnPet:
@@ -162,16 +179,29 @@ public class CardEffectService
                 {
                     playerManager.ApplyDotLocalPet(cardData.dotDamageAmount, cardData.dotDuration);
                 }
+
+                // --- ADDED: Apply Energy Gain to Own Pet --- 
+                if (cardData.energyGain > 0)
+                {
+                    Debug.Log($"Applying {cardData.energyGain} energy to Own Pet.");
+                    // Update the custom property directly, triggering UI update via OnPlayerPropertiesUpdate
+                    int currentPetEnergy = gameManager.GetStartingPetEnergy(); // Start with base
+                    if (PhotonNetwork.LocalPlayer.CustomProperties.TryGetValue(CombatStateManager.PLAYER_COMBAT_PET_ENERGY_PROP, out object energyObj))
+                    {
+                        try { currentPetEnergy = (int)energyObj; } catch {}
+                    }
+                    int newPetEnergy = currentPetEnergy + cardData.energyGain;
+                    ExitGames.Client.Photon.Hashtable petEnergyProp = new ExitGames.Client.Photon.Hashtable
+                    {
+                        { CombatStateManager.PLAYER_COMBAT_PET_ENERGY_PROP, newPetEnergy }
+                    };
+                    PhotonNetwork.LocalPlayer.SetCustomProperties(petEnergyProp);
+                }
+                // --- END ADDED ---
                 break;
         }
         
         // Apply target-independent effects
-        
-        // Apply energy gain
-        if (cardData.energyGain > 0)
-        {
-            playerManager.GainEnergy(cardData.energyGain);
-        }
         
         // Apply Draw Card
         if (cardData.drawAmount > 0)

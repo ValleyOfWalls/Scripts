@@ -16,6 +16,7 @@ public class GameManager : MonoBehaviourPunCallbacks
     [SerializeField] private int startingPlayerHealth = 50;
     [SerializeField] private int startingPetHealth = 30;
     [SerializeField] private int startingEnergy = 3;
+    [SerializeField] private int startingPetEnergy = 3;
     [SerializeField] private int cardsToDraw = 5;
     [SerializeField] private List<CardData> starterDeck = new List<CardData>();
     [SerializeField] private List<CardData> starterPetDeck = new List<CardData>();
@@ -104,7 +105,7 @@ public class GameManager : MonoBehaviourPunCallbacks
         gameStateManager.Initialize();
         playerManager.Initialize(startingPlayerHealth, startingPetHealth, startingEnergy);
         photonManager.Initialize(this); // Assuming PhotonManager needs Initialize
-        combatManager.Initialize(this, startingPlayerHealth, startingPetHealth, startingEnergy); // Pass necessary refs/config
+        combatManager.Initialize(this, startingPlayerHealth, startingPetHealth, startingEnergy, startingPetEnergy); // Pass necessary refs/config
         draftManager.Initialize(this, optionsPerDraft); // Pass necessary refs/config
     }
 
@@ -130,6 +131,10 @@ public class GameManager : MonoBehaviourPunCallbacks
             playerManager.GetCombatStateManager().UpdateScoreUI(); // Use CombatStateManager via PlayerManager
              // --- ADDED: Update Other Fights UI on property change ---
              combatManager.UpdateOtherFightsUI();
+             // --- END ADDED ---
+
+             // --- ADDED: Update main Health UI as well for property changes (like pet energy) ---
+             combatManager.UpdateHealthUI();
              // --- END ADDED ---
         }
     }
@@ -357,9 +362,10 @@ public class GameManager : MonoBehaviourPunCallbacks
             if (opponentPlayer != null && opponentPlayer.ActorNumber == info.Sender.ActorNumber)
             {
                 // This RPC came from the player whose pet we are currently fighting
-                // We need to set the *opponentPetBlock* value in our HealthManager
-                // Note: This RPC sends the *total* block, not an amount to add.
-                playerManager.GetHealthManager().SetOpponentPetBlock(newTotalBlock); 
+                // DO NOT update opponentPetBlock here - it's managed locally and reset.
+                // This RPC might be used later to update a separate display for that opponent's *other* fight.
+                // playerManager.GetHealthManager().SetOpponentPetBlock(newTotalBlock); // REMOVED
+                Debug.Log("RPC Rcvd: RpcUpdateLocalPetBlock from current opponent. Ignoring direct opponentPetBlock update.");
             }
             else
             {
@@ -392,6 +398,59 @@ public class GameManager : MonoBehaviourPunCallbacks
          else
         {
             Debug.LogWarning($"RPC: Received RpcAddBlockToLocalPet from self or null sender. Ignoring.");
+        }
+    }
+
+    // --- ADDED: RPC Receiver for Adding Energy to Local Pet (Sent by opponent targeting our pet) ---
+    [PunRPC]
+    private void RpcAddEnergyToLocalPet(int amount, PhotonMessageInfo info)
+    {
+        // This RPC is sent *to us* when an *opponent* plays a card that gives *our pet* energy.
+        if (info.Sender != null && info.Sender != PhotonNetwork.LocalPlayer)
+        {
+             Debug.Log($"RPC: Received RpcAddEnergyToLocalPet({amount}) from {info.Sender.NickName}. Adding energy to our local pet.");
+             // How should local pet energy be tracked/added? 
+             // Currently, pets don't consume energy controlled by the player.
+             // For now, let's just log this. If pets need their own energy pool managed by the player,
+             // we would call a method like playerManager.AddEnergyToLocalPet(amount) here.
+             // Let's update the custom property directly, as that's what the UI reads.
+             int currentPetEnergy = 0; 
+             if (PhotonNetwork.LocalPlayer.CustomProperties.TryGetValue(CombatStateManager.PLAYER_COMBAT_PET_ENERGY_PROP, out object energyObj))
+             {
+                 try { currentPetEnergy = (int)energyObj; } catch {}
+             }
+             int newPetEnergy = currentPetEnergy + amount;
+             ExitGames.Client.Photon.Hashtable petEnergyProp = new ExitGames.Client.Photon.Hashtable
+             {
+                 { CombatStateManager.PLAYER_COMBAT_PET_ENERGY_PROP, newPetEnergy }
+             };
+             PhotonNetwork.LocalPlayer.SetCustomProperties(petEnergyProp);
+        }
+         else
+        {
+            Debug.LogWarning($"RPC: Received RpcAddEnergyToLocalPet from self or null sender. Ignoring.");
+        }
+    }
+
+    // --- ADDED: RPC Receiver for Updating the Local Pet's Energy Property (Sent by simulator after pet's turn) ---
+    [PunRPC]
+    private void RpcUpdateMyPetEnergyProperty(int finalEnergy, PhotonMessageInfo info)
+    {
+        // This RPC is sent TO US (the pet owner) by the opponent who just finished SIMULATING our pet's turn.
+        if (info.Sender != null && info.Sender != PhotonNetwork.LocalPlayer)
+        {
+            Debug.Log($"RPC: Received RpcUpdateMyPetEnergyProperty({finalEnergy}) from simulator {info.Sender.NickName}. Setting my pet's energy property.");
+            ExitGames.Client.Photon.Hashtable petEnergyProp = new ExitGames.Client.Photon.Hashtable
+            {
+                { CombatStateManager.PLAYER_COMBAT_PET_ENERGY_PROP, finalEnergy }
+            };
+            PhotonNetwork.LocalPlayer.SetCustomProperties(petEnergyProp);
+            
+            // UI will update via OnPlayerPropertiesUpdate callback
+        }
+         else
+        {
+            Debug.LogWarning($"RPC: Received RpcUpdateMyPetEnergyProperty from self or null sender. Ignoring.");
         }
     }
 
@@ -508,6 +567,18 @@ public class GameManager : MonoBehaviourPunCallbacks
     {
         startingEnergy = value;
     }
+
+    // --- ADDED Getter/Setter for Pet Energy ---
+    public int GetStartingPetEnergy()
+    {
+        return startingPetEnergy;
+    }
+
+    public void SetStartingPetEnergy(int value)
+    {
+        startingPetEnergy = value;
+    }
+    // --- END ADDED ---
 
     // --- ADDED Getter for Deck Viewer Prefab ---
     public GameObject GetDeckViewerPanelPrefab()

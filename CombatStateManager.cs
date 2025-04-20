@@ -23,6 +23,8 @@ public class CombatStateManager
     public const string PLAYER_COMBAT_TURN_PROP = "CombatTurn";
     // --- ADDED: Constant for Player Health in Combat ---
     public const string PLAYER_COMBAT_PLAYER_HP_PROP = "PlayerHP";
+    // --- ADDED: Constant for Pet Energy in Combat ---
+    public const string PLAYER_COMBAT_PET_ENERGY_PROP = "PetEnergy";
     // --- END ADDED ---
     
     public CombatStateManager(GameManager gameManager)

@@ -12,7 +12,8 @@ public class CombatManager
     private GameManager gameManager;
     private int startingPlayerHealth;
     private int startingPetHealth;
-    private int startingEnergy;
+    private int startingPlayerEnergy;
+    private int startingPetEnergy;
 
     // --- ADDED: Hand Layout Parameters ---
     [Header("Hand Layout Settings")]
@@ -65,12 +66,13 @@ public class CombatManager
     private DeckViewType currentDeckViewType = DeckViewType.None;
     // --- END ADDED ---
 
-    public void Initialize(GameManager gameManager, int startingPlayerHealth, int startingPetHealth, int startingEnergy)
+    public void Initialize(GameManager gameManager, int startingPlayerHealth, int startingPetHealth, int startingPlayerEnergy, int startingPetEnergy)
     {
         this.gameManager = gameManager;
         this.startingPlayerHealth = startingPlayerHealth;
         this.startingPetHealth = startingPetHealth;
-        this.startingEnergy = startingEnergy;
+        this.startingPlayerEnergy = startingPlayerEnergy;
+        this.startingPetEnergy = startingPetEnergy;
     }
 
     public void InitializeCombatScreenReferences(GameObject combatInstance)
@@ -218,6 +220,16 @@ public class CombatManager
         gameManager.GetPlayerManager().InitializeCombatState(opponentPetOwnerActorNum, startingPlayerHealth, startingPetHealth);
         gameManager.GetCardManager().InitializeDecks();
         
+        // --- ADDED: Explicitly set initial pet energies before first turn --- 
+        gameManager.GetCardManager().GetPetDeckManager().SetOpponentPetEnergy(startingPetEnergy);
+        // Set the custom property for the local pet's energy display
+        ExitGames.Client.Photon.Hashtable initialPetEnergyProp = new ExitGames.Client.Photon.Hashtable
+        {
+            { CombatStateManager.PLAYER_COMBAT_PET_ENERGY_PROP, startingPetEnergy }
+        };
+        PhotonNetwork.LocalPlayer.SetCustomProperties(initialPetEnergyProp);
+        // --- END ADDED ---
+        
         // --- ADDED: Reset Turn Number ---
         currentTurnNumber = 0; 
         // --- END ADDED ---
@@ -243,6 +255,10 @@ public class CombatManager
         // --- ADDED: Initial Other Fights UI Update ---
         UpdateOtherFightsUI();
         // --- END ADDED ---
+        
+        // --- ADDED: Final UI update to ensure initial energy is shown --- 
+        UpdateHealthUI();
+        // --- END ADDED ---
     }
 
     public void StartTurn()
@@ -253,9 +269,6 @@ public class CombatManager
         // Reset combo counter at the start of the turn
         playerManager.ResetComboCount();
 
-        // Reset block from previous turn
-        playerManager.ResetAllBlock();
-
         // Process turn start effects (like DoT) and decrement buffs/debuffs
         playerManager.ProcessPlayerTurnStartEffects();
         playerManager.ProcessLocalPetTurnStartEffects();
@@ -263,7 +276,7 @@ public class CombatManager
         if (gameManager.GetPlayerManager().IsCombatEndedForLocalPlayer()) return; // End turn early if player/pet died
 
         // Reset energy
-        playerManager.SetCurrentEnergy(startingEnergy);
+        playerManager.SetCurrentEnergy(startingPlayerEnergy);
         UpdateEnergyUI();
 
         // --- ADDED: Increment Turn and Publish Status ---
@@ -305,8 +318,17 @@ public class CombatManager
         UpdateDeckCountUI();
 
         // 2. Opponent Pet Acts
-        gameManager.GetCardManager().ExecuteOpponentPetTurn(startingEnergy);
+        gameManager.GetCardManager().ExecuteOpponentPetTurn(startingPetEnergy);
         UpdateStatusAndComboUI();
+
+        // --- ADDED: Reset block AFTER opponent acts --- 
+        gameManager.GetPlayerManager().ResetAllBlock();
+        // --- ADDED: Notify others that local pet block is 0 ---
+        if (PhotonNetwork.InRoom)
+        {
+            gameManager.GetPhotonView().RPC("RpcUpdateLocalPetBlock", RpcTarget.Others, 0);
+        }
+        // --- END ADDED ---
 
         // 3. Start Next Player Turn (if combat hasn't ended)
         if (!gameManager.GetPlayerManager().IsCombatEndedForLocalPlayer())
@@ -423,7 +445,29 @@ public class CombatManager
             ownPetHealthSlider.value = (effectivePetMaxHealth > 0) ? (float)currentPetHealth / effectivePetMaxHealth : 0;
         }
         if (ownPetHealthText) ownPetHealthText.text = $"{currentPetHealth} / {effectivePetMaxHealth}";
-        if (ownPetBlockText) ownPetBlockText.text = $"Block: {playerManager.GetLocalPetBlock()}";
+        // Construct Own Pet Block & Energy Text
+        if (ownPetBlockText)
+        {
+            int petBlock = playerManager.GetLocalPetBlock();
+            int petEnergy = startingPetEnergy; // Start with the base value
+            
+            // Always try to read the latest value from properties
+            if (PhotonNetwork.LocalPlayer.CustomProperties.TryGetValue(CombatStateManager.PLAYER_COMBAT_PET_ENERGY_PROP, out object energyObj))
+            {
+                try 
+                { 
+                    petEnergy = (int)energyObj; 
+                }
+                catch 
+                { 
+                    // Property exists but isn't an int? Keep startingPetEnergy.
+                    Debug.LogWarning($"Failed to cast {CombatStateManager.PLAYER_COMBAT_PET_ENERGY_PROP} to int. Using default.");
+                } 
+            }
+            // If property doesn't exist yet (e.g., very beginning of first turn), petEnergy remains startingPetEnergy.
+            
+            ownPetBlockText.text = $"Block: {petBlock} | Energy: {petEnergy}"; // Assign combined string
+        }
 
         // Opponent Pet Health & Block
         int currentOpponentPetHealth = playerManager.GetOpponentPetHealth();
@@ -432,7 +476,17 @@ public class CombatManager
              opponentPetHealthSlider.value = (effectiveOpponentPetMaxHealth > 0) ? (float)currentOpponentPetHealth / effectiveOpponentPetMaxHealth : 0;
         }
         if (opponentPetHealthText) opponentPetHealthText.text = $"{currentOpponentPetHealth} / {effectiveOpponentPetMaxHealth}";
-        if (opponentPetBlockText) opponentPetBlockText.text = $"Block: {playerManager.GetOpponentPetBlock()}";
+        // Construct Opponent Pet Block & Energy Text
+        if (opponentPetBlockText) 
+        {
+            int oppPetBlock = playerManager.GetOpponentPetBlock();
+            int oppPetEnergy = 0;
+            PetDeckManager petDeckManager = gameManager.GetCardManager().GetPetDeckManager();
+            if (petDeckManager != null) {
+                oppPetEnergy = petDeckManager.GetOpponentPetEnergy();
+            }
+            opponentPetBlockText.text = $"Block: {oppPetBlock} | Energy: {oppPetEnergy}"; // Assign combined string
+        }
 
         UpdateStatusAndComboUI();
     }
