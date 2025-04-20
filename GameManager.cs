@@ -204,8 +204,10 @@ public class GameManager : MonoBehaviourPunCallbacks
         Button startGameButton = gameStateManager.GetStartGameButton();
         if (startGameButton != null)
         {
-            startGameButton.gameObject.SetActive(PhotonNetwork.IsMasterClient);
-            startGameButton.interactable = PhotonNetwork.IsMasterClient && allReady;
+            // Allow button to be visible for all players in the lobby
+            startGameButton.gameObject.SetActive(true); 
+            // Allow button interaction if all players are ready, regardless of master client status
+            startGameButton.interactable = allReady; 
         }
     }
 
@@ -222,26 +224,74 @@ public class GameManager : MonoBehaviourPunCallbacks
 
     #region Game Start & Combat Functions
 
+    // This method is called when the Start Game button is clicked
     public void StartGame()
     {
-        // Only Master Client can initiate
-        if (!PhotonNetwork.IsMasterClient) return;
-
-        // Check if all players are ready
+        // Perform local checks first to avoid unnecessary RPCs or actions
+        if (!PhotonNetwork.CurrentRoom.IsOpen) 
+        {
+            Debug.LogWarning("StartGame clicked, but room is already closed.");
+            return;
+        }
         if (!playerManager.CheckAllPlayersReady())
         {
-            Debug.LogWarning("Cannot start game, not all players are ready.");
+            Debug.LogWarning("StartGame clicked, but not all players are ready.");
+            // Optional: Update UI to show not ready? Maybe disable button again briefly?
+            // UpdateLobbyControls(); 
             return;
         }
-        
-        // Ensure minimum player count
         if (PhotonNetwork.PlayerList.Length < 2)
         {
-            Debug.LogWarning("Cannot start game, need at least 2 players.");
+            Debug.LogWarning("StartGame clicked, but not enough players.");
             return;
         }
 
-        Debug.Log("Master Client is Starting Game...");
+        // If this client is the Master Client, start the game directly.
+        if (PhotonNetwork.IsMasterClient)
+        {
+            Debug.Log("Master Client initiating game start directly.");
+            ExecuteStartGameSequence(); 
+        }
+        // If this client is NOT the Master Client, send an RPC to the Master Client to request the start.
+        else
+        {
+            Debug.Log($"Non-Master Client {PhotonNetwork.LocalPlayer.NickName} sending RPC to Master Client to request game start.");
+            photonViewComponent.RPC("RpcRequestStartGame", RpcTarget.MasterClient);
+        }
+    }
+
+    // RPC called by non-Master Clients, executed only on the Master Client
+    [PunRPC]
+    private void RpcRequestStartGame(PhotonMessageInfo info)
+    {
+        Debug.Log($"Master Client received RpcRequestStartGame from {info.Sender.NickName}.");
+
+        // Master Client performs final checks before starting
+        if (!PhotonNetwork.CurrentRoom.IsOpen) 
+        {
+            Debug.LogWarning("RpcRequestStartGame received, but room is already closed.");
+            return;
+        }
+        if (!playerManager.CheckAllPlayersReady())
+        {
+            Debug.LogWarning("RpcRequestStartGame received, but not all players are ready.");
+            // Inform the requesting client? Might be overkill.
+            return;
+        }
+         if (PhotonNetwork.PlayerList.Length < 2)
+        {
+            Debug.LogWarning("RpcRequestStartGame received, but not enough players.");
+            return;
+        }
+
+        // Checks passed, execute the start sequence
+        ExecuteStartGameSequence();
+    }
+
+    // Contains the actual game starting logic, should only be called by the Master Client
+    private void ExecuteStartGameSequence()
+    {
+        Debug.Log("Master Client executing StartGame setup...");
 
         // Prevent others from joining
         PhotonNetwork.CurrentRoom.IsOpen = false;
@@ -256,7 +306,7 @@ public class GameManager : MonoBehaviourPunCallbacks
             Debug.Log($"Set initial score for {p.NickName}");
         }
 
-        // Prepare combat round
+        // Prepare combat round (initiates the process, likely sets room props and triggers RpcStartCombat eventually)
         playerManager.PrepareNextCombatRound();
     }
 
