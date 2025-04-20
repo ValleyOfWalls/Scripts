@@ -188,27 +188,16 @@ public class PetDeckManager
         // Reset opponent pet's block at the START of its turn simulation
         gameManager.GetPlayerManager().GetHealthManager().ResetOpponentPetBlockOnly();
 
+        // --- ADDED: Reset Energy at Start of Turn ---
+        opponentPetEnergy = startingPetEnergy;
+        Debug.Log($"Opponent Pet Energy RESET to {opponentPetEnergy}");
+
         Player opponentPetOwner = gameManager.GetPlayerManager().GetOpponentPlayer(); // The player whose pet we are simulating
 
         // Determine starting energy based on Owner's Property 
-        int currentEnergy = startingPetEnergy; // Default
-        if (opponentPetOwner != null && opponentPetOwner.CustomProperties.TryGetValue(CombatStateManager.PLAYER_COMBAT_PET_ENERGY_PROP, out object energyProp))
-        {
-            try
-            {
-                currentEnergy = (int)energyProp;
-                Debug.Log($"Read starting energy {currentEnergy} from owner {opponentPetOwner.NickName}'s property.");
-            }
-            catch { 
-                Debug.LogWarning($"Failed to read energy property from {opponentPetOwner.NickName}, using default {startingPetEnergy}.");
-            }
-        }
-        else
-        {
-             Debug.Log($"Owner {opponentPetOwner?.NickName} has no energy property, using default {startingPetEnergy}.");
-        }
-        opponentPetEnergy = currentEnergy; // Set the energy for the simulation
-       
+        // NOTE: We now reset energy above. Reading from property is removed to ensure reset.
+        // If energy carry-over is desired later, this logic would need to be revisited.
+        
         // Process Turn Start Effects (handled by PlayerManager)
         gameManager.GetPlayerManager().ProcessOpponentPetTurnStartEffects();
         
@@ -238,22 +227,21 @@ public class PetDeckManager
             // If a playable card was found
             if (cardToPlay != null)
             {
-                Debug.Log($"Opponent Pet playing card: {cardToPlay.cardName} (Cost: {cardToPlay.cost})");
+                // Yield the card for visualization FIRST
+                Debug.Log($"Opponent Pet wants to play card: {cardToPlay.cardName} (Cost: {cardToPlay.cost}). Yielding for visualization/effect.");
+                yield return cardToPlay;
+                
+                // --- Code resumes AFTER CombatManager finishes visualizing and applying effects ---
+                Debug.Log($"Resuming Opponent Pet turn after yielding card: {cardToPlay.cardName}");
+
+                // NOW deduct energy and update hand/discard
                 opponentPetEnergy -= cardToPlay.cost;
-                gameManager.UpdateHealthUI(); // Update UI immediately for energy cost
-                
-                // REMOVED: Effect processing happens AFTER animation now
-                // gameManager.GetCardManager().ProcessOpponentPetCardEffect(cardToPlay);
-                
-                // Move card from hand to discard (still happens immediately)
                 opponentPetHand.RemoveAt(cardIndex);
                 opponentPetDiscard.Add(cardToPlay);
-                cardPlayedThisLoop = true; // Indicate a card was played, loop again
+                cardPlayedThisLoop = true; // Indicate a card was processed, loop again
                 
-                Debug.Log($"Opponent Pet energy remaining: {opponentPetEnergy}");
-
-                // Yield the card for visualization FIRST
-                yield return cardToPlay; 
+                Debug.Log($"Opponent Pet energy remaining after playing {cardToPlay.cardName}: {opponentPetEnergy}");
+                gameManager.UpdateHealthUI(); // Update UI to show energy change *after* card play completes
             }
             
         } while (cardPlayedThisLoop && opponentPetEnergy > 0); // Continue if a card was played and energy remains
