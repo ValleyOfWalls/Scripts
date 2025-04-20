@@ -48,11 +48,6 @@ public class CardEffectService
                     playerManager.HealOpponentPet(cardData.healingAmount);
                 }
                 
-                if (cardData.tempMaxHealthChange != 0)
-                {
-                    playerManager.ApplyTempMaxHealthOpponentPet(cardData.tempMaxHealthChange);
-                }
-                
                 // Apply Status Effect to Enemy Pet
                 if (cardData.statusToApply != StatusEffectType.None && cardData.statusDuration > 0)
                 {
@@ -98,11 +93,6 @@ public class CardEffectService
                 if (cardData.healingAmount > 0)
                 {
                     playerManager.HealLocalPlayer(cardData.healingAmount);
-                }
-                
-                if (cardData.tempMaxHealthChange != 0)
-                {
-                    playerManager.ApplyTempMaxHealthPlayer(cardData.tempMaxHealthChange);
                 }
                 
                 // Apply Status Effect to Player
@@ -161,11 +151,6 @@ public class CardEffectService
                 if (cardData.healingAmount > 0)
                 {
                     playerManager.HealLocalPet(cardData.healingAmount);
-                }
-                
-                if (cardData.tempMaxHealthChange != 0)
-                {
-                    playerManager.ApplyTempMaxHealthPet(cardData.tempMaxHealthChange);
                 }
                 
                 // Apply Status Effect to Own Pet
@@ -331,12 +316,6 @@ public class CardEffectService
         if (cardToPlay.healingAmount > 0)
         {
             playerManager.HealOpponentPet(cardToPlay.healingAmount);
-        }
-        
-        // Apply Opponent Pet Temp Max HP
-        if (cardToPlay.tempMaxHealthChange != 0)
-        {
-            playerManager.ApplyTempMaxHealthOpponentPet(cardToPlay.tempMaxHealthChange);
         }
         
         // Apply Status Effects (Opponent Pet applying to Player)

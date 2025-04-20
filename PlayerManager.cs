@@ -98,10 +98,6 @@ public class PlayerManager
     public void HealLocalPet(int amount) => healthManager.HealLocalPet(amount);
     public void HealOpponentPet(int amount) => healthManager.HealOpponentPet(amount);
     
-    public void ApplyTempMaxHealthPlayer(int amount) => healthManager.ApplyTempMaxHealthPlayer(amount);
-    public void ApplyTempMaxHealthPet(int amount) => healthManager.ApplyTempMaxHealthPet(amount);
-    public void ApplyTempMaxHealthOpponentPet(int amount) => healthManager.ApplyTempMaxHealthOpponentPet(amount);
-    
     #endregion
     
     #region Status Effect Proxies

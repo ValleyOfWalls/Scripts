@@ -56,7 +56,6 @@ public class CardData : ScriptableObject
     public int drawAmount = 0; // How many cards to draw when played (0 if none)
     public int discardRandomAmount = 0; // How many random cards to discard from hand when played (0 if none)
     public int healingAmount = 0; // Amount of health to restore (0 if none)
-    public int tempMaxHealthChange = 0; // Amount to change max health for this combat (0 if none)
     // Add other effects like buffs, debuffs, etc.
 
     [Header("Status Effect Application")]

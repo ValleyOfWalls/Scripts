@@ -15,9 +15,6 @@ public class HealthManager
     private int localPlayerBlock = 0;
     private int localPetBlock = 0;
     private int opponentPetBlock = 0;
-    private int localPlayerTempMaxHealthBonus = 0;
-    private int localPetTempMaxHealthBonus = 0;
-    private int opponentPetTempMaxHealthBonus = 0;
     
     // DoT tracking
     private int localPlayerDotTurns = 0;
@@ -57,11 +54,6 @@ public class HealthManager
         localPetBlock = 0;
         opponentPetBlock = 0;
         
-        // Reset temp max health
-        localPlayerTempMaxHealthBonus = 0;
-        localPetTempMaxHealthBonus = 0;
-        opponentPetTempMaxHealthBonus = 0;
-        
         // Reset crit chance bonuses
         localPlayerCritChanceBonus = 0;
         localPetCritChanceBonus = 0;
@@ -74,11 +66,6 @@ public class HealthManager
         localPlayerBlock = 0;
         localPetBlock = 0;
         opponentPetBlock = 0;
-        
-        // Reset temp max health bonuses
-        localPlayerTempMaxHealthBonus = 0;
-        localPetTempMaxHealthBonus = 0;
-        opponentPetTempMaxHealthBonus = 0;
         
         // Get opponent's base pet HP
         if (opponentPlayer != null && opponentPlayer.CustomProperties.TryGetValue(PlayerManager.PLAYER_BASE_PET_HP_PROP, out object oppBasePetHP))
@@ -414,60 +401,6 @@ public class HealthManager
     
     #endregion
     
-    #region Temp Max Health Methods
-    
-    public void ApplyTempMaxHealthPlayer(int amount)
-    {
-        localPlayerTempMaxHealthBonus += amount;
-        Debug.Log($"Applied Temp Max Health Player: {amount}. New Bonus: {localPlayerTempMaxHealthBonus}");
-        // If increasing max health, also heal by the same amount
-        if (amount > 0)
-        {
-            HealLocalPlayer(amount);
-        }
-        else
-        {
-            // If decreasing, clamp current health to new max
-            int effectiveMaxHP = GetEffectivePlayerMaxHealth();
-            if (localPlayerHealth > effectiveMaxHP) localPlayerHealth = effectiveMaxHP;
-            gameManager.UpdateHealthUI(); // Still need to update UI if only clamping
-        }
-    }
-
-    public void ApplyTempMaxHealthPet(int amount)
-    {
-        localPetTempMaxHealthBonus += amount;
-        Debug.Log($"Applied Temp Max Health Pet: {amount}. New Bonus: {localPetTempMaxHealthBonus}");
-        if (amount > 0)
-        {
-            HealLocalPet(amount);
-        }
-        else
-        {
-            int effectiveMaxHP = GetEffectivePetMaxHealth();
-            if (localPetHealth > effectiveMaxHP) localPetHealth = effectiveMaxHP;
-            gameManager.UpdateHealthUI(); 
-        }
-    }
-    
-    public void ApplyTempMaxHealthOpponentPet(int amount)
-    {
-        opponentPetTempMaxHealthBonus += amount;
-        Debug.Log($"Applied Temp Max Health Opponent Pet: {amount} (local sim). New Bonus: {opponentPetTempMaxHealthBonus}");
-        if (amount > 0)
-        {
-            HealOpponentPet(amount);
-        }
-        else
-        {
-            int effectiveMaxHP = GetEffectiveOpponentPetMaxHealth();
-            if (opponentPetHealth > effectiveMaxHP) opponentPetHealth = effectiveMaxHP;
-            gameManager.UpdateHealthUI();
-        }
-    }
-    
-    #endregion
-    
     #region DoT Methods
     
     public void ApplyDotLocalPlayer(int damage, int duration)
@@ -542,6 +475,31 @@ public class HealthManager
             opponentPetDotTurns--; 
             if (opponentPetDotTurns == 0) opponentPetDotDamage = 0; 
         }
+    }
+    
+    public int GetEffectivePlayerMaxHealth()
+    {
+        // Return base health directly
+        return gameManager.GetStartingPlayerHealth();
+    }
+    
+    public int GetEffectivePetMaxHealth()
+    {
+        // Return base health directly
+        return gameManager.GetStartingPetHealth();
+    }
+    
+    public int GetEffectiveOpponentPetMaxHealth()
+    {
+        // Return base opponent pet health - Assuming symmetric starting health for now
+        // TODO: Revisit if opponent base health can differ significantly and needs specific tracking
+        Player opponentPlayer = gameManager.GetPlayerManager().GetOpponentPlayer();
+        if (opponentPlayer != null && opponentPlayer.CustomProperties.TryGetValue(PlayerManager.PLAYER_BASE_PET_HP_PROP, out object oppBasePetHP))
+        {
+            try { return (int)oppBasePetHP; } 
+            catch { /* Fall through to default */ }
+        }
+        return gameManager.GetStartingPetHealth(); // Fallback to default starting pet health
     }
     
     #endregion
@@ -633,26 +591,6 @@ public class HealthManager
     public int GetLocalPetDotDamage() => localPetDotDamage;
     public int GetOpponentPetDotTurns() => opponentPetDotTurns;
     public int GetOpponentPetDotDamage() => opponentPetDotDamage;
-    
-    public int GetEffectivePlayerMaxHealth()
-    {
-        return gameManager.GetStartingPlayerHealth() + localPlayerTempMaxHealthBonus;
-    }
-    
-    public int GetEffectivePetMaxHealth()
-    {
-        return gameManager.GetStartingPetHealth() + localPetTempMaxHealthBonus;
-    }
-    
-    public int GetEffectiveOpponentPetMaxHealth()
-    {
-        // Opponent base health comes from their properties at start of combat, 
-        // but we need GameManager's base if we don't have an opponent player object
-        Player opponentPlayer = gameManager.GetPlayerManager().GetOpponentPlayer();
-        int baseOpponentPetHP = (opponentPlayer != null && opponentPlayer.CustomProperties.TryGetValue(PlayerManager.PLAYER_BASE_PET_HP_PROP, out object hp)) ? 
-                               (int)hp : gameManager.GetStartingPetHealth();
-        return baseOpponentPetHP + opponentPetTempMaxHealthBonus;
-    }
     
     #endregion
 }

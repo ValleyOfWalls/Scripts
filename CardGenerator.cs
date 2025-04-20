@@ -288,9 +288,9 @@ public class CardGenerator : MonoBehaviour
 
         // Temporary max health increase
         CreateCard("Hypertrophic Growth", "Increase max health by 5 for this combat.", 2, card => {
-            card.tempMaxHealthChange = 5;
+            // REMOVED: card.tempMaxHealthChange = 5;
         }, "Hypertrophic Growth+", "Increase max health by 8 for this combat.", 2, card => {
-            card.tempMaxHealthChange = 8;
+            // REMOVED: card.tempMaxHealthChange = 8;
         });
     }
 
@@ -399,10 +399,10 @@ public class CardGenerator : MonoBehaviour
         
         // Pet max health
         CreateCard("Cellular Augmentation", "Increase your pet's max health by 6 for this combat.", 2, card => {
-            card.tempMaxHealthChange = 6;
+            // REMOVED: card.tempMaxHealthChange = 6;
             // Would need a way to target your pet
         }, "Cellular Augmentation+", "Increase your pet's max health by 10 for this combat.", 2, card => {
-            card.tempMaxHealthChange = 10;
+            // REMOVED: card.tempMaxHealthChange = 10;
         });
     }
     
