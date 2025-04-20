@@ -446,74 +446,50 @@ public class CombatManager
             return;
         }
 
-        // --- MODIFIED: Collect existing cards before destroying ---
-        List<GameObject> existingCardGOs = new List<GameObject>();
+        // Always destroy all existing card objects first
         foreach (Transform child in playerHandPanel.transform)
         {
-            // Assume instantiated cards are not named "CardTemplate"
+            // Don't destroy the template
             if (child.gameObject.name != "CardTemplate") 
             {
-                existingCardGOs.Add(child.gameObject);
+                // Stop any coroutines before destroying
+                CardDragHandler handler = child.GetComponent<CardDragHandler>();
+                if (handler != null)
+                {
+                    handler.StopAllCoroutines();
+                }
+                Object.Destroy(child.gameObject);
             }
             else
             {
                 child.gameObject.SetActive(false); // Keep template hidden
             }
         }
-        // --- END MODIFIED ---
 
         PlayerManager playerManager = gameManager.GetPlayerManager();
         CardManager cardManager = gameManager.GetCardManager(); 
         List<CardData> currentHand = cardManager.GetHand();
         List<GameObject> currentCardGOs = new List<GameObject>(); // To hold the GOs for layout
-        Debug.Log($"[UpdateHandUI] Start. Logical hand count: {currentHand.Count}. Existing GOs count: {existingCardGOs.Count}");
+        Debug.Log($"[UpdateHandUI] Creating {currentHand.Count} new card GameObjects");
 
-        // --- MODIFIED: Reuse or Instantiate Card Visuals ---
+        // Create fresh card objects for each card in hand
         for (int i = 0; i < currentHand.Count; i++)
         {
             CardData card = currentHand[i];
-            GameObject cardGO = null;
-
-            // Try to find and reuse an existing GO for this card data instance
-            int existingIndex = existingCardGOs.FindIndex(go => {
-                CardDragHandler handler = go.GetComponent<CardDragHandler>();
-                // Ensure both handler and cardData exist, and compare names
-                return handler != null && handler.cardData != null && handler.cardData.cardName == card.cardName;
-            });
-
-            if (existingIndex != -1)
-            {
-                cardGO = existingCardGOs[existingIndex];
-                Debug.Log($"[UpdateHandUI] Reusing GO '{cardGO.name}' for card '{card.cardName}'.");
-                existingCardGOs.RemoveAt(existingIndex); // Remove from list so it's not destroyed later
-                cardGO.transform.SetSiblingIndex(i); // Maintain visual order roughly
-                cardGO.SetActive(true); // Ensure it's active
-                 // Re-apply visual updates in case state changed (like temp upgrade)
-                UpdateCardVisuals(cardGO, card, playerManager, cardManager);
+            GameObject cardGO = Object.Instantiate(cardPrefab, playerHandPanel.transform);
+            cardGO.name = $"Card_{card.cardName}_{i}"; // Unique name helpful for debug
+            Debug.Log($"[UpdateHandUI] Instantiating new GO '{cardGO.name}' for card '{card.cardName}' at index {i}.");
+            UpdateCardVisuals(cardGO, card, playerManager, cardManager);
+            
+            // Store the card's index in hand
+            CardDragHandler handler = cardGO.GetComponent<CardDragHandler>();
+            if (handler != null) {
+                handler.cardHandIndex = i;
             }
-            else
-            {
-                // Instantiate a new card if not found or not reusable
-                cardGO = Object.Instantiate(cardPrefab, playerHandPanel.transform);
-                cardGO.name = $"Card_{card.cardName}_{i}"; // Unique name helpful for debug
-                Debug.Log($"[UpdateHandUI] Instantiating new GO '{cardGO.name}' for card '{card.cardName}'.");
-                UpdateCardVisuals(cardGO, card, playerManager, cardManager);
-                cardGO.SetActive(true);
-            }
+            
+            cardGO.SetActive(true);
             currentCardGOs.Add(cardGO);
         }
-
-        Debug.Log($"[UpdateHandUI] Before cleanup. GOs to destroy: {existingCardGOs.Count}. GOs for layout: {currentCardGOs.Count}");
-
-        // Destroy any remaining old card GOs that weren't reused
-        foreach (GameObject oldCardGO in existingCardGOs)
-        {
-            // --- ADDED: Stop coroutines before destroying ---
-            oldCardGO.GetComponent<CardDragHandler>()?.StopAllCoroutines(); // Stop animations running ON this card
-            // --- END ADDED ---
-            Object.Destroy(oldCardGO);
-        }
-        // --- END MODIFIED ---
 
         // --- ADDED: Apply Custom Layout ---
         int numCards = currentCardGOs.Count;
@@ -567,30 +543,6 @@ public class CombatManager
         // --- END ADDED ---
         
         Debug.Log($"[UpdateHandUI] After layout. Final child count in PlayerHandPanel: {playerHandPanel.transform.childCount}");
-
-        // --- REMOVED: Explicit sorting/hover handling from UpdateHandUI --- 
-        /*
-        CardDragHandler hoveredCard = handPanelHoverManager?.GetCurrentlyHoveredCard(); // Get hovered card
- 
-        currentCardGOs = currentCardGOs.OrderBy(go => go.GetComponent<RectTransform>().localPosition.x).ToList();
- 
-        int siblingIndexCounter = 0;
-        for(int i = 0; i < currentCardGOs.Count; i++)
-        {
-            GameObject cardGO = currentCardGOs[i];
-            // Skip setting index for the hovered card (it will be set last)
-            if (hoveredCard != null && cardGO == hoveredCard.gameObject) {
-                continue;
-            }
-            cardGO.transform.SetSiblingIndex(siblingIndexCounter++);
-        }
-         
-        // Ensure hovered card is last (on top)
-        if (hoveredCard != null) {
-            hoveredCard.transform.SetAsLastSibling();
-        }
-        */
-        // --- END MODIFIED ---
 
         // --- ADDED: Update Hover Manager References ---
         if (handPanelHoverManager != null)
@@ -811,4 +763,26 @@ public class CombatManager
         }
     }
     // --- END ADDED ---
+
+    // New method to ensure all card GameObjects are properly destroyed
+    private void ClearAllHandCardObjects()
+    {
+        if (playerHandPanel == null) return;
+        
+        // Destroy all card GameObjects except the template
+        foreach (Transform child in playerHandPanel.transform)
+        {
+            if (child.gameObject.name != "CardTemplate")
+            {
+                // Stop any coroutines before destroying
+                CardDragHandler handler = child.GetComponent<CardDragHandler>();
+                if (handler != null)
+                {
+                    handler.StopAllCoroutines();
+                }
+                Object.Destroy(child.gameObject);
+            }
+        }
+        Debug.Log("ClearAllHandCardObjects: Destroyed all card GameObjects in hand panel");
+    }
 }
