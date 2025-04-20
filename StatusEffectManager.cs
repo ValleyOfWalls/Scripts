@@ -1,5 +1,7 @@
 using UnityEngine;
 using System.Collections.Generic;
+using Photon.Realtime;
+using Photon.Pun;
 
 public class StatusEffectManager
 {
@@ -69,7 +71,7 @@ public class StatusEffectManager
         }
     }
     
-    public void ApplyStatusEffectOpponentPet(StatusEffectType type, int duration)
+    public void ApplyStatusEffectOpponentPet(StatusEffectType type, int duration, bool originatedFromRPC = false)
     {
         if (duration <= 0) return;
         switch(type)
@@ -82,6 +84,19 @@ public class StatusEffectManager
                 opponentPetBreakTurns += duration;
                 Debug.Log($"Applied Break to Opponent Pet for {duration} turns (local sim). Total: {opponentPetBreakTurns}");
                 break;
+        }
+
+        Debug.Log($"Applied Status {type} to Opponent Pet for {duration} turns (local sim)");
+
+        // Notify the actual owner
+        Player opponentPlayer = gameManager.GetPlayerManager()?.GetOpponentPlayer();
+        if (PhotonNetwork.InRoom && opponentPlayer != null)
+        {
+            gameManager.GetPhotonView()?.RPC("RpcApplyStatusToMyPet", opponentPlayer, type, duration);
+        }
+        else if (originatedFromRPC)
+        {
+            Debug.Log("ApplyStatusEffectOpponentPet called from RPC, skipping send.");
         }
     }
     

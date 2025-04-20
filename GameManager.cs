@@ -125,6 +125,31 @@ public class GameManager : MonoBehaviourPunCallbacks
     public override void OnPlayerPropertiesUpdate(Player targetPlayer, Hashtable changedProps)
     {
         photonManager.OnPlayerPropertiesUpdate(targetPlayer, changedProps);
+        
+        // --- ADDED: Update local simulation based on opponent property changes ---
+        Player opponentPlayer = playerManager?.GetOpponentPlayer();
+        if (opponentPlayer != null && targetPlayer == opponentPlayer)
+        {
+            // Check if opponent's pet energy changed
+            if (changedProps.ContainsKey(CombatStateManager.PLAYER_COMBAT_PET_ENERGY_PROP))
+            {
+                try
+                {
+                    int newOpponentPetEnergy = (int)changedProps[CombatStateManager.PLAYER_COMBAT_PET_ENERGY_PROP];
+                    Debug.Log($"OnPlayerPropertiesUpdate: Opponent ({targetPlayer.NickName}) pet energy changed to {newOpponentPetEnergy}. Updating local simulation.");
+                    cardManager?.GetPetDeckManager()?.SetOpponentPetEnergy(newOpponentPetEnergy);
+                }
+                catch (System.Exception e)
+                {
+                    Debug.LogError($"Failed to cast opponent pet energy property: {e.Message}");
+                }
+            }
+            
+            // TODO: Add similar checks here if other opponent properties need to update the local simulation 
+            // (e.g., if opponent pet HP was also just synced via props instead of RPCs)
+        }
+        // --- END ADDED ---
+        
         // Update Score UI if in Combat or Draft (score persists)
         if (gameStateManager.GetCurrentState() == GameState.Combat || gameStateManager.GetCurrentState() == GameState.Drafting)
         {
@@ -519,6 +544,66 @@ public class GameManager : MonoBehaviourPunCallbacks
         else
         {           
             Debug.LogWarning($"RPC: Received RpcOpponentPlayedCard from unexpected sender ({info.Sender?.NickName ?? "null"}) or opponent is null. Ignoring.");
+        }
+    }
+
+    // --- ADDED: RPC Receiver for Applying DoT to Local Pet ---
+    [PunRPC]
+    private void RpcApplyDoTToMyPet(int damage, int duration, PhotonMessageInfo info)
+    {
+        Player opponentPlayer = playerManager?.GetOpponentPlayer();
+        if (info.Sender == null || info.Sender.IsLocal) return; // Ignore messages from self or invalid sender
+
+        if (opponentPlayer != null && info.Sender == opponentPlayer)
+        {
+            // Sender is our current opponent, apply to our local pet
+            Debug.Log($"RPC: Received RpcApplyDoTToMyPet(Dmg={damage}, Dur={duration}) from current opponent {info.Sender.NickName}. Applying DoT to LOCAL pet.");
+            playerManager?.ApplyDotLocalPet(damage, duration);
+        }
+        else
+        {
+            // Sender is NOT our current opponent (it's someone else applying DoT to their own pet)
+            // Apply it to our simulation of their pet (which is our opponentPet)
+            Debug.Log($"RPC: Received RpcApplyDoTToMyPet(Dmg={damage}, Dur={duration}) from other player {info.Sender.NickName}. Applying DoT to OPPONENT pet (local sim).");
+            playerManager?.GetHealthManager()?.ApplyDotOpponentPet(damage, duration, originatedFromRPC: true);
+        }
+    }
+
+    // --- ADDED: RPC Receiver for Applying Crit Buff to Local Pet ---
+    [PunRPC]
+    private void RpcApplyCritBuffToMyPet(int amount, int duration, PhotonMessageInfo info)
+    {
+        Player opponentPlayer = playerManager?.GetOpponentPlayer();
+        if (info.Sender == null || info.Sender.IsLocal) return;
+
+        if (opponentPlayer != null && info.Sender == opponentPlayer)
+        {
+            Debug.Log($"RPC: Received RpcApplyCritBuffToMyPet(Amt={amount}, Dur={duration}) from current opponent {info.Sender.NickName}. Applying Crit Buff to LOCAL pet.");
+            playerManager?.ApplyCritChanceBuffPet(amount, duration);
+        }
+        else
+        {
+            Debug.Log($"RPC: Received RpcApplyCritBuffToMyPet(Amt={amount}, Dur={duration}) from other player {info.Sender.NickName}. Applying Crit Buff to OPPONENT pet (local sim).");
+            playerManager?.GetHealthManager()?.ApplyCritChanceBuffOpponentPet(amount, duration, originatedFromRPC: true);
+        }
+    }
+
+    // --- ADDED: RPC Receiver for Applying Status Effect to Local Pet ---
+    [PunRPC]
+    private void RpcApplyStatusToMyPet(StatusEffectType type, int duration, PhotonMessageInfo info)
+    {
+        Player opponentPlayer = playerManager?.GetOpponentPlayer();
+        if (info.Sender == null || info.Sender.IsLocal) return;
+
+        if (opponentPlayer != null && info.Sender == opponentPlayer)
+        {
+            Debug.Log($"RPC: Received RpcApplyStatusToMyPet(Type={type}, Dur={duration}) from current opponent {info.Sender.NickName}. Applying Status to LOCAL pet.");
+            playerManager?.ApplyStatusEffectLocalPet(type, duration);
+        }
+        else
+        {
+            Debug.Log($"RPC: Received RpcApplyStatusToMyPet(Type={type}, Dur={duration}) from other player {info.Sender.NickName}. Applying Status to OPPONENT pet (local sim).");
+            playerManager?.GetStatusEffectManager()?.ApplyStatusEffectOpponentPet(type, duration, originatedFromRPC: true);
         }
     }
 

@@ -484,14 +484,31 @@ public class HealthManager
         localPetDotTurns += duration;
         localPetDotDamage = damage; 
         Debug.Log($"Applied DoT to Local Pet: {damage} damage for {duration} turns. Total Turns: {localPetDotTurns}");
+
+        // Notify others
+        if (PhotonNetwork.InRoom)
+        {
+            gameManager.GetPhotonView()?.RPC("RpcApplyDoTToMyPet", RpcTarget.Others, damage, duration);
+        }
     }
     
-    public void ApplyDotOpponentPet(int damage, int duration)
+    public void ApplyDotOpponentPet(int damage, int duration, bool originatedFromRPC = false)
     {
         if (damage <= 0 || duration <= 0) return;
         opponentPetDotTurns += duration;
         opponentPetDotDamage = damage; 
         Debug.Log($"Applied DoT to Opponent Pet: {damage} damage for {duration} turns (local sim). Total Turns: {opponentPetDotTurns}");
+
+        // Notify the actual owner
+        Player opponentPlayer = gameManager.GetPlayerManager()?.GetOpponentPlayer();
+        if (PhotonNetwork.InRoom && opponentPlayer != null)
+        {
+            gameManager.GetPhotonView()?.RPC("RpcApplyDoTToMyPet", opponentPlayer, damage, duration);
+        }
+        else if (originatedFromRPC)
+        {
+            Debug.Log("ApplyDotOpponentPet called from RPC, skipping send.");
+        }
     }
     
     public void ProcessPlayerDotEffect()
@@ -520,8 +537,8 @@ public class HealthManager
     {
         if (opponentPetDotTurns > 0 && opponentPetDotDamage > 0)
         {
-            Debug.Log($"Opponent Pet DoT ticking for {opponentPetDotDamage} damage (local sim).");
-            DamageOpponentPet(opponentPetDotDamage);
+            Debug.Log($"Opponent Pet DoT duration ticking (local sim). Turns remaining: {opponentPetDotTurns - 1}");
+            // Actual damage is handled by the owner's client. We only decrement turns locally.
             opponentPetDotTurns--; 
             if (opponentPetDotTurns == 0) opponentPetDotDamage = 0; 
         }
@@ -551,6 +568,12 @@ public class HealthManager
         {
             localPetCritChanceBonus += amount;
             Debug.Log($"Applied combat-long Crit Chance Buff to Pet: +{amount}%. New Bonus: {localPetCritChanceBonus}%");
+
+            // Notify others
+            if (PhotonNetwork.InRoom)
+            {
+                gameManager.GetPhotonView()?.RPC("RpcApplyCritBuffToMyPet", RpcTarget.Others, amount, duration);
+            }
         }
         else
         {
@@ -558,12 +581,23 @@ public class HealthManager
         }
     }
 
-    public void ApplyCritChanceBuffOpponentPet(int amount, int duration)
+    public void ApplyCritChanceBuffOpponentPet(int amount, int duration, bool originatedFromRPC = false)
     {
         if (duration == 0)
         {
             opponentPetCritChanceBonus += amount;
             Debug.Log($"Applied combat-long Crit Chance Buff to Opponent Pet: +{amount}% (local sim). New Bonus: {opponentPetCritChanceBonus}%");
+
+            // Notify the actual owner
+            Player opponentPlayer = gameManager.GetPlayerManager()?.GetOpponentPlayer();
+            if (PhotonNetwork.InRoom && opponentPlayer != null)
+            {
+                gameManager.GetPhotonView()?.RPC("RpcApplyCritBuffToMyPet", opponentPlayer, amount, duration);
+            }
+            else if (originatedFromRPC)
+            {
+                Debug.Log("ApplyCritChanceBuffOpponentPet called from RPC, skipping send.");
+            }
         }
         else
         {
