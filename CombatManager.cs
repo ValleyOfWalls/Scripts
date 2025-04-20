@@ -466,6 +466,7 @@ public class CombatManager
         CardManager cardManager = gameManager.GetCardManager(); 
         List<CardData> currentHand = cardManager.GetHand();
         List<GameObject> currentCardGOs = new List<GameObject>(); // To hold the GOs for layout
+        Debug.Log($"[UpdateHandUI] Start. Logical hand count: {currentHand.Count}. Existing GOs count: {existingCardGOs.Count}");
 
         // --- MODIFIED: Reuse or Instantiate Card Visuals ---
         for (int i = 0; i < currentHand.Count; i++)
@@ -474,11 +475,16 @@ public class CombatManager
             GameObject cardGO = null;
 
             // Try to find and reuse an existing GO for this card data instance
-            int existingIndex = existingCardGOs.FindIndex(go => go.GetComponent<CardDragHandler>()?.cardData == card);
+            int existingIndex = existingCardGOs.FindIndex(go => {
+                CardDragHandler handler = go.GetComponent<CardDragHandler>();
+                // Ensure both handler and cardData exist, and compare names
+                return handler != null && handler.cardData != null && handler.cardData.cardName == card.cardName;
+            });
 
             if (existingIndex != -1)
             {
                 cardGO = existingCardGOs[existingIndex];
+                Debug.Log($"[UpdateHandUI] Reusing GO '{cardGO.name}' for card '{card.cardName}'.");
                 existingCardGOs.RemoveAt(existingIndex); // Remove from list so it's not destroyed later
                 cardGO.transform.SetSiblingIndex(i); // Maintain visual order roughly
                 cardGO.SetActive(true); // Ensure it's active
@@ -490,11 +496,14 @@ public class CombatManager
                 // Instantiate a new card if not found or not reusable
                 cardGO = Object.Instantiate(cardPrefab, playerHandPanel.transform);
                 cardGO.name = $"Card_{card.cardName}_{i}"; // Unique name helpful for debug
+                Debug.Log($"[UpdateHandUI] Instantiating new GO '{cardGO.name}' for card '{card.cardName}'.");
                 UpdateCardVisuals(cardGO, card, playerManager, cardManager);
                 cardGO.SetActive(true);
             }
             currentCardGOs.Add(cardGO);
         }
+
+        Debug.Log($"[UpdateHandUI] Before cleanup. GOs to destroy: {existingCardGOs.Count}. GOs for layout: {currentCardGOs.Count}");
 
         // Destroy any remaining old card GOs that weren't reused
         foreach (GameObject oldCardGO in existingCardGOs)
@@ -557,6 +566,8 @@ public class CombatManager
         }
         // --- END ADDED ---
         
+        Debug.Log($"[UpdateHandUI] After layout. Final child count in PlayerHandPanel: {playerHandPanel.transform.childCount}");
+
         // --- REMOVED: Explicit sorting/hover handling from UpdateHandUI --- 
         /*
         CardDragHandler hoveredCard = handPanelHoverManager?.GetCurrentlyHoveredCard(); // Get hovered card
