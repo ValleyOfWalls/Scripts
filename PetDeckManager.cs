@@ -185,12 +185,7 @@ public class PetDeckManager
     {
         Debug.Log("---> Starting Opponent Pet Turn <--- (Fallback Energy: " + startingPetEnergy + ")");
 
-        // Reset opponent pet's block at the START of its turn simulation
-        gameManager.GetPlayerManager().GetHealthManager().ResetOpponentPetBlockOnly();
-
-        // --- ADDED: Reset Energy at Start of Turn ---
-        opponentPetEnergy = startingPetEnergy;
-        Debug.Log($"Opponent Pet Energy RESET to {opponentPetEnergy}");
+        // NOTE: Opponent Pet Energy is now reset at the START of the *player's* turn in CombatManager.StartTurn
 
         Player opponentPetOwner = gameManager.GetPlayerManager().GetOpponentPlayer(); // The player whose pet we are simulating
 
@@ -202,7 +197,7 @@ public class PetDeckManager
         gameManager.GetPlayerManager().ProcessOpponentPetTurnStartEffects();
         
         // Determine how many cards the pet should draw
-        int petCardsToDraw = 3; // Example: Pet draws fewer cards
+        int petCardsToDraw = 5; // MODIFIED: Draw 5 cards, like the player
         DrawOpponentPetHand(petCardsToDraw);
         
         // Simple AI: Play cards until out of energy or no playable cards left
@@ -213,20 +208,24 @@ public class PetDeckManager
             CardData cardToPlay = null;
             int cardIndex = -1;
             
-            // Find the first playable card in hand
+            // --- MODIFIED AI: Find ALL playable cards and choose randomly ---
+            List<(CardData card, int index)> playableCards = new List<(CardData, int)>();
             for(int i = 0; i < opponentPetHand.Count; i++)
             {
                 if (opponentPetHand[i].cost <= opponentPetEnergy)
                 {
-                    cardToPlay = opponentPetHand[i];
-                    cardIndex = i;
-                    break; // Found one, stop looking
+                    playableCards.Add((opponentPetHand[i], i));
                 }
             }
             
-            // If a playable card was found
-            if (cardToPlay != null)
+            // If any playable cards were found
+            if (playableCards.Count > 0)
             {
+                // Choose one randomly
+                System.Random rng = new System.Random();
+                int randomIndex = rng.Next(playableCards.Count);
+                (cardToPlay, cardIndex) = playableCards[randomIndex];
+
                 // Yield the card for visualization FIRST
                 Debug.Log($"Opponent Pet wants to play card: {cardToPlay.cardName} (Cost: {cardToPlay.cost}). Yielding for visualization/effect.");
                 yield return cardToPlay;
@@ -250,12 +249,8 @@ public class PetDeckManager
         DiscardOpponentPetHand();
         Debug.Log("---> Ending Opponent Pet Turn <---");
 
-        // Send final energy state back to owner
-        if (opponentPetOwner != null)
-        {
-            Debug.Log($"Sending RpcUpdateMyPetEnergyProperty({opponentPetEnergy}) back to owner {opponentPetOwner.NickName} after turn simulation.");
-            gameManager.GetPhotonView().RPC("RpcUpdateMyPetEnergyProperty", opponentPetOwner, opponentPetEnergy);
-        }
+        // NOTE: Final energy state is no longer sent via RPC here.
+        // Energy is updated incrementally on the owner's client via RpcOpponentPlayedCard.
     }
 
     private void SyncLocalPetDeckToCustomProperties()

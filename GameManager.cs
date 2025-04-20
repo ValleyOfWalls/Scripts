@@ -362,10 +362,9 @@ public class GameManager : MonoBehaviourPunCallbacks
             if (opponentPlayer != null && opponentPlayer.ActorNumber == info.Sender.ActorNumber)
             {
                 // This RPC came from the player whose pet we are currently fighting
-                // DO NOT update opponentPetBlock here - it's managed locally and reset.
-                // This RPC might be used later to update a separate display for that opponent's *other* fight.
-                // playerManager.GetHealthManager().SetOpponentPetBlock(newTotalBlock); // REMOVED
-                Debug.Log("RPC Rcvd: RpcUpdateLocalPetBlock from current opponent. Ignoring direct opponentPetBlock update.");
+                Debug.Log($"RPC Rcvd: RpcUpdateLocalPetBlock from current opponent. Setting opponentPetBlock to {newTotalBlock}.");
+                playerManager?.GetHealthManager()?.SetOpponentPetBlock(newTotalBlock);
+                // UI updates automatically via UpdateHealthUI called elsewhere or periodically.
             }
             else
             {
@@ -451,6 +450,75 @@ public class GameManager : MonoBehaviourPunCallbacks
          else
         {
             Debug.LogWarning($"RPC: Received RpcUpdateMyPetEnergyProperty from self or null sender. Ignoring.");
+        }
+    }
+
+    // --- ADDED: RPC Receiver for Resetting Local Pet Block ---
+    [PunRPC]
+    private void RpcResetMyPetBlock(PhotonMessageInfo info)
+    {
+        // Only execute if the sender is the current opponent
+        Player opponentPlayer = playerManager?.GetOpponentPlayer();
+        if (info.Sender != null && opponentPlayer != null && info.Sender == opponentPlayer)
+        {
+            Debug.Log($"RPC: Received RpcResetMyPetBlock from opponent {info.Sender.NickName}. Resetting local pet block.");
+            playerManager?.GetHealthManager()?.ResetLocalPetBlockOnly();
+        }
+        else
+        {
+             Debug.LogWarning($"RPC: Received RpcResetMyPetBlock from unexpected sender ({info.Sender?.NickName ?? "null"}) or opponent is null. Ignoring.");
+        }
+    }
+
+    // --- ADDED: RPC Receiver for Resetting Local Pet Energy Property ---
+    [PunRPC]
+    private void RpcResetMyPetEnergyProp(int initialEnergy, PhotonMessageInfo info)
+    {
+        // This is received by the pet owner at the start of the opponent's turn.
+        // We only care if the sender is our current opponent.
+        Player opponentPlayer = playerManager?.GetOpponentPlayer();
+         if (info.Sender != null && opponentPlayer != null && info.Sender == opponentPlayer)
+         {
+             Debug.Log($"RPC: Received RpcResetMyPetEnergyProp({initialEnergy}) from opponent {info.Sender.NickName}. Setting my pet energy property.");
+             ExitGames.Client.Photon.Hashtable petEnergyProp = new ExitGames.Client.Photon.Hashtable
+             {
+                 { CombatStateManager.PLAYER_COMBAT_PET_ENERGY_PROP, initialEnergy }
+             };
+             PhotonNetwork.LocalPlayer.SetCustomProperties(petEnergyProp);
+             // UI update happens via OnPlayerPropertiesUpdate
+         }
+         else
+         {
+              Debug.LogWarning($"RPC: Received RpcResetMyPetEnergyProp from unexpected sender ({info.Sender?.NickName ?? "null"}) or opponent is null. Ignoring.");
+         }
+    }
+
+    // --- ADDED: RPC Receiver for Opponent Pet Playing a Card (for incremental energy update) ---
+    [PunRPC]
+    private void RpcOpponentPlayedCard(int cardCost, PhotonMessageInfo info)
+    {
+        // Received by the owner of the pet whose turn is being simulated.
+        // Check if the sender is our current opponent.
+        Player opponentPlayer = playerManager?.GetOpponentPlayer();
+        if (info.Sender != null && opponentPlayer != null && info.Sender == opponentPlayer)
+        {
+            Debug.Log($"RPC: Received RpcOpponentPlayedCard(Cost={cardCost}) from opponent {info.Sender.NickName}. Decrementing my pet energy property.");
+            int currentPetEnergy = startingPetEnergy; // Fallback
+            if (PhotonNetwork.LocalPlayer.CustomProperties.TryGetValue(CombatStateManager.PLAYER_COMBAT_PET_ENERGY_PROP, out object energyObj))
+            {
+                try { currentPetEnergy = (int)energyObj; } catch {}
+            }
+            int newPetEnergy = Mathf.Max(0, currentPetEnergy - cardCost);
+            ExitGames.Client.Photon.Hashtable petEnergyProp = new ExitGames.Client.Photon.Hashtable
+            {
+                { CombatStateManager.PLAYER_COMBAT_PET_ENERGY_PROP, newPetEnergy }
+            };
+            PhotonNetwork.LocalPlayer.SetCustomProperties(petEnergyProp);
+            // UI update happens via OnPlayerPropertiesUpdate
+        }
+        else
+        {           
+            Debug.LogWarning($"RPC: Received RpcOpponentPlayedCard from unexpected sender ({info.Sender?.NickName ?? "null"}) or opponent is null. Ignoring.");
         }
     }
 

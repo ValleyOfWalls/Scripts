@@ -222,15 +222,9 @@ public class CombatManager
         gameManager.GetPlayerManager().InitializeCombatState(opponentPetOwnerActorNum, startingPlayerHealth, startingPetHealth);
         gameManager.GetCardManager().InitializeDecks();
         
-        // --- ADDED: Explicitly set initial pet energies before first turn --- 
+        // NOTE: Initial pet energy is now set via RPC at the start of the first player turn (in StartTurn)
+        // SetOpponentPetEnergy is still called here to initialize the *local simulation*
         gameManager.GetCardManager().GetPetDeckManager().SetOpponentPetEnergy(startingPetEnergy);
-        // Set the custom property for the local pet's energy display
-        ExitGames.Client.Photon.Hashtable initialPetEnergyProp = new ExitGames.Client.Photon.Hashtable
-        {
-            { CombatStateManager.PLAYER_COMBAT_PET_ENERGY_PROP, startingPetEnergy }
-        };
-        PhotonNetwork.LocalPlayer.SetCustomProperties(initialPetEnergyProp);
-        // --- END ADDED ---
         
         // --- ADDED: Reset Turn Number ---
         currentTurnNumber = 0; 
@@ -281,6 +275,24 @@ public class CombatManager
         playerManager.SetCurrentEnergy(startingPlayerEnergy);
         UpdateEnergyUI();
 
+        // --- ADDED: Reset Opponent Pet Energy at Player Turn Start ---
+        gameManager.GetCardManager().GetPetDeckManager().SetOpponentPetEnergy(startingPetEnergy);
+        Debug.Log($"Opponent Pet Energy RESET to {startingPetEnergy} at start of player turn.");
+        UpdateHealthUI(); // Ensure opponent energy UI updates
+        
+        // Also notify the actual owner via RPC to update their property
+        Player opponentPlayer = playerManager.GetOpponentPlayer();
+        if (PhotonNetwork.InRoom && opponentPlayer != null)
+        {
+            Debug.Log($"Sending RpcResetMyPetEnergyProp({startingPetEnergy}) to opponent {opponentPlayer.NickName}.");
+            gameManager.GetPhotonView()?.RPC("RpcResetMyPetEnergyProp", opponentPlayer, startingPetEnergy);
+        }
+        else if (opponentPlayer == null)
+        {
+            Debug.LogWarning("StartTurn: Cannot send RpcResetMyPetEnergyProp, opponentPlayer is null.");
+        }
+        // --- END ADDED ---
+
         // --- ADDED: Increment Turn and Publish Status ---
         currentTurnNumber++;
         PublishCombatStatus();
@@ -320,6 +332,11 @@ public class CombatManager
         UpdateHandUI(); // Clear hand display
         UpdateDeckCountUI();
 
+        // --- CORRECTED: Reset Opponent Pet Block Here --- 
+        Debug.Log("Resetting Opponent Pet Block before their action phase.");
+        gameManager.GetPlayerManager().GetHealthManager().ResetOpponentPetBlockOnly();
+        UpdateHealthUI(); // Update UI immediately to show zero block
+
         // 2. Opponent Pet Acts (with visualization)
         Debug.Log("Starting Opponent Pet Action Phase...");
         IEnumerator petTurnEnumerator = gameManager.GetCardManager().ExecuteOpponentPetTurn(startingPetEnergy);
@@ -331,6 +348,18 @@ public class CombatManager
                 Debug.Log($"CombatManager starting visualization for yielded card: {cardPlayed.cardName}");
                 yield return gameManager.StartCoroutine(VisualizeOpponentPetCardPlay(cardPlayed));
                 Debug.Log($"CombatManager finished visualization for yielded card: {cardPlayed.cardName}");
+
+                // --- ADDED: Notify Pet Owner about card play for energy decrement ---
+                Player opponentPetOwner = gameManager.GetPlayerManager().GetOpponentPlayer(); // The player whose pet is acting
+                if (PhotonNetwork.InRoom && opponentPetOwner != null)
+                {
+                    Debug.Log($"Sending RpcOpponentPlayedCard(Cost={cardPlayed.cost}) to owner {opponentPetOwner.NickName}.");
+                    gameManager.GetPhotonView()?.RPC("RpcOpponentPlayedCard", opponentPetOwner, cardPlayed.cost);
+                }
+                else if (opponentPetOwner == null) {
+                    Debug.LogWarning("EndTurn: Cannot send RpcOpponentPlayedCard, opponentPetOwner is null.");
+                }
+                // --- END ADDED ---
 
                 // 2. Apply Effects AFTER animation
                 Debug.Log($"CombatManager applying effects for: {cardPlayed.cardName}");
@@ -354,12 +383,7 @@ public class CombatManager
         UpdateStatusAndComboUI(); // Update UI after all actions
 
         // --- ADDED: Reset block AFTER opponent acts --- 
-        gameManager.GetPlayerManager().ResetAllBlock();
-        // --- ADDED: Notify others that local pet block is 0 ---
-        if (PhotonNetwork.InRoom)
-        {
-            gameManager.GetPhotonView().RPC("RpcUpdateLocalPetBlock", RpcTarget.Others, 0);
-        }
+        gameManager.GetPlayerManager().GetHealthManager().ResetPlayerBlockOnly();
         // --- END ADDED ---
 
         // 3. Start Next Player Turn (if combat hasn't ended)

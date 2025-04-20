@@ -338,12 +338,43 @@ public class HealthManager
         gameManager.UpdateHealthUI(); // Update block display
     }
     
+    // --- ADDED: Reset only player block ---
+    public void ResetPlayerBlockOnly()
+    {
+        Debug.Log($"Resetting Player Block Only: {localPlayerBlock} -> 0");
+        localPlayerBlock = 0;
+        gameManager.UpdateHealthUI(); // Update block display
+    }
+    // --- END ADDED ---
+    
     // --- ADDED: Reset only opponent pet block ---
     public void ResetOpponentPetBlockOnly()
     {
-        Debug.Log($"Resetting Opponent Pet Block: {opponentPetBlock} -> 0");
+        Debug.Log($"Resetting Opponent Pet Block (Local Sim): {opponentPetBlock} -> 0");
         opponentPetBlock = 0;
-        // Don't call UpdateHealthUI here, it will be called by the turn logic
+         // Don't call UpdateHealthUI here, it will be called by the turn logic
+
+       // --- ADDED: Notify the actual owner to reset their pet's block --- 
+       Player opponentPlayer = gameManager.GetPlayerManager()?.GetOpponentPlayer();
+       if (PhotonNetwork.InRoom && opponentPlayer != null)
+       {
+           Debug.Log($"Sending RpcResetMyPetBlock to opponent {opponentPlayer.NickName}.");
+           gameManager.GetPhotonView()?.RPC("RpcResetMyPetBlock", opponentPlayer);
+       }
+       else if (opponentPlayer == null)
+       {
+           Debug.LogWarning("ResetOpponentPetBlockOnly: Cannot send RPC, opponentPlayer is null.");
+       }
+       // --- END ADDED ---
+    }
+    // --- END ADDED ---
+    
+    // --- ADDED: Reset only local pet block (called via RPC) ---
+    public void ResetLocalPetBlockOnly()
+    {
+        Debug.Log($"Resetting Local Pet Block (RPC Triggered): {localPetBlock} -> 0");
+        localPetBlock = 0;
+        gameManager.UpdateHealthUI(); // Update UI immediately on the owner's client
     }
     // --- END ADDED ---
     
