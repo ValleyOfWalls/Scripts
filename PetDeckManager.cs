@@ -240,19 +240,19 @@ public class PetDeckManager
             {
                 Debug.Log($"Opponent Pet playing card: {cardToPlay.cardName} (Cost: {cardToPlay.cost})");
                 opponentPetEnergy -= cardToPlay.cost;
-                gameManager.UpdateHealthUI(); // ADDED: Update UI immediately after energy cost
+                gameManager.UpdateHealthUI(); // Update UI immediately for energy cost
                 
-                // Apply effect (delegated to CardEffectService via CardManager)
-                gameManager.GetCardManager().ProcessOpponentPetCardEffect(cardToPlay);
+                // REMOVED: Effect processing happens AFTER animation now
+                // gameManager.GetCardManager().ProcessOpponentPetCardEffect(cardToPlay);
                 
-                // Move card from hand to discard
+                // Move card from hand to discard (still happens immediately)
                 opponentPetHand.RemoveAt(cardIndex);
                 opponentPetDiscard.Add(cardToPlay);
                 cardPlayedThisLoop = true; // Indicate a card was played, loop again
                 
                 Debug.Log($"Opponent Pet energy remaining: {opponentPetEnergy}");
 
-                // MODIFIED: Yield the card that was played for visualization
+                // Yield the card for visualization FIRST
                 yield return cardToPlay; 
             }
             

@@ -327,9 +327,17 @@ public class CombatManager
             object currentYield = petTurnEnumerator.Current;
             Debug.Log($"[CombatManager.EndTurn Loop] Yielded object Type: {(currentYield?.GetType()?.Name ?? "null")}");
             if (currentYield is CardData cardPlayed) {
-                // Found a card to visualize
-                Debug.Log($"CombatManager processing visualization for yielded card: {cardPlayed.cardName}");
+                // 1. Visualize
+                Debug.Log($"CombatManager starting visualization for yielded card: {cardPlayed.cardName}");
                 yield return gameManager.StartCoroutine(VisualizeOpponentPetCardPlay(cardPlayed));
+                Debug.Log($"CombatManager finished visualization for yielded card: {cardPlayed.cardName}");
+
+                // 2. Apply Effects AFTER animation
+                Debug.Log($"CombatManager applying effects for: {cardPlayed.cardName}");
+                gameManager.GetCardManager().ProcessOpponentPetCardEffect(cardPlayed);
+                
+                // 3. Update UI AFTER effects
+                UpdateHealthUI(); // Reflect health/block changes
             }
             else if (currentYield != null)
             {
