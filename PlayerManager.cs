@@ -85,13 +85,13 @@ public class PlayerManager
     
     #region Health & Damage Proxies
     
-    public void DamageLocalPlayer(int amount) => healthManager.DamageLocalPlayer(amount);
+    public void DamageLocalPlayer(int amount, bool updateUIImmediate = true) => healthManager.DamageLocalPlayer(amount, updateUIImmediate);
     public void DamageLocalPet(int amount) => healthManager.DamageLocalPet(amount);
     public void DamageOpponentPet(int amount) => healthManager.DamageOpponentPet(amount);
     
     public void AddBlockToLocalPlayer(int amount) => healthManager.AddBlockToLocalPlayer(amount);
     public void AddBlockToLocalPet(int amount) => healthManager.AddBlockToLocalPet(amount);
-    public void AddBlockToOpponentPet(int amount) => healthManager.AddBlockToOpponentPet(amount);
+    public void AddBlockToOpponentPet(int amount, bool updateUIImmediate = true) => healthManager.AddBlockToOpponentPet(amount, updateUIImmediate);
     public void ResetAllBlock() => healthManager.ResetAllBlock();
     
     public void HealLocalPlayer(int amount) => healthManager.HealLocalPlayer(amount);

@@ -95,7 +95,7 @@ public class HealthManager
     
     #region Damage Methods
     
-    public void DamageLocalPlayer(int amount)
+    public void DamageLocalPlayer(int amount, bool updateUIImmediate = true)
     {
         if (amount <= 0) return; // Can't deal negative damage
         
@@ -132,7 +132,10 @@ public class HealthManager
             if (localPlayerHealth < 0) localPlayerHealth = 0;
         }
 
-        gameManager.UpdateHealthUI(); // Update both health and block display
+        if (updateUIImmediate) 
+        {
+            gameManager.UpdateHealthUI(); // Update both health and block display
+        }
         
         // --- ADDED: Update player custom property for other UIs ---
         if (PhotonNetwork.InRoom)
@@ -291,14 +294,17 @@ public class HealthManager
         // --- END ADDED ---
     }
     
-    public void AddBlockToOpponentPet(int amount)
+    public void AddBlockToOpponentPet(int amount, bool updateUIImmediate = true)
     {
         if (amount <= 0) return;
         
         // Update local simulation immediately
         opponentPetBlock += amount;
         Debug.Log($"Added {amount} block to Opponent Pet (local sim). New total: {opponentPetBlock}");
-        gameManager.UpdateHealthUI(); // Update block display
+        if (updateUIImmediate)
+        {
+            gameManager.UpdateHealthUI(); // Update block display
+        }
 
         // --- ADDED: Network Sync for Opponent Pet Block ---
         Player opponentPlayer = gameManager.GetPlayerManager().GetOpponentPlayer();

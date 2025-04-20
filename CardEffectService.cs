@@ -289,14 +289,14 @@ public class CardEffectService
                 Debug.Log($"Opponent Pet is Weak! Reducing damage from {cardToPlay.damage} to {actualDamage}");
             }
             
-            playerManager.DamageLocalPlayer(actualDamage);
+            playerManager.DamageLocalPlayer(actualDamage, updateUIImmediate: false);
             Debug.Log($"Opponent Pet dealt {actualDamage} damage to Local Player. New health: {playerManager.GetLocalPlayerHealth()}, Block: {playerManager.GetLocalPlayerBlock()}");
         }
         
         // Apply Opponent Pet Block
         if (cardToPlay.block > 0)
         {
-            playerManager.AddBlockToOpponentPet(cardToPlay.block);
+            playerManager.AddBlockToOpponentPet(cardToPlay.block, updateUIImmediate: false);
             Debug.Log($"Opponent Pet gained {cardToPlay.block} block. New block (local sim): {playerManager.GetOpponentPetBlock()}");
         }
         
