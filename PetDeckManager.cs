@@ -5,6 +5,7 @@ using Newtonsoft.Json;
 using Photon.Pun;
 using Photon.Realtime;
 using ExitGames.Client.Photon;
+using System.Collections;
 
 public class PetDeckManager
 {
@@ -179,7 +180,8 @@ public class PetDeckManager
         ShuffleOpponentPetDeck();
     }
 
-    public void ExecuteOpponentPetTurn(int startingPetEnergy)
+    // MODIFIED: Returns IEnumerator to allow yielding
+    public IEnumerator ExecuteOpponentPetTurn(int startingPetEnergy) // Parameter is now fallback
     {
         Debug.Log("---> Starting Opponent Pet Turn <--- (Fallback Energy: " + startingPetEnergy + ")");
 
@@ -238,6 +240,7 @@ public class PetDeckManager
             {
                 Debug.Log($"Opponent Pet playing card: {cardToPlay.cardName} (Cost: {cardToPlay.cost})");
                 opponentPetEnergy -= cardToPlay.cost;
+                gameManager.UpdateHealthUI(); // ADDED: Update UI immediately after energy cost
                 
                 // Apply effect (delegated to CardEffectService via CardManager)
                 gameManager.GetCardManager().ProcessOpponentPetCardEffect(cardToPlay);
@@ -248,6 +251,9 @@ public class PetDeckManager
                 cardPlayedThisLoop = true; // Indicate a card was played, loop again
                 
                 Debug.Log($"Opponent Pet energy remaining: {opponentPetEnergy}");
+
+                // MODIFIED: Yield the card that was played for visualization
+                yield return cardToPlay; 
             }
             
         } while (cardPlayedThisLoop && opponentPetEnergy > 0); // Continue if a card was played and energy remains
@@ -256,13 +262,12 @@ public class PetDeckManager
         DiscardOpponentPetHand();
         Debug.Log("---> Ending Opponent Pet Turn <---");
 
-        // --- ADDED: Send final energy state back to owner --- 
+        // Send final energy state back to owner
         if (opponentPetOwner != null)
         {
             Debug.Log($"Sending RpcUpdateMyPetEnergyProperty({opponentPetEnergy}) back to owner {opponentPetOwner.NickName} after turn simulation.");
             gameManager.GetPhotonView().RPC("RpcUpdateMyPetEnergyProperty", opponentPetOwner, opponentPetEnergy);
         }
-        // --- END ADDED ---
     }
 
     private void SyncLocalPetDeckToCustomProperties()
@@ -274,7 +279,7 @@ public class PetDeckManager
         string petDeckJson = JsonConvert.SerializeObject(petDeckCardNames);
 
         // Set the custom property for the local player
-        Hashtable props = new Hashtable { { PLAYER_PET_DECK_PROP, petDeckJson } };
+        ExitGames.Client.Photon.Hashtable props = new ExitGames.Client.Photon.Hashtable { { PLAYER_PET_DECK_PROP, petDeckJson } };
         PhotonNetwork.LocalPlayer.SetCustomProperties(props);
 
         Debug.Log($"Synced local pet deck to Player Properties. {petDeckCardNames.Count} cards. JSON: {petDeckJson}");

@@ -6,6 +6,7 @@ using Photon.Realtime;
 using System.Collections.Generic;
 using System.Linq; // Needed for Find
 using Newtonsoft.Json;
+using System.Collections;
 
 public class CombatManager
 {
@@ -202,7 +203,8 @@ public class CombatManager
         }
 
         // Assign listeners
-        endTurnButton?.onClick.AddListener(EndTurn);
+        endTurnButton?.onClick.RemoveAllListeners(); // Clear previous listeners just in case
+        endTurnButton?.onClick.AddListener(() => gameManager.StartCoroutine(EndTurn()));
         // --- ADDED: Assign Deck View Listeners ---
         viewPlayerDeckButton?.onClick.AddListener(ShowPlayerDeck);
         viewPetDeckButton?.onClick.AddListener(ShowPetDeck);
@@ -303,7 +305,8 @@ public class CombatManager
         // --- END ADDED ---
     }
 
-    public void EndTurn()
+    // MODIFIED: Returns IEnumerator to handle opponent turn visuals
+    public IEnumerator EndTurn()
     {
         Debug.Log("Ending Player Turn");
         if (endTurnButton) endTurnButton.interactable = false; // Prevent double clicks
@@ -317,9 +320,30 @@ public class CombatManager
         UpdateHandUI(); // Clear hand display
         UpdateDeckCountUI();
 
-        // 2. Opponent Pet Acts
-        gameManager.GetCardManager().ExecuteOpponentPetTurn(startingPetEnergy);
-        UpdateStatusAndComboUI();
+        // 2. Opponent Pet Acts (with visualization)
+        Debug.Log("Starting Opponent Pet Action Phase...");
+        IEnumerator petTurnEnumerator = gameManager.GetCardManager().ExecuteOpponentPetTurn(startingPetEnergy);
+        while (petTurnEnumerator.MoveNext()) {
+            object currentYield = petTurnEnumerator.Current;
+            Debug.Log($"[CombatManager.EndTurn Loop] Yielded object Type: {(currentYield?.GetType()?.Name ?? "null")}");
+            if (currentYield is CardData cardPlayed) {
+                // Found a card to visualize
+                Debug.Log($"CombatManager processing visualization for yielded card: {cardPlayed.cardName}");
+                yield return gameManager.StartCoroutine(VisualizeOpponentPetCardPlay(cardPlayed));
+            }
+            else if (currentYield != null)
+            {
+                 // Handle other potential yields (delays, etc.) if needed
+                 yield return currentYield;
+            }
+            else
+            {
+                yield return null; // Yield null if the enumerator yields null
+            }
+        }
+        Debug.Log("...Opponent Pet Action Phase Finished");
+
+        UpdateStatusAndComboUI(); // Update UI after all actions
 
         // --- ADDED: Reset block AFTER opponent acts --- 
         gameManager.GetPlayerManager().ResetAllBlock();
@@ -333,7 +357,7 @@ public class CombatManager
         // 3. Start Next Player Turn (if combat hasn't ended)
         if (!gameManager.GetPlayerManager().IsCombatEndedForLocalPlayer())
         {
-            StartTurn();
+            StartTurn(); // REVERTED: Call directly, not as coroutine
         }
     }
 
@@ -480,11 +504,15 @@ public class CombatManager
         if (opponentPetBlockText) 
         {
             int oppPetBlock = playerManager.GetOpponentPetBlock();
-            int oppPetEnergy = 0;
+            int oppPetEnergy = 0; 
+            
+            // --- REVERTED: Read energy from local simulation for live updates --- 
             PetDeckManager petDeckManager = gameManager.GetCardManager().GetPetDeckManager();
             if (petDeckManager != null) {
                 oppPetEnergy = petDeckManager.GetOpponentPetEnergy();
             }
+            // --- END REVERTED ---
+            
             opponentPetBlockText.text = $"Block: {oppPetBlock} | Energy: {oppPetEnergy}"; // Assign combined string
         }
 
@@ -839,4 +867,77 @@ public class CombatManager
         }
         Debug.Log("ClearAllHandCardObjects: Destroyed all card GameObjects in hand panel");
     }
+
+    // --- ADDED: Coroutine to visualize opponent pet card play ---
+    private IEnumerator VisualizeOpponentPetCardPlay(CardData card)
+    {
+        if (card == null) yield break;
+        Debug.Log($"Visualizing Opponent Pet playing: {card.cardName}");
+
+        // Brief delay after popup before card appears (Keep a small delay)
+        yield return new WaitForSeconds(0.2f); 
+
+        // 2. Instantiate and Prepare Card Visual
+        GameObject cardPrefab = gameManager.GetCardPrefab();
+        GameObject combatCanvas = gameManager.GetGameStateManager().GetCombatInstance();
+        if (cardPrefab == null || combatCanvas == null) 
+        { 
+            Debug.LogError("Cannot visualize pet card: CardPrefab or CombatCanvas missing!");
+            yield break; 
+        }
+        
+        GameObject cardGO = Object.Instantiate(cardPrefab, combatCanvas.transform); // Instantiate under canvas
+        cardGO.name = $"OpponentPlayedCard_{card.cardName}";
+        // Configure visuals (using existing helper)
+        UpdateCardVisuals(cardGO, card, gameManager.GetPlayerManager(), gameManager.GetCardManager()); 
+        // Disable interaction for opponent card
+        CardDragHandler dragHandler = cardGO.GetComponent<CardDragHandler>();
+        if(dragHandler != null) dragHandler.enabled = false;
+        CanvasGroup canvasGroup = cardGO.GetComponent<CanvasGroup>() ?? cardGO.AddComponent<CanvasGroup>();
+        canvasGroup.blocksRaycasts = false;
+
+        // 3. Position and Animate Card
+        RectTransform cardRect = cardGO.GetComponent<RectTransform>();
+        Vector3 startPosition = opponentPetBlockText != null ? opponentPetBlockText.transform.position : new Vector3(Screen.width * 0.8f, Screen.height * 0.8f, 0); // Start near opponent UI
+        Vector3 targetPosition = new Vector3(Screen.width / 2f, Screen.height / 2f, 0); // Animate to center
+        float scaleFactor = 1.5f; // Make it slightly bigger
+        float animDuration = 0.4f;
+
+        cardRect.position = startPosition; // Set initial position (world space)
+        cardRect.localScale = Vector3.one * 0.5f; // Start small
+        canvasGroup.alpha = 0f;
+
+        // Simple Lerp animation (replace with LeanTween/DOTween if available)
+        float timer = 0f;
+        // Fade in and move to center
+        while (timer < animDuration)
+        {
+            timer += Time.deltaTime;
+            float progress = timer / animDuration;
+            cardRect.position = Vector3.Lerp(startPosition, targetPosition, progress);
+            cardRect.localScale = Vector3.Lerp(Vector3.one * 0.5f, Vector3.one * scaleFactor, progress);
+            canvasGroup.alpha = Mathf.Lerp(0f, 1f, progress);
+            yield return null; // Wait for next frame
+        }
+        cardRect.position = targetPosition;
+        cardRect.localScale = Vector3.one * scaleFactor;
+        canvasGroup.alpha = 1f;
+
+        // 4. Pause at center
+        yield return new WaitForSeconds(0.75f);
+
+        // 5. Fade out and Destroy
+        timer = 0f;
+        float fadeDuration = 0.3f;
+        while (timer < fadeDuration)
+        {
+            timer += Time.deltaTime;
+            canvasGroup.alpha = Mathf.Lerp(1f, 0f, timer / fadeDuration);
+            yield return null;
+        }
+
+        Object.Destroy(cardGO);
+        Debug.Log($"Finished visualizing: {card.cardName}");
+    }
+    // --- END ADDED ---
 }

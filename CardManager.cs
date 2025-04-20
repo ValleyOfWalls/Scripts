@@ -5,6 +5,7 @@ using Newtonsoft.Json;
 using Photon.Pun;
 using Photon.Realtime;
 using ExitGames.Client.Photon;
+using System.Collections;
 
 public class CardManager
 {
@@ -160,9 +161,15 @@ public class CardManager
         cardModificationService.ProcessEndOfTurnHandEffects();
     }
     
-    public void ExecuteOpponentPetTurn(int startingEnergy)
+    public IEnumerator ExecuteOpponentPetTurn(int startingPetEnergy)
     {
-        petDeckManager.ExecuteOpponentPetTurn(startingEnergy);
+        Debug.Log("CardManager forwarding Opponent Pet Turn execution.");
+        IEnumerator petTurnEnumerator = petDeckManager.ExecuteOpponentPetTurn(startingPetEnergy);
+        while (petTurnEnumerator.MoveNext()) {
+            // Explicitly yield whatever the PetDeckManager yields (should be CardData or null)
+            yield return petTurnEnumerator.Current;
+        }
+        Debug.Log("CardManager finished forwarding Opponent Pet Turn execution.");
     }
     
     public void InitializeOpponentPetDeck(List<string> cardNames)
