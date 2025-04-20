@@ -33,6 +33,14 @@ public class CardEffectService
                     Debug.Log($"Dealt {actualDamage} damage to Opponent Pet. New health: {playerManager.GetOpponentPetHealth()}, Est. Block: {playerManager.GetOpponentPetBlock()}");
                 }
                 
+                // --- ADDED: Apply Block to Enemy Pet ---
+                if (cardData.block > 0)
+                {
+                    playerManager.AddBlockToOpponentPet(cardData.block);
+                    Debug.Log($"Applied {cardData.block} block to Opponent Pet. Est. Block: {playerManager.GetOpponentPetBlock()}");
+                }
+                // --- END ADDED ---
+                
                 // Healing & Temp Max HP for Enemy Pet
                 if (cardData.healingAmount > 0)
                 {

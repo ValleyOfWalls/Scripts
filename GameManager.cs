@@ -343,6 +343,58 @@ public class GameManager : MonoBehaviourPunCallbacks
     }
     // --- END ADDED ---
 
+    // --- ADDED: RPC Receiver for Local Pet Block Update (Sent by owner to others) ---
+    [PunRPC]
+    private void RpcUpdateLocalPetBlock(int newTotalBlock, PhotonMessageInfo info)
+    {
+        // We received an update about an opponent's pet block
+        // 'info.Sender' is the owner of the pet whose block changed
+        if (info.Sender != null && info.Sender != PhotonNetwork.LocalPlayer)
+        {
+            Debug.Log($"RPC: Received RpcUpdateLocalPetBlock({newTotalBlock}) from {info.Sender.NickName}. Updating their pet's block in our view.");
+            // Find which opponent this corresponds to in *our* combat view
+            Player opponentPlayer = playerManager.GetOpponentPlayer(); 
+            if (opponentPlayer != null && opponentPlayer.ActorNumber == info.Sender.ActorNumber)
+            {
+                // This RPC came from the player whose pet we are currently fighting
+                // We need to set the *opponentPetBlock* value in our HealthManager
+                // Note: This RPC sends the *total* block, not an amount to add.
+                playerManager.GetHealthManager().SetOpponentPetBlock(newTotalBlock); 
+            }
+            else
+            {
+                // This RPC came from a player whose pet we are *not* currently fighting
+                // We still might want to store/update this info if we display other combats, 
+                // but for now, we might just log it or ignore it if not directly relevant.
+                // We need a way to map info.Sender to the correct 'other player' structure if needed.
+                Debug.LogWarning($"Received RpcUpdateLocalPetBlock from player {info.Sender.NickName} who is not our current direct opponent.");
+                // Potentially update a dictionary mapping player ID to their pet's block for the 'Other Fights UI'
+                // playerManager.UpdateOtherPlayerPetBlock(info.Sender.ActorNumber, newTotalBlock);
+            }
+        }
+        else
+        {
+            Debug.LogWarning($"RPC: Received RpcUpdateLocalPetBlock from self or null sender. Ignoring.");
+        }
+    }
+
+    // --- ADDED: RPC Receiver for Adding Block to Local Pet (Sent by opponent targeting our pet) ---
+    [PunRPC]
+    private void RpcAddBlockToLocalPet(int amount, PhotonMessageInfo info)
+    {
+        // This RPC is sent *to us* when an *opponent* plays a card that gives *our pet* block.
+        if (info.Sender != null && info.Sender != PhotonNetwork.LocalPlayer)
+        {
+             Debug.Log($"RPC: Received RpcAddBlockToLocalPet({amount}) from {info.Sender.NickName}. Adding block to our local pet.");
+             // Directly add the block amount to our local pet
+             playerManager.AddBlockToLocalPet(amount);
+        }
+         else
+        {
+            Debug.LogWarning($"RPC: Received RpcAddBlockToLocalPet from self or null sender. Ignoring.");
+        }
+    }
+
     public PhotonView GetPhotonView()
     {
         return photonViewComponent;

@@ -281,15 +281,48 @@ public class HealthManager
         localPetBlock += amount;
         Debug.Log($"Added {amount} block to Local Pet. New total: {localPetBlock}");
         gameManager.UpdateHealthUI(); // Update block display
+
+        // --- ADDED: Network Sync for Local Pet Block ---
+        if (PhotonNetwork.InRoom)
+        {
+            gameManager.GetPhotonView().RPC("RpcUpdateLocalPetBlock", RpcTarget.Others, localPetBlock); // Send the new total block
+            // Debug.Log($"Sent RpcUpdateLocalPetBlock({localPetBlock}) to others.");
+        }
+        // --- END ADDED ---
     }
     
     public void AddBlockToOpponentPet(int amount)
     {
         if (amount <= 0) return;
+        
+        // Update local simulation immediately
         opponentPetBlock += amount;
         Debug.Log($"Added {amount} block to Opponent Pet (local sim). New total: {opponentPetBlock}");
         gameManager.UpdateHealthUI(); // Update block display
+
+        // --- ADDED: Network Sync for Opponent Pet Block ---
+        Player opponentPlayer = gameManager.GetPlayerManager().GetOpponentPlayer();
+        if (PhotonNetwork.InRoom && opponentPlayer != null)
+        {
+            // Send RPC to the specific opponent, telling them to add block to *their* pet
+            gameManager.GetPhotonView().RPC("RpcAddBlockToLocalPet", opponentPlayer, amount); 
+            // Debug.Log($"Sent RpcAddBlockToLocalPet({amount}) to {opponentPlayer.NickName}.");
+        }
+        else if (opponentPlayer == null)
+        {
+            Debug.LogWarning("AddBlockToOpponentPet: Cannot send RPC, opponentPlayer is null.");
+        }
+        // --- END ADDED ---
     }
+
+    // --- ADDED: Direct Setter for Opponent Pet Block ---
+    public void SetOpponentPetBlock(int amount)
+    {
+        opponentPetBlock = Mathf.Max(0, amount); // Ensure block doesn't go below 0
+        Debug.Log($"Set Opponent Pet block (from network update) to {opponentPetBlock}");
+        gameManager.UpdateHealthUI(); // Update block display
+    }
+    // --- END ADDED ---
 
     public void ResetAllBlock()
     {
