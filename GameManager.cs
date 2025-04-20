@@ -155,7 +155,7 @@ public class GameManager : MonoBehaviourPunCallbacks
         {
             playerManager.GetCombatStateManager().UpdateScoreUI(); // Use CombatStateManager via PlayerManager
              // --- ADDED: Update Other Fights UI on property change ---
-             combatManager.UpdateOtherFightsUI();
+             combatManager.GetCombatUIManager().UpdateOtherFightsUI();
              // --- END ADDED ---
 
              // --- ADDED: Update main Health UI as well for property changes (like pet energy) ---
