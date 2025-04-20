@@ -158,7 +158,22 @@ public class CombatUIManager
         if (opponentPetNameText)
         {
             Player opponent = gameManager.GetPlayerManager().GetOpponentPlayer();
-            opponentPetNameText.text = opponent != null ? $"{opponent.NickName}'s Pet" : "Opponent Pet";
+            if (opponent != null)
+            {
+                // Check if the opponent has a custom pet name property
+                string opponentPetName = null;
+                if (opponent.CustomProperties.TryGetValue(PhotonManager.PET_NAME_PROPERTY, out object petNameObj))
+                {
+                    opponentPetName = petNameObj as string;
+                }
+                
+                // Use the custom pet name if available, otherwise fall back to the default format
+                opponentPetNameText.text = !string.IsNullOrEmpty(opponentPetName) ? opponentPetName : $"{opponent.NickName}'s Pet";
+            }
+            else
+            {
+                opponentPetNameText.text = "Opponent Pet";
+            }
         }
         
         if (ownPetNameText) ownPetNameText.text = gameManager.GetPlayerManager().GetLocalPetName();

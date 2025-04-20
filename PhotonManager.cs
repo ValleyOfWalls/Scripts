@@ -10,6 +10,10 @@ public class PhotonManager : MonoBehaviourPunCallbacks
 {
     private GameManager gameManager;
     private new PhotonView photonView;  // Use 'new' to avoid warning
+    
+    // Add a constant for the pet name property
+    public const string PET_NAME_PROPERTY = "PetName";
+    private string pendingPetName;
 
     public void Initialize(GameManager gameManager)
     {
@@ -27,6 +31,9 @@ public class PhotonManager : MonoBehaviourPunCallbacks
             playerName = "Player_" + Random.Range(1000, 9999);
         }
         PhotonNetwork.NickName = playerName;
+        
+        // Store the pet name to set as custom property when joined
+        pendingPetName = petName;
         
         gameManager.GetGameStateManager().SetUserInitiatedConnection(true);
         if (PhotonNetwork.IsConnected)
@@ -72,6 +79,18 @@ public class PhotonManager : MonoBehaviourPunCallbacks
     public override void OnJoinedRoom()
     {
         Debug.Log($"Joined Room: {PhotonNetwork.CurrentRoom.Name}");
+        
+        // Set the pet name as a custom property
+        if (!string.IsNullOrEmpty(pendingPetName))
+        {
+            ExitGames.Client.Photon.Hashtable petNameProp = new ExitGames.Client.Photon.Hashtable
+            {
+                { PET_NAME_PROPERTY, pendingPetName }
+            };
+            PhotonNetwork.LocalPlayer.SetCustomProperties(petNameProp);
+            Debug.Log($"Set pet name custom property: {pendingPetName}");
+        }
+        
         gameManager.GetGameStateManager().SetUserInitiatedConnection(false);
         gameManager.GetGameStateManager().TransitionToLobby();
         gameManager.UpdatePlayerList();

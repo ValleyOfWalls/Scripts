@@ -135,8 +135,20 @@ public class DeckViewManager
         if (opponent == null || cardManager == null) return;
 
         List<CardData> opponentPetDeck = cardManager.GetOpponentPetDeck() ?? new List<CardData>();
-        string opponentPetName = opponent.NickName + "'s Pet";
-        if (string.IsNullOrEmpty(opponent.NickName)) opponentPetName = "Opponent Pet";
+        
+        // Get the opponent's pet name from custom properties
+        string opponentPetName = null;
+        if (opponent.CustomProperties.TryGetValue(PhotonManager.PET_NAME_PROPERTY, out object petNameObj))
+        {
+            opponentPetName = petNameObj as string;
+        }
+        
+        // Use the custom pet name if available, otherwise fall back to the default format
+        if (string.IsNullOrEmpty(opponentPetName))
+        {
+            opponentPetName = string.IsNullOrEmpty(opponent.NickName) ? "Opponent Pet" : $"{opponent.NickName}'s Pet";
+        }
+        
         string title = $"{opponentPetName} Deck ({opponentPetDeck.Count})";
 
         deckViewController.ShowDeck(title, opponentPetDeck);
