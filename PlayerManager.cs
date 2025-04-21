@@ -55,6 +55,7 @@ public class PlayerManager
         // Then Decrement Status Effects & Cost Modifiers
         statusEffectManager.DecrementPlayerStatusEffects();
         energyManager.DecrementCostModifiers();
+        healthManager.DecrementPlayerCritBuffDurations();
         
         Debug.Log("Processed Player Turn Start effects");
     }
@@ -66,6 +67,7 @@ public class PlayerManager
         
         // Then Decrement Status Effects
         statusEffectManager.DecrementLocalPetStatusEffects();
+        healthManager.DecrementLocalPetCritBuffDurations();
         
         Debug.Log("Processed Local Pet Turn Start effects");
     }
@@ -77,6 +79,7 @@ public class PlayerManager
         
         // Then Decrement Status Effects
         statusEffectManager.DecrementOpponentPetStatusEffects();
+        healthManager.DecrementOpponentPetCritBuffDurations();
         
         Debug.Log("Processed Opponent Pet Turn Start effects");
     }
@@ -116,6 +119,10 @@ public class PlayerManager
     public void ApplyCritChanceBuffPlayer(int amount, int duration) => healthManager.ApplyCritChanceBuffPlayer(amount, duration);
     public void ApplyCritChanceBuffPet(int amount, int duration) => healthManager.ApplyCritChanceBuffPet(amount, duration);
     public void ApplyCritChanceBuffOpponentPet(int amount, int duration) => healthManager.ApplyCritChanceBuffOpponentPet(amount, duration);
+    
+    public void DecrementPlayerCritBuffDurations() => healthManager.DecrementPlayerCritBuffDurations();
+    public void DecrementLocalPetCritBuffDurations() => healthManager.DecrementLocalPetCritBuffDurations();
+    public void DecrementOpponentPetCritBuffDurations() => healthManager.DecrementOpponentPetCritBuffDurations();
     
     #endregion
     
@@ -218,6 +225,23 @@ public class PlayerManager
     public EnergyManager GetEnergyManager() => energyManager;
     public CombatStateManager GetCombatStateManager() => combatStateManager;
     public LobbyManager GetLobbyManager() => lobbyManager;
+    
+    // Status Effect Turn Getters
+    public int GetPlayerWeakTurns() => statusEffectManager.GetPlayerWeakTurns();
+    public int GetPlayerBreakTurns() => statusEffectManager.GetPlayerBreakTurns();
+    public int GetLocalPetWeakTurns() => statusEffectManager.GetLocalPetWeakTurns();
+    public int GetLocalPetBreakTurns() => statusEffectManager.GetLocalPetBreakTurns();
+    public int GetOpponentPetWeakTurns() => statusEffectManager.GetOpponentPetWeakTurns();
+    public int GetOpponentPetBreakTurns() => statusEffectManager.GetOpponentPetBreakTurns();
+    
+    // Crit Chance Getters
+    public int GetPlayerEffectiveCritChance() => healthManager.GetPlayerEffectiveCritChance();
+    public int GetPetEffectiveCritChance() => healthManager.GetPetEffectiveCritChance();
+    public int GetOpponentPetEffectiveCritChance() => healthManager.GetOpponentPetEffectiveCritChance();
+    public int GetBaseCritChance() => healthManager.GetBaseCritChance();
+    
+    // Energy Getters for Pet Deck
+    public int GetStartingPetEnergy() => gameManager.GetStartingPetEnergy();
     
     #endregion
 }

@@ -1,5 +1,6 @@
 using UnityEngine;
 using System.Collections.Generic;
+using System.Linq; // Added for Sum()
 using Photon.Pun;
 using Photon.Realtime;
 using ExitGames.Client.Photon;
@@ -24,10 +25,17 @@ public class HealthManager
     private int opponentPetDotTurns = 0;
     private int opponentPetDotDamage = 0;
     
-    // Crit tracking
-    private int localPlayerCritChanceBonus = 0;
-    private int localPetCritChanceBonus = 0;
-    private int opponentPetCritChanceBonus = 0;
+    // --- MODIFIED: Crit tracking using list of buffs ---
+    private struct CritBuff
+    {
+        public int amount;
+        public int turns;
+    }
+    private List<CritBuff> localPlayerCritBuffs = new List<CritBuff>();
+    private List<CritBuff> localPetCritBuffs = new List<CritBuff>();
+    private List<CritBuff> opponentPetCritBuffs = new List<CritBuff>();
+    // --- END MODIFIED ---
+    
     private const int BASE_CRIT_CHANCE = 5;
     private const int CRIT_DAMAGE_MULTIPLIER = 2;
     
@@ -54,10 +62,11 @@ public class HealthManager
         localPetBlock = 0;
         opponentPetBlock = 0;
         
-        // Reset crit chance bonuses
-        localPlayerCritChanceBonus = 0;
-        localPetCritChanceBonus = 0;
-        opponentPetCritChanceBonus = 0;
+        // --- MODIFIED: Reset crit buffs ---
+        localPlayerCritBuffs.Clear();
+        localPetCritBuffs.Clear();
+        opponentPetCritBuffs.Clear();
+        // --- END MODIFIED ---
     }
     
     public void InitializeCombatState(int startingPetHealth, Player opponentPlayer)
@@ -66,6 +75,12 @@ public class HealthManager
         localPlayerBlock = 0;
         localPetBlock = 0;
         opponentPetBlock = 0;
+        
+        // --- ADDED: Reset crit buffs at start of combat ---
+        localPlayerCritBuffs.Clear();
+        localPetCritBuffs.Clear();
+        opponentPetCritBuffs.Clear();
+        // --- END ADDED ---
         
         // Get opponent's base pet HP
         if (opponentPlayer != null && opponentPlayer.CustomProperties.TryGetValue(PlayerManager.PLAYER_BASE_PET_HP_PROP, out object oppBasePetHP))
@@ -109,7 +124,7 @@ public class HealthManager
         }
         
         // Apply Crit Damage if applicable (Opponent Pet attacking Player)
-        int opponentCritChance = BASE_CRIT_CHANCE + opponentPetCritChanceBonus;
+        int opponentCritChance = GetOpponentPetEffectiveCritChance();
         if (Random.Range(0, 100) < opponentCritChance)
         {
             Debug.LogWarning($"Opponent Pet CRITICAL HIT! (Chance: {opponentCritChance}%)");
@@ -506,71 +521,153 @@ public class HealthManager
     
     #region Crit Methods
     
+    // --- MODIFIED: ApplyCritChanceBuffPlayer ---
     public void ApplyCritChanceBuffPlayer(int amount, int duration)
     {
-        // Duration 0 = combat long
-        if (duration == 0)
-        {
-            localPlayerCritChanceBonus += amount;
-            Debug.Log($"Applied combat-long Crit Chance Buff to Player: +{amount}%. New Bonus: {localPlayerCritChanceBonus}%");
-        }
-        else
-        {
-            Debug.LogWarning("Temporary Crit Chance Buffs not yet implemented.");
-        }
+        if (amount <= 0 || duration <= 0) return;
+        localPlayerCritBuffs.Add(new CritBuff { amount = amount, turns = duration });
+        Debug.Log($"Applied Crit Chance Buff to Player: +{amount}% for {duration} turns.");
+        // Optionally update UI immediately if needed, though turn start/end updates might be sufficient
+        // gameManager.UpdateHealthUI(); 
     }
+    // --- END MODIFIED ---
 
+    // --- MODIFIED: ApplyCritChanceBuffPet ---
     public void ApplyCritChanceBuffPet(int amount, int duration)
     {
-        if (duration == 0)
-        {
-            localPetCritChanceBonus += amount;
-            Debug.Log($"Applied combat-long Crit Chance Buff to Pet: +{amount}%. New Bonus: {localPetCritChanceBonus}%");
+        if (amount <= 0 || duration <= 0) return;
+        localPetCritBuffs.Add(new CritBuff { amount = amount, turns = duration });
+        Debug.Log($"Applied Crit Chance Buff to Pet: +{amount}% for {duration} turns.");
 
-            // Notify others
-            if (PhotonNetwork.InRoom)
-            {
-                gameManager.GetPhotonView()?.RPC("RpcApplyCritBuffToMyPet", RpcTarget.Others, amount, duration);
-            }
-        }
-        else
+        // Notify others
+        if (PhotonNetwork.InRoom)
         {
-            Debug.LogWarning("Temporary Crit Chance Buffs not yet implemented.");
+            // Send amount and duration
+            gameManager.GetPhotonView()?.RPC("RpcApplyCritBuffToMyPet", RpcTarget.Others, amount, duration);
         }
+        // Optionally update UI
+        // gameManager.UpdateHealthUI(); 
     }
+    // --- END MODIFIED ---
 
+    // --- MODIFIED: ApplyCritChanceBuffOpponentPet ---
     public void ApplyCritChanceBuffOpponentPet(int amount, int duration, bool originatedFromRPC = false)
     {
-        if (duration == 0)
-        {
-            opponentPetCritChanceBonus += amount;
-            Debug.Log($"Applied combat-long Crit Chance Buff to Opponent Pet: +{amount}% (local sim). New Bonus: {opponentPetCritChanceBonus}%");
+        if (amount <= 0 || duration <= 0) return;
+        opponentPetCritBuffs.Add(new CritBuff { amount = amount, turns = duration });
+        Debug.Log($"Applied Crit Chance Buff to Opponent Pet: +{amount}% for {duration} turns (local sim).");
 
-            // Notify the actual owner
+        // Notify the actual owner IF this didn't come from an RPC itself
+        if (!originatedFromRPC)
+        {
             Player opponentPlayer = gameManager.GetPlayerManager()?.GetOpponentPlayer();
             if (PhotonNetwork.InRoom && opponentPlayer != null)
             {
+                // Send amount and duration
                 gameManager.GetPhotonView()?.RPC("RpcApplyCritBuffToMyPet", opponentPlayer, amount, duration);
             }
-            else if (originatedFromRPC)
+        }
+        // Optionally update UI
+        // gameManager.UpdateHealthUI(); 
+    }
+    // --- END MODIFIED ---
+
+    // --- ADDED: Decrement Player Crit Buffs ---
+    public void DecrementPlayerCritBuffDurations()
+    {
+        bool changed = false;
+        for (int i = localPlayerCritBuffs.Count - 1; i >= 0; i--)
+        {
+            CritBuff buff = localPlayerCritBuffs[i];
+            buff.turns--;
+            if (buff.turns <= 0)
             {
-                Debug.Log("ApplyCritChanceBuffOpponentPet called from RPC, skipping send.");
+                localPlayerCritBuffs.RemoveAt(i);
+                Debug.Log($"Player Crit Buff ({buff.amount}%) expired.");
+                changed = true;
+            }
+            else
+            {
+                localPlayerCritBuffs[i] = buff; // Update turns
             }
         }
-        else
-        {
-            Debug.LogWarning("Temporary Crit Chance Buffs not yet implemented.");
-        }
+        // if (changed) gameManager.UpdateHealthUI(); // Update UI if buffs expired
     }
+    // --- END ADDED ---
 
+    // --- ADDED: Decrement Pet Crit Buffs ---
+    public void DecrementLocalPetCritBuffDurations()
+    {
+         bool changed = false;
+        for (int i = localPetCritBuffs.Count - 1; i >= 0; i--)
+        {
+            CritBuff buff = localPetCritBuffs[i];
+            buff.turns--;
+            if (buff.turns <= 0)
+            {
+                localPetCritBuffs.RemoveAt(i);
+                Debug.Log($"Local Pet Crit Buff ({buff.amount}%) expired.");
+                changed = true;
+            }
+            else
+            {
+                localPetCritBuffs[i] = buff; // Update turns
+            }
+        }
+       // if (changed) gameManager.UpdateHealthUI(); // Update UI if buffs expired
+    }
+    // --- END ADDED ---
+    
+    // --- ADDED: Decrement Opponent Pet Crit Buffs ---
+    public void DecrementOpponentPetCritBuffDurations()
+    {
+        bool changed = false;
+        for (int i = opponentPetCritBuffs.Count - 1; i >= 0; i--)
+        {
+            CritBuff buff = opponentPetCritBuffs[i];
+            buff.turns--;
+            if (buff.turns <= 0)
+            {
+                opponentPetCritBuffs.RemoveAt(i);
+                 Debug.Log($"Opponent Pet Crit Buff ({buff.amount}%) expired (local sim).");
+                changed = true;
+            }
+            else
+            {
+                opponentPetCritBuffs[i] = buff; // Update turns
+            }
+        }
+        // if (changed) gameManager.UpdateHealthUI(); // Update UI if buffs expired
+    }
+    // --- END ADDED ---
+
+    // --- MODIFIED: GetPlayerEffectiveCritChance ---
     public int GetPlayerEffectiveCritChance()
     {
-        return BASE_CRIT_CHANCE + localPlayerCritChanceBonus;
+        int bonus = localPlayerCritBuffs.Sum(buff => buff.amount);
+        return Mathf.Max(0, BASE_CRIT_CHANCE + bonus); // Ensure non-negative
     }
+    // --- END MODIFIED ---
 
+    // --- MODIFIED: GetPetEffectiveCritChance ---
     public int GetPetEffectiveCritChance()
     {
-        return BASE_CRIT_CHANCE + localPetCritChanceBonus;
+        int bonus = localPetCritBuffs.Sum(buff => buff.amount);
+        return Mathf.Max(0, BASE_CRIT_CHANCE + bonus); // Ensure non-negative
+    }
+    // --- END MODIFIED ---
+    
+    // --- MODIFIED: GetOpponentPetEffectiveCritChance ---
+    public int GetOpponentPetEffectiveCritChance()
+    {
+        int bonus = opponentPetCritBuffs.Sum(buff => buff.amount);
+        return Mathf.Max(0, BASE_CRIT_CHANCE + bonus); // Ensure non-negative
+    }
+    // --- END MODIFIED ---
+    
+    public int GetBaseCritChance()
+    {
+        return BASE_CRIT_CHANCE;
     }
     
     #endregion

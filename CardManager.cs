@@ -152,6 +152,12 @@ public class CardManager
             
             // Apply card effects via CardEffectService
             bool effectsProcessed = cardEffectService.ProcessCardEffect(cardData, targetType);
+
+            // Update health/status UI AFTER effects are processed
+            if (effectsProcessed)
+            {
+                gameManager.UpdateHealthUI(); // This will also update status effects like combo
+            }
             
             Debug.Log($"Successfully processed effects for card '{cardData.cardName}' on target '{targetType}'.");
             return effectsProcessed;

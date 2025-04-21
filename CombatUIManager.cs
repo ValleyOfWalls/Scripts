@@ -201,7 +201,24 @@ public class CombatUIManager
              playerHealthSlider.value = (effectivePlayerMaxHealth > 0) ? (float)currentPlayerHealth / effectivePlayerMaxHealth : 0;
         }
         if (playerHealthText) playerHealthText.text = $"{currentPlayerHealth} / {effectivePlayerMaxHealth}";
-        if (playerBlockText) playerBlockText.text = $"Block: {playerManager.GetLocalPlayerBlock()}";
+        if (playerBlockText) 
+        {
+            // Start building the status string
+            System.Text.StringBuilder playerStatus = new System.Text.StringBuilder();
+            playerStatus.Append($"Block: {playerManager.GetLocalPlayerBlock()}");
+
+            // Append active status effects
+            int weakTurns = playerManager.GetPlayerWeakTurns();
+            if (weakTurns > 0) playerStatus.Append($" | Weak: {weakTurns}t");
+
+            int breakTurns = playerManager.GetPlayerBreakTurns();
+            if (breakTurns > 0) playerStatus.Append($" | Break: {breakTurns}t");
+            
+            int critChance = playerManager.GetPlayerEffectiveCritChance();
+            if (critChance > playerManager.GetBaseCritChance()) playerStatus.Append($" | Crit: {critChance}%"); // Only show if bonus exists
+
+            playerBlockText.text = playerStatus.ToString();
+        }
 
         // Own Pet Health & Block
         int currentPetHealth = playerManager.GetLocalPetHealth();
@@ -266,7 +283,22 @@ public class CombatUIManager
                 oppPetEnergy = petDeckManager.GetOpponentPetEnergy();
             }
             
-            opponentPetBlockText.text = $"Block: {oppPetBlock} | Energy: {oppPetEnergy}";
+            // Start building the status string
+            System.Text.StringBuilder oppPetStatus = new System.Text.StringBuilder();
+            oppPetStatus.Append($"Block: {oppPetBlock} | Energy: {oppPetEnergy}");
+            
+            // Append active status effects
+            int weakTurns = playerManager.GetOpponentPetWeakTurns();
+            if (weakTurns > 0) oppPetStatus.Append($" | Weak: {weakTurns}t");
+
+            int breakTurns = playerManager.GetOpponentPetBreakTurns();
+            if (breakTurns > 0) oppPetStatus.Append($" | Break: {breakTurns}t");
+            
+            // Assuming an equivalent getter exists for opponent pet crit chance
+            int critChance = playerManager.GetOpponentPetEffectiveCritChance(); 
+            if (critChance > playerManager.GetBaseCritChance()) oppPetStatus.Append($" | Crit: {critChance}%"); // Only show if bonus exists
+
+            opponentPetBlockText.text = oppPetStatus.ToString();
         }
 
         UpdateStatusEffectsUI();
