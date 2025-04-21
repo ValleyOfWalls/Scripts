@@ -575,7 +575,6 @@ public class HealthManager
     // --- ADDED: Decrement Player Crit Buffs ---
     public void DecrementPlayerCritBuffDurations()
     {
-        bool changed = false;
         for (int i = localPlayerCritBuffs.Count - 1; i >= 0; i--)
         {
             CritBuff buff = localPlayerCritBuffs[i];
@@ -584,21 +583,18 @@ public class HealthManager
             {
                 localPlayerCritBuffs.RemoveAt(i);
                 Debug.Log($"Player Crit Buff ({buff.amount}%) expired.");
-                changed = true;
             }
             else
             {
                 localPlayerCritBuffs[i] = buff; // Update turns
             }
         }
-        // if (changed) gameManager.UpdateHealthUI(); // Update UI if buffs expired
     }
     // --- END ADDED ---
 
     // --- ADDED: Decrement Pet Crit Buffs ---
     public void DecrementLocalPetCritBuffDurations()
     {
-         bool changed = false;
         for (int i = localPetCritBuffs.Count - 1; i >= 0; i--)
         {
             CritBuff buff = localPetCritBuffs[i];
@@ -607,21 +603,18 @@ public class HealthManager
             {
                 localPetCritBuffs.RemoveAt(i);
                 Debug.Log($"Local Pet Crit Buff ({buff.amount}%) expired.");
-                changed = true;
             }
             else
             {
                 localPetCritBuffs[i] = buff; // Update turns
             }
         }
-       // if (changed) gameManager.UpdateHealthUI(); // Update UI if buffs expired
     }
     // --- END ADDED ---
     
     // --- ADDED: Decrement Opponent Pet Crit Buffs ---
     public void DecrementOpponentPetCritBuffDurations()
     {
-        bool changed = false;
         for (int i = opponentPetCritBuffs.Count - 1; i >= 0; i--)
         {
             CritBuff buff = opponentPetCritBuffs[i];
@@ -630,14 +623,12 @@ public class HealthManager
             {
                 opponentPetCritBuffs.RemoveAt(i);
                  Debug.Log($"Opponent Pet Crit Buff ({buff.amount}%) expired (local sim).");
-                changed = true;
             }
             else
             {
                 opponentPetCritBuffs[i] = buff; // Update turns
             }
         }
-        // if (changed) gameManager.UpdateHealthUI(); // Update UI if buffs expired
     }
     // --- END ADDED ---
 

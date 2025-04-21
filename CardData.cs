@@ -73,7 +73,6 @@ public class CardData : ScriptableObject
     [Header("Status Effect Application")]
     public StatusEffectType statusToApply = StatusEffectType.None;
     public int statusDuration = 0; // Turns the status lasts
-    public int statusPotency = 0; // e.g., Damage reduction for Weak, % increase for Break?
 
     [Header("Damage Over Time (DoT)")]
     public int dotDamageAmount = 0; // Damage per turn

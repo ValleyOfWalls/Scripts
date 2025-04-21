@@ -25,9 +25,9 @@ public class CardEffectService
                     // Check Attacker (Player) Weakness
                     int actualDamage = cardData.damage;
                     if (playerManager.IsPlayerWeak()) {
-                        int reduction = Mathf.FloorToInt(actualDamage * 0.25f);
+                        int reduction = Mathf.FloorToInt(actualDamage * 0.5f);
                         actualDamage = Mathf.Max(0, actualDamage - reduction);
-                        Debug.Log($"Player is Weak! Reducing damage from {cardData.damage} to {actualDamage}");
+                        Debug.Log($"Player is Weak! Reducing damage from {cardData.damage} to {actualDamage} (-50%)");
                     }
                     
                     playerManager.DamageOpponentPet(actualDamage);
@@ -76,9 +76,9 @@ public class CardEffectService
                     // Check Attacker (Player) Weakness
                     int actualDamage = cardData.damage;
                     if (playerManager.IsPlayerWeak()) {
-                        int reduction = Mathf.FloorToInt(actualDamage * 0.25f);
+                        int reduction = Mathf.FloorToInt(actualDamage * 0.5f);
                         actualDamage = Mathf.Max(0, actualDamage - reduction);
-                        Debug.Log($"Player is Weak! Reducing self-damage from {cardData.damage} to {actualDamage}");
+                        Debug.Log($"Player is Weak! Reducing self-damage from {cardData.damage} to {actualDamage} (-50%)");
                     }
                     playerManager.DamageLocalPlayer(actualDamage);
                     Debug.Log($"Dealt {actualDamage} damage to PlayerSelf. New health: {playerManager.GetLocalPlayerHealth()}, Block: {playerManager.GetLocalPlayerBlock()}");
@@ -121,9 +121,9 @@ public class CardEffectService
                     // Check Attacker (Player) Weakness
                     int actualDamage = cardData.damage;
                     if (playerManager.IsPlayerWeak()) {
-                        int reduction = Mathf.FloorToInt(actualDamage * 0.25f);
+                        int reduction = Mathf.FloorToInt(actualDamage * 0.5f);
                         actualDamage = Mathf.Max(0, actualDamage - reduction);
-                        Debug.Log($"Player is Weak! Reducing pet damage from {cardData.damage} to {actualDamage}");
+                        Debug.Log($"Player is Weak! Reducing pet damage from {cardData.damage} to {actualDamage} (-50%)");
                     }
                     playerManager.DamageLocalPet(actualDamage);
                     Debug.Log($"Dealt {actualDamage} damage to OwnPet. New health: {playerManager.GetLocalPetHealth()}, Block: {playerManager.GetLocalPetBlock()}");
@@ -278,9 +278,9 @@ public class CardEffectService
             // Check Attacker (Pet) Weakness
             if (playerManager.IsOpponentPetWeak()) 
             { 
-                 int reduction = Mathf.FloorToInt(actualDamage * 0.25f);
+                 int reduction = Mathf.FloorToInt(actualDamage * 0.5f);
                  actualDamage = Mathf.Max(0, actualDamage - reduction);
-                 Debug.Log($"Opponent Pet is Weak! Reducing damage from {cardToPlay.damage} to {actualDamage}");
+                 Debug.Log($"Opponent Pet is Weak! Reducing damage from {cardToPlay.damage} to {actualDamage} (-50%)");
             }
             
             if (target == OpponentPetTargetType.Player) 

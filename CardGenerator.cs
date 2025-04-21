@@ -96,22 +96,18 @@ public class CardGenerator : MonoBehaviour
         CreateCard("Miasmatic Vapors", "Apply 2 Weak to enemy pet.", 1, card => {
             card.statusToApply = StatusEffectType.Weak;
             card.statusDuration = 2;
-            card.statusPotency = 50; // 50% less damage
         }, "Miasmatic Vapors+", "Apply 3 Weak to enemy pet.", 1, card => {
             card.statusToApply = StatusEffectType.Weak;
             card.statusDuration = 3;
-            card.statusPotency = 50;
         });
 
         // Break Effect
         CreateCard("Calcified Dissolution", "Apply 2 Break to enemy pet.", 1, card => {
             card.statusToApply = StatusEffectType.Break;
             card.statusDuration = 2;
-            card.statusPotency = 50; // 50% more damage taken
         }, "Calcified Dissolution+", "Apply 3 Break to enemy pet.", 1, card => {
             card.statusToApply = StatusEffectType.Break;
             card.statusDuration = 3;
-            card.statusPotency = 50;
         });
 
         // DoT Effect
@@ -310,12 +306,10 @@ public class CardGenerator : MonoBehaviour
             card.damage = 4;
             card.statusToApply = StatusEffectType.Weak;
             card.statusDuration = 2;
-            card.statusPotency = 50;
         }, "Necrotic Tendrils+", "Deal 6 damage and apply 2 Weak.", 1, card => {
             card.damage = 6;
             card.statusToApply = StatusEffectType.Weak;
             card.statusDuration = 2;
-            card.statusPotency = 50;
         });
 
         // Multi-effect card: Damage + DoT
@@ -390,11 +384,9 @@ public class CardGenerator : MonoBehaviour
         CreateCard("Adrenaline Secretion", "Your pet deals 50% more damage for 2 turns.", 2, card => {
             card.statusToApply = StatusEffectType.None; // Would need a custom status
             card.statusDuration = 2;
-            card.statusPotency = 50;
         }, "Adrenaline Secretion+", "Your pet deals 50% more damage for 3 turns.", 2, card => {
             card.statusToApply = StatusEffectType.None;
             card.statusDuration = 3;
-            card.statusPotency = 50;
         });
         
         // Pet max health
@@ -574,12 +566,10 @@ public class CardGenerator : MonoBehaviour
             card.damage = 30;
             card.statusToApply = StatusEffectType.Break;
             card.statusDuration = 3;
-            card.statusPotency = 50;
         }, "The Annihilation+", "Deal 40 damage. Apply 3 Break.", 4, card => {
             card.damage = 40;
             card.statusToApply = StatusEffectType.Break;
             card.statusDuration = 3;
-            card.statusPotency = 50;
         });
         
         // Multi-effect powerful defensive card
