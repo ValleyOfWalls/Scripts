@@ -105,7 +105,7 @@ public class CardDragHandler : MonoBehaviour, IBeginDragHandler, IDragHandler, I
 
     public void OnEndDrag(PointerEventData eventData)
     {
-        Debug.Log($"CardDragHandler.OnEndDrag fired. Pointer entered: {(eventData.pointerEnter != null ? eventData.pointerEnter.name : "null")}");
+        //Debug.Log($"CardDragHandler.OnEndDrag fired. Pointer entered: {(eventData.pointerEnter != null ? eventData.pointerEnter.name : "null")}");
 
         canvasGroup.blocksRaycasts = true;
         transform.SetParent(originalParent, true); // Return to hand panel first
@@ -154,14 +154,14 @@ public class CardDragHandler : MonoBehaviour, IBeginDragHandler, IDragHandler, I
     public void EnterHoverState()
     {
         if (canvasGroup.blocksRaycasts == false || isHovering) return;
-        Debug.Log($"[{Time.frameCount}] EnterHoverState START: {name}");
+        //Debug.Log($"[{Time.frameCount}] EnterHoverState START: {name}");
         isHovering = true;
 
         // Store index only if not already stored (might happen if quickly re-hovering)
         if(originalSiblingIndex < 0) 
         {
             originalSiblingIndex = transform.GetSiblingIndex();
-            Debug.Log($"[{Time.frameCount}] EnterHoverState: Stored originalSiblingIndex = {originalSiblingIndex}");
+           // Debug.Log($"[{Time.frameCount}] EnterHoverState: Stored originalSiblingIndex = {originalSiblingIndex}");
         }
 
         // --- MODIFIED: Use Animation --- 
@@ -183,7 +183,7 @@ public class CardDragHandler : MonoBehaviour, IBeginDragHandler, IDragHandler, I
     public void ExitHoverState()
     {
         if (!isHovering || canvasGroup.blocksRaycasts == false) return;
-        Debug.Log($"[{Time.frameCount}] ExitHoverState START: {name}");
+        //Debug.Log($"[{Time.frameCount}] ExitHoverState START: {name}");
         isHovering = false;
 
         // --- MODIFIED: Use Animation --- 
@@ -207,11 +207,11 @@ public class CardDragHandler : MonoBehaviour, IBeginDragHandler, IDragHandler, I
     // --- ADDED: Helper to manage animation start/stop ---
     private void UpdateAnimationTargetAndStart()
     {
-        Debug.Log($"[{Time.frameCount}] UpdateAnimationTargetAndStart: Stopping existing coroutine for {name}");
+        //Debug.Log($"[{Time.frameCount}] UpdateAnimationTargetAndStart: Stopping existing coroutine for {name}");
         // Stop existing animation
         StopCoroutineIfRunning(ref animationCoroutine);
         // Start new one
-        Debug.Log($"[{Time.frameCount}] UpdateAnimationTargetAndStart: Starting AnimateTransformCoroutine for {name}. TargetPos={targetPosition}, TargetScale={targetScale}");
+        //Debug.Log($"[{Time.frameCount}] UpdateAnimationTargetAndStart: Starting AnimateTransformCoroutine for {name}. TargetPos={targetPosition}, TargetScale={targetScale}");
         animationCoroutine = StartCoroutine(AnimateTransformCoroutine());
     }
     

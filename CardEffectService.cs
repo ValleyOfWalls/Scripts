@@ -261,43 +261,107 @@ public class CardEffectService
     
     public void ProcessOpponentPetCardEffect(CardData cardToPlay)
     {
+        Debug.Log($"[CardEffectService] Processing Opponent Pet Card: {cardToPlay.cardName}, Primary Target When Pet Plays: {cardToPlay.primaryTargetWhenPlayedByPet}");
         PlayerManager playerManager = gameManager.GetPlayerManager();
         
+        // --- MODIFIED: Apply effects based on primaryTargetWhenPlayedByPet --- 
+        OpponentPetTargetType target = cardToPlay.primaryTargetWhenPlayedByPet;
+        
+        // --- Apply Direct Damage ---
         if (cardToPlay.damage > 0)
         {
-            // Check Attacker (Opponent Pet) Weakness
             int actualDamage = cardToPlay.damage;
-            if (playerManager.IsOpponentPetWeak()) {
-                // Example: 25% reduction, rounded down
-                int reduction = Mathf.FloorToInt(actualDamage * 0.25f); 
-                actualDamage = Mathf.Max(0, actualDamage - reduction);
-                Debug.Log($"Opponent Pet is Weak! Reducing damage from {cardToPlay.damage} to {actualDamage}");
+            // Check Attacker (Pet) Weakness
+            if (playerManager.IsOpponentPetWeak()) 
+            { 
+                 int reduction = Mathf.FloorToInt(actualDamage * 0.25f);
+                 actualDamage = Mathf.Max(0, actualDamage - reduction);
+                 Debug.Log($"Opponent Pet is Weak! Reducing damage from {cardToPlay.damage} to {actualDamage}");
             }
             
-            playerManager.DamageLocalPlayer(actualDamage, updateUIImmediate: false);
-            Debug.Log($"Opponent Pet dealt {actualDamage} damage to Local Player. New health: {playerManager.GetLocalPlayerHealth()}, Block: {playerManager.GetLocalPlayerBlock()}");
+            if (target == OpponentPetTargetType.Player) 
+            {
+                playerManager.DamageLocalPlayer(actualDamage);
+                Debug.Log($"Opponent Pet dealt {actualDamage} damage to Player. Player Health: {playerManager.GetLocalPlayerHealth()}, Block: {playerManager.GetLocalPlayerBlock()}");
+            }
+            else if (target == OpponentPetTargetType.Self)
+            {
+                playerManager.DamageOpponentPet(actualDamage); // Call the standard method
+                Debug.Log($"Opponent Pet dealt {actualDamage} damage to ITSELF. Pet Health: {playerManager.GetOpponentPetHealth()}, Block: {playerManager.GetOpponentPetBlock()}");
+            }
         }
         
-        // Apply Opponent Pet Block
+        // --- Apply Block ---
         if (cardToPlay.block > 0)
         {
-            playerManager.AddBlockToOpponentPet(cardToPlay.block, updateUIImmediate: false);
-            Debug.Log($"Opponent Pet gained {cardToPlay.block} block. New block (local sim): {playerManager.GetOpponentPetBlock()}");
+            if (target == OpponentPetTargetType.Self)
+            {
+                playerManager.AddBlockToOpponentPet(cardToPlay.block);
+                Debug.Log($"Opponent Pet gained {cardToPlay.block} block. Est. Block: {playerManager.GetOpponentPetBlock()}");
+            }
+            else if (target == OpponentPetTargetType.Player)
+            {
+                playerManager.AddBlockToLocalPlayer(cardToPlay.block); // Does pet block player?
+                 Debug.LogWarning($"Opponent Pet card {cardToPlay.cardName} applied block to Player? Block: {cardToPlay.block}");
+            }
         }
         
-        // Apply Opponent Pet Energy Gain
+        // --- Apply Healing ---
+        if (cardToPlay.healingAmount > 0)
+        {
+             if (target == OpponentPetTargetType.Self)
+             {
+                playerManager.HealOpponentPet(cardToPlay.healingAmount);
+                Debug.Log($"Opponent Pet healed itself for {cardToPlay.healingAmount}. Est. Health: {playerManager.GetOpponentPetHealth()}");
+             }
+             else if (target == OpponentPetTargetType.Player)
+             {
+                playerManager.HealLocalPlayer(cardToPlay.healingAmount); 
+                 Debug.LogWarning($"Opponent Pet card {cardToPlay.cardName} healed Player? Heal: {cardToPlay.healingAmount}");
+             }
+        }
+        
+        // --- Apply Status Effect ---
+        if (cardToPlay.statusToApply != StatusEffectType.None && cardToPlay.statusDuration > 0)
+        { 
+            if (target == OpponentPetTargetType.Player)
+            {
+                playerManager.ApplyStatusEffectLocalPlayer(cardToPlay.statusToApply, cardToPlay.statusDuration);
+                Debug.Log($"Opponent Pet applied {cardToPlay.statusToApply} ({cardToPlay.statusDuration}t) to Player.");
+            }
+            else if (target == OpponentPetTargetType.Self)
+            {
+                 playerManager.ApplyStatusEffectOpponentPet(cardToPlay.statusToApply, cardToPlay.statusDuration);
+                 Debug.Log($"Opponent Pet applied {cardToPlay.statusToApply} ({cardToPlay.statusDuration}t) to ITSELF.");
+            }
+        }
+        
+        // --- Apply DoT ---
+        if (cardToPlay.dotDamageAmount > 0 && cardToPlay.dotDuration > 0)
+        { 
+            if (target == OpponentPetTargetType.Player)
+            {
+                playerManager.ApplyDotLocalPlayer(cardToPlay.dotDamageAmount, cardToPlay.dotDuration);
+                Debug.Log($"Opponent Pet applied DoT ({cardToPlay.dotDamageAmount}dmg/{cardToPlay.dotDuration}t) to Player.");
+            }
+            else if (target == OpponentPetTargetType.Self)
+            {
+                playerManager.ApplyDotOpponentPet(cardToPlay.dotDamageAmount, cardToPlay.dotDuration); // Call the standard method
+                Debug.Log($"Opponent Pet applied DoT ({cardToPlay.dotDamageAmount}dmg/{cardToPlay.dotDuration}t) to ITSELF.");
+            }
+        }
+        
+        // --- Apply Energy Gain (Always applies to the caster - the Opponent Pet) ---
         if (cardToPlay.energyGain > 0)
         {
-            PetDeckManager petDeckManager = gameManager.GetCardManager().GetPetDeckManager();
-            int currentEnergy = petDeckManager.GetOpponentPetEnergy();
-            petDeckManager.SetOpponentPetEnergy(currentEnergy + cardToPlay.energyGain);
-            Debug.Log($"Opponent Pet gained {cardToPlay.energyGain} energy. New energy: {petDeckManager.GetOpponentPetEnergy()}");
+            gameManager.GetCardManager().GetPetDeckManager().AddEnergyToOpponentPet(cardToPlay.energyGain);
+            Debug.Log($"Opponent Pet gained {cardToPlay.energyGain} energy (local sim).");
         }
         
-        // Apply Opponent Pet Draw
+        // --- Apply Draw Card (Opponent Pet draws - simulated locally) ---
         if (cardToPlay.drawAmount > 0)
         {
-            Debug.Log($"Opponent Pet drawing {cardToPlay.drawAmount} cards.");
+            Debug.Log($"Opponent Pet draws {cardToPlay.drawAmount} cards (simulated).");
             PetDeckManager petDeckManager = gameManager.GetCardManager().GetPetDeckManager();
             for(int d=0; d < cardToPlay.drawAmount; d++)
             {
@@ -305,30 +369,37 @@ public class CardEffectService
             }
         }
         
-        // Apply Opponent Pet Discard
+        // --- Apply Discard Random (Opponent Pet discards - simulated locally) ---
         if (cardToPlay.discardRandomAmount > 0)
         {
-            Debug.Log($"Opponent Pet discarding {cardToPlay.discardRandomAmount} random cards.");
-            gameManager.GetCardManager().GetPetDeckManager().DiscardRandomOpponentPetCards(cardToPlay.discardRandomAmount);
+             Debug.Log($"Opponent Pet discards {cardToPlay.discardRandomAmount} random cards (simulated).");
+             gameManager.GetCardManager().GetPetDeckManager().DiscardRandomOpponentPetCards(cardToPlay.discardRandomAmount);
         }
+
+        // --- Opponent Pet Combo Check (Simulated) ---
+        // Note: Currently, pet AI doesn't track combo points. Add if needed.
+        // if (cardToPlay.isComboStarter)
+        // {
+        //     // Increment opponent pet combo count (needs state tracking)
+        //     // If combo triggers:
+        //     // ApplyOpponentPetComboEffect(cardToPlay);
+        // }
         
-        // Apply Opponent Pet Healing
-        if (cardToPlay.healingAmount > 0)
-        {
-            playerManager.HealOpponentPet(cardToPlay.healingAmount);
-        }
-        
-        // Apply Status Effects (Opponent Pet applying to Player)
-        if (cardToPlay.statusToApply != StatusEffectType.None && cardToPlay.statusDuration > 0)
-        {
-            playerManager.ApplyStatusEffectLocalPlayer(cardToPlay.statusToApply, cardToPlay.statusDuration);
-        }
-        
-        // Apply DoT (Opponent Pet applying to Player)
-        if (cardToPlay.dotDamageAmount > 0 && cardToPlay.dotDuration > 0)
-        {
-            playerManager.ApplyDotLocalPlayer(cardToPlay.dotDamageAmount, cardToPlay.dotDuration);
-        }
+        // --- Other effects like Cost Modification, Crit Chance, Temp Upgrade --- 
+        // These are less common for pet decks currently and would likely target the opponent (player) or the pet itself.
+        // Implement logic based on primaryTarget if these effects are added to pet cards.
+        // Example:
+        // if (cardToPlay.costChangeTarget != CostChangeTargetType.None)
+        // {
+        //     if(target == CardDropZone.TargetType.EnemyPet) { /* Apply cost mod to Player Hand */ }
+        // }
+
+        // --- END MODIFIED LOGIC --- 
+
+        // After effects, update UI
+        gameManager.UpdateHealthUI();
+        gameManager.GetCombatUIManager().UpdateStatusEffectsUI();
+        // No need to update opponent hand/deck UI as it's not visible
     }
     
     public void HandleDiscardTrigger(CardData discardedCard)

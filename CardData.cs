@@ -42,6 +42,14 @@ public enum UpgradeTargetRule
 }
 // --- END ADDED ---
 
+// --- ADDED: Enum for Opponent Pet Primary Target --- 
+public enum OpponentPetTargetType
+{
+    Player, // The player the pet is fighting
+    Self    // The pet itself
+}
+// --- END ADDED ---
+
 [CreateAssetMenu(fileName = "New Card", menuName = "Cards/Card Data")]
 public class CardData : ScriptableObject
 {
@@ -49,6 +57,10 @@ public class CardData : ScriptableObject
     public int cost = 1;
     public string description = "Card Effect Description";
     
+    [Header("Card Targeting")]
+    [Tooltip("When played by an opponent pet, who is the primary target? Player = the player fighting the pet. Self = the pet itself.")]
+    public OpponentPetTargetType primaryTargetWhenPlayedByPet = OpponentPetTargetType.Player; // Default to targeting the player
+
     [Header("Gameplay Effects")]
     public int damage = 0; // Amount of damage this card deals (0 if none)
     public int block = 0; // Amount of block this card provides (0 if none)

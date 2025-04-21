@@ -629,46 +629,58 @@ public class CombatUIManager
 
         // Position and Animate Card
         RectTransform cardRect = cardGO.GetComponent<RectTransform>();
-        Vector3 startPosition = opponentPetBlockText != null ? opponentPetBlockText.transform.position : new Vector3(Screen.width * 0.8f, Screen.height * 0.8f, 0);
-        Vector3 targetPosition = new Vector3(Screen.width / 2f, Screen.height / 2f, 0);
-        float scaleFactor = 1.5f;
-        float animDuration = 0.4f;
+        Vector3 startPosition = opponentPetBlockText != null ? opponentPetBlockText.transform.position : new Vector3(Screen.width * 0.8f, Screen.height * 0.8f, 0); // Start near opponent pet
+        
+        // --- REVISED: Use explicit primaryTargetWhenPlayedByPet field --- 
+        Vector3 targetPosition;
+        if (card.primaryTargetWhenPlayedByPet == OpponentPetTargetType.Player)
+        {
+            // Target player area (e.g., near player health bar)
+            targetPosition = playerHealthSlider != null ? playerHealthSlider.transform.position : new Vector3(Screen.width * 0.5f, Screen.height * 0.2f, 0); 
+            Debug.Log($"Card {card.cardName} targets Player (primaryTargetWhenPlayedByPet: {card.primaryTargetWhenPlayedByPet}). Animating towards player UI.");
+        }
+        else // Assumes Self
+        {
+            // Target opponent pet area (e.g., near opponent pet block text)
+            targetPosition = opponentPetBlockText != null ? opponentPetBlockText.transform.position : new Vector3(Screen.width * 0.8f, Screen.height * 0.7f, 0);
+            Debug.Log($"Card {card.cardName} targets Self (primaryTargetWhenPlayedByPet: {card.primaryTargetWhenPlayedByPet}). Animating towards opponent pet UI.");
+        }
+        // --- END REVISED ---
+        
+        // Offset slightly so it doesn't perfectly overlap UI
+        targetPosition += new Vector3(0, 50f, 0); 
+        
+        float scaleFactor = 1.2f; // Slightly smaller scale than center animation
+        float animDuration = 0.5f; // Slightly longer animation
 
         cardRect.position = startPosition;
         cardRect.localScale = Vector3.one * 0.5f;
         canvasGroup.alpha = 0f;
+        
+        // --- MODIFIED: Use DOTween for smoother animation ---
+        Sequence animSequence = DOTween.Sequence();
+        animSequence.SetTarget(cardRect); 
 
-        // Animation
-        float timer = 0f;
-        // Fade in and move to center
-        while (timer < animDuration)
-        {
-            timer += Time.deltaTime;
-            float progress = timer / animDuration;
-            cardRect.position = Vector3.Lerp(startPosition, targetPosition, progress);
-            cardRect.localScale = Vector3.Lerp(Vector3.one * 0.5f, Vector3.one * scaleFactor, progress);
-            canvasGroup.alpha = Mathf.Lerp(0f, 1f, progress);
-            yield return null;
-        }
-        cardRect.position = targetPosition;
-        cardRect.localScale = Vector3.one * scaleFactor;
-        canvasGroup.alpha = 1f;
+        // Fade in and scale up slightly while moving towards target
+        animSequence.Append(canvasGroup.DOFade(1f, animDuration * 0.5f));
+        animSequence.Join(cardRect.DOScale(Vector3.one * scaleFactor, animDuration).SetEase(Ease.OutQuad));
+        animSequence.Join(cardRect.DOMove(targetPosition, animDuration).SetEase(Ease.OutQuad));
 
-        // Pause at center
-        yield return new WaitForSeconds(0.75f);
+        // Pause at target
+        animSequence.AppendInterval(0.6f); // Shorter pause than before
 
         // Fade out and Destroy
-        timer = 0f;
-        float fadeDuration = 0.3f;
-        while (timer < fadeDuration)
-        {
-            timer += Time.deltaTime;
-            canvasGroup.alpha = Mathf.Lerp(1f, 0f, timer / fadeDuration);
-            yield return null;
-        }
+        animSequence.Append(canvasGroup.DOFade(0f, 0.3f).SetEase(Ease.InQuad));
+        animSequence.OnComplete(() => {
+            if (cardGO != null) Object.Destroy(cardGO);
+            Debug.Log($"Finished visualizing: {card.cardName}");
+        });
 
-        Object.Destroy(cardGO);
-        Debug.Log($"Finished visualizing: {card.cardName}");
+        animSequence.Play();
+
+        // Wait for the animation sequence to finish before the coroutine ends
+        yield return animSequence.WaitForCompletion();
+        // --- END MODIFIED ---
     }
     
     public void UpdateOtherFightsUI()
