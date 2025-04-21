@@ -6,41 +6,149 @@ using Photon.Pun;
 public class CardEffectService
 {
     private GameManager gameManager;
+    private CombatTurnManager combatTurnManager; // Cache reference
     
     public CardEffectService(GameManager gameManager)
     {
         this.gameManager = gameManager;
+        // Get the CombatTurnManager reference via CombatManager
+        this.combatTurnManager = gameManager.GetCombatManager()?.GetCombatTurnManager(); 
+        if (this.combatTurnManager == null) {
+            Debug.LogError("CardEffectService could not get CombatTurnManager!");
+        }
     }
     
-    public bool ProcessCardEffect(CardData cardData, CardDropZone.TargetType targetType)
+    public bool ProcessCardEffect(CardData cardData, CardDropZone.TargetType targetType, int previousPlaysThisCombat, int totalCopies)
     {
         PlayerManager playerManager = gameManager.GetPlayerManager();
+        int currentTurn = combatTurnManager?.GetCurrentCombatTurn() ?? 1; // Get current turn, default to 1 if manager missing
+        
+        // --- ADDED: Check Player Health Status for Threshold --- 
+        bool isBelowHealthThreshold = false;
+        if (cardData.healthThresholdPercent > 0) 
+        {
+            int currentHP = playerManager.GetLocalPlayerHealth();
+            int maxHP = playerManager.GetEffectivePlayerMaxHealth();
+            if (maxHP > 0) // Avoid division by zero
+            {
+                float currentHPPct = ((float)currentHP / maxHP) * 100f;
+                if (currentHPPct < cardData.healthThresholdPercent)
+                {
+                    isBelowHealthThreshold = true;
+                    Debug.Log($"Player health ({currentHP}/{maxHP} = {currentHPPct:F1}%) is below threshold ({cardData.healthThresholdPercent}%). Applying enhanced effect.");
+                }
+            }
+        }
+        // --- END ADDED ---
         
         // Apply effects based on target
         switch (targetType)
         {
             case CardDropZone.TargetType.EnemyPet:
-                if (cardData.damage > 0)
+                // --- Damage Processing ---
+                if (cardData.damage > 0 || cardData.damageScalingPerTurn > 0 || cardData.damageScalingPerPlay > 0 || cardData.damageScalingPerCopy > 0)
                 {
+                    int baseDamage = cardData.damage;
+                    int turnBonusDamage = 0;
+                    int playBonusDamage = 0;
+                    int copyBonusDamage = 0;
+                    
+                    // Calculate Turn Scaling Bonus
+                    if (cardData.damageScalingPerTurn > 0) 
+                    {
+                        turnBonusDamage = Mathf.FloorToInt(cardData.damageScalingPerTurn * currentTurn);
+                        Debug.Log($"Damage Scaling (Turn): Base={baseDamage}, Scale/Turn={cardData.damageScalingPerTurn}, Turn={currentTurn}, Bonus={turnBonusDamage}");
+                    }
+                    // Calculate Play Scaling Bonus
+                    if (cardData.damageScalingPerPlay > 0) 
+                    {
+                        playBonusDamage = Mathf.FloorToInt(cardData.damageScalingPerPlay * previousPlaysThisCombat);
+                        Debug.Log($"Damage Scaling (Play): Base={baseDamage}, Scale/Play={cardData.damageScalingPerPlay}, PrevPlays={previousPlaysThisCombat}, Bonus={playBonusDamage}");
+                    }
+                    // Calculate Copy Scaling Bonus
+                    if (cardData.damageScalingPerCopy > 0)
+                    {
+                        copyBonusDamage = Mathf.FloorToInt(cardData.damageScalingPerCopy * totalCopies);
+                        Debug.Log($"Damage Scaling (Copy): Base={baseDamage}, Scale/Copy={cardData.damageScalingPerCopy}, Copies={totalCopies}, Bonus={copyBonusDamage}");
+                    }
+                    int totalDamageBeforeEnhancements = baseDamage + turnBonusDamage + playBonusDamage + copyBonusDamage;
+                    float damageMultiplier = 1.0f;
+                    
+                    // Apply Low Health Multiplier
+                    if (isBelowHealthThreshold && cardData.damageMultiplierBelowThreshold > 1.0f) {
+                        damageMultiplier *= cardData.damageMultiplierBelowThreshold;
+                        Debug.Log($"Applying low health damage multiplier: {cardData.damageMultiplierBelowThreshold}x");
+                    }
+                    
+                    int damageAfterMultipliers = Mathf.FloorToInt(totalDamageBeforeEnhancements * damageMultiplier);
+                    
+                    // Apply Player Strength Bonus
+                    int strengthBonus = playerManager.GetPlayerStrength();
+                    if (strengthBonus != 0) {
+                        damageAfterMultipliers += strengthBonus;
+                        Debug.Log($"Applying Player Strength Bonus to Damage: +{strengthBonus}");
+                    }
+                    
+                    int totalDamageBeforeWeak = damageAfterMultipliers;
+                    int actualDamage = totalDamageBeforeWeak;
+                    
                     // Check Attacker (Player) Weakness
-                    int actualDamage = cardData.damage;
                     if (playerManager.IsPlayerWeak()) {
                         int reduction = Mathf.FloorToInt(actualDamage * 0.5f);
                         actualDamage = Mathf.Max(0, actualDamage - reduction);
-                        Debug.Log($"Player is Weak! Reducing damage from {cardData.damage} to {actualDamage} (-50%)");
+                        Debug.Log($"Player is Weak! Reducing damage from {totalDamageBeforeWeak} to {actualDamage} (-50%)");
                     }
                     
-                    playerManager.DamageOpponentPet(actualDamage);
-                    Debug.Log($"Dealt {actualDamage} damage to Opponent Pet. New health: {playerManager.GetOpponentPetHealth()}, Est. Block: {playerManager.GetOpponentPetBlock()}");
+                    if (actualDamage > 0) 
+                    {
+                        playerManager.DamageOpponentPet(actualDamage);
+                        Debug.Log($"Dealt {actualDamage} damage to Opponent Pet. (Base: {baseDamage}, TurnB: {turnBonusDamage}, PlayB: {playBonusDamage}, CopyB: {copyBonusDamage}, StrB: {strengthBonus}, Multiplier: {damageMultiplier:F2}). New health: {playerManager.GetOpponentPetHealth()}, Est. Block: {playerManager.GetOpponentPetBlock()}");
+                    }
                 }
                 
-                // --- ADDED: Apply Block to Enemy Pet ---
-                if (cardData.block > 0)
+                // --- Block Processing ---
+                if (cardData.block > 0 || cardData.blockScalingPerTurn > 0 || cardData.blockScalingPerPlay > 0 || cardData.blockScalingPerCopy > 0)
                 {
-                    playerManager.AddBlockToOpponentPet(cardData.block);
-                    Debug.Log($"Applied {cardData.block} block to Opponent Pet. Est. Block: {playerManager.GetOpponentPetBlock()}");
+                    int baseBlock = cardData.block;
+                    int turnBonusBlock = 0;
+                    int playBonusBlock = 0;
+                    int copyBonusBlock = 0;
+                    
+                    // Calculate Turn Scaling Bonus
+                    if (cardData.blockScalingPerTurn > 0)
+                    {
+                        turnBonusBlock = Mathf.FloorToInt(cardData.blockScalingPerTurn * currentTurn);
+                        Debug.Log($"Block Scaling (Turn): Base={baseBlock}, Scale/Turn={cardData.blockScalingPerTurn}, Turn={currentTurn}, Bonus={turnBonusBlock}");
+                    }
+                    // Calculate Play Scaling Bonus
+                    if (cardData.blockScalingPerPlay > 0) 
+                    {
+                        playBonusBlock = Mathf.FloorToInt(cardData.blockScalingPerPlay * previousPlaysThisCombat);
+                        Debug.Log($"Block Scaling (Play): Base={baseBlock}, Scale/Play={cardData.blockScalingPerPlay}, PrevPlays={previousPlaysThisCombat}, Bonus={playBonusBlock}");
+                    }
+                    // Calculate Copy Scaling Bonus
+                    if (cardData.blockScalingPerCopy > 0)
+                    {
+                        copyBonusBlock = Mathf.FloorToInt(cardData.blockScalingPerCopy * totalCopies);
+                        Debug.Log($"Block Scaling (Copy): Base={baseBlock}, Scale/Copy={cardData.blockScalingPerCopy}, Copies={totalCopies}, Bonus={copyBonusBlock}");
+                    }
+                    int totalBlockBeforeEnhancements = baseBlock + turnBonusBlock + playBonusBlock + copyBonusBlock;
+                    float blockMultiplier = 1.0f;
+                    
+                    // Apply Low Health Multiplier
+                    if (isBelowHealthThreshold && cardData.blockMultiplierBelowThreshold > 1.0f) {
+                        blockMultiplier *= cardData.blockMultiplierBelowThreshold;
+                        Debug.Log($"Applying low health block multiplier: {cardData.blockMultiplierBelowThreshold}x");
+                    }
+                    
+                    int totalBlock = Mathf.FloorToInt(totalBlockBeforeEnhancements * blockMultiplier);
+                    
+                    if (totalBlock > 0) 
+                    {
+                        playerManager.AddBlockToOpponentPet(totalBlock);
+                        Debug.Log($"Applied {totalBlock} block to Opponent Pet. (Base: {baseBlock}, TurnB: {turnBonusBlock}, PlayB: {playBonusBlock}, CopyB: {copyBonusBlock}, Multiplier: {blockMultiplier:F2}). Est. Block: {playerManager.GetOpponentPetBlock()}");
+                    }
                 }
-                // --- END ADDED ---
                 
                 // Healing & Temp Max HP for Enemy Pet
                 if (cardData.healingAmount > 0)
@@ -49,15 +157,32 @@ public class CardEffectService
                 }
                 
                 // Apply Status Effect to Enemy Pet
-                if (cardData.statusToApply != StatusEffectType.None && cardData.statusDuration > 0)
+                if (cardData.statusToApply != StatusEffectType.None)
                 {
-                    playerManager.ApplyStatusEffectOpponentPet(cardData.statusToApply, cardData.statusDuration);
+                    int valueToApply = 0;
+                    switch (cardData.statusToApply) {
+                        case StatusEffectType.Thorns: valueToApply = cardData.thornsAmount; break;
+                        case StatusEffectType.Strength: valueToApply = cardData.strengthAmount; break;
+                        default: valueToApply = cardData.statusDuration; break; // Weak, Break use duration
+                    }
+
+                    if (valueToApply > 0) {
+                        playerManager.ApplyStatusEffectOpponentPet(cardData.statusToApply, valueToApply);
+                    } else {
+                         Debug.LogWarning($"Card {cardData.cardName} has {cardData.statusToApply} status but its corresponding amount (thornsAmount/strengthAmount/statusDuration) is 0.");
+                    }
                 }
                 
                 // Apply DoT to Enemy Pet
                 if (cardData.dotDamageAmount > 0 && cardData.dotDuration > 0)
                 {
                     playerManager.ApplyDotOpponentPet(cardData.dotDamageAmount, cardData.dotDuration);
+                }
+                
+                // Apply HoT to Enemy Pet
+                if (cardData.hotAmount > 0 && cardData.hotDuration > 0)
+                {
+                    playerManager.ApplyHotOpponentPet(cardData.hotAmount, cardData.hotDuration);
                 }
                 
                 // --- MOVED/ADDED: Apply Energy Gain to Enemy Pet ---
@@ -71,22 +196,103 @@ public class CardEffectService
                 break;
                 
             case CardDropZone.TargetType.PlayerSelf:
-                if (cardData.damage > 0)
+                // --- Damage Processing ---
+                if (cardData.damage > 0 || cardData.damageScalingPerTurn > 0 || cardData.damageScalingPerPlay > 0 || cardData.damageScalingPerCopy > 0)
                 {
+                    int baseDamage = cardData.damage;
+                    int turnBonusDamage = 0;
+                    int playBonusDamage = 0;
+                    int copyBonusDamage = 0;
+                    
+                    if (cardData.damageScalingPerTurn > 0) 
+                    {
+                        turnBonusDamage = Mathf.FloorToInt(cardData.damageScalingPerTurn * currentTurn);
+                        Debug.Log($"Self-Damage Scaling (Turn): Base={baseDamage}, Scale/Turn={cardData.damageScalingPerTurn}, Turn={currentTurn}, Bonus={turnBonusDamage}");
+                    }
+                    if (cardData.damageScalingPerPlay > 0) 
+                    {
+                        playBonusDamage = Mathf.FloorToInt(cardData.damageScalingPerPlay * previousPlaysThisCombat);
+                        Debug.Log($"Self-Damage Scaling (Play): Base={baseDamage}, Scale/Play={cardData.damageScalingPerPlay}, PrevPlays={previousPlaysThisCombat}, Bonus={playBonusDamage}");
+                    }
+                    if (cardData.damageScalingPerCopy > 0)
+                    {
+                        copyBonusDamage = Mathf.FloorToInt(cardData.damageScalingPerCopy * totalCopies);
+                         Debug.Log($"Self-Damage Scaling (Copy): Base={baseDamage}, Scale/Copy={cardData.damageScalingPerCopy}, Copies={totalCopies}, Bonus={copyBonusDamage}");
+                    }
+                    int totalDamageBeforeEnhancements = baseDamage + turnBonusDamage + playBonusDamage + copyBonusDamage;
+                    float damageMultiplier = 1.0f;
+                    
+                    // Apply Low Health Multiplier
+                    if (isBelowHealthThreshold && cardData.damageMultiplierBelowThreshold > 1.0f) {
+                        damageMultiplier *= cardData.damageMultiplierBelowThreshold;
+                        Debug.Log($"Applying low health self-damage multiplier: {cardData.damageMultiplierBelowThreshold}x");
+                    }
+                    
+                    int damageAfterMultipliers = Mathf.FloorToInt(totalDamageBeforeEnhancements * damageMultiplier);
+                    
+                    // Apply Player Strength Bonus
+                    int strengthBonus = playerManager.GetPlayerStrength();
+                    if (strengthBonus != 0) {
+                        damageAfterMultipliers += strengthBonus;
+                        Debug.Log($"Applying Player Strength Bonus to Self-Damage: +{strengthBonus}");
+                    }
+                    
+                    int totalDamageBeforeWeak = damageAfterMultipliers;
+                    int actualDamage = totalDamageBeforeWeak;
+                    
                     // Check Attacker (Player) Weakness
-                    int actualDamage = cardData.damage;
                     if (playerManager.IsPlayerWeak()) {
                         int reduction = Mathf.FloorToInt(actualDamage * 0.5f);
                         actualDamage = Mathf.Max(0, actualDamage - reduction);
-                        Debug.Log($"Player is Weak! Reducing self-damage from {cardData.damage} to {actualDamage} (-50%)");
+                        Debug.Log($"Player is Weak! Reducing self-damage from {totalDamageBeforeWeak} to {actualDamage} (-50%)");
                     }
-                    playerManager.DamageLocalPlayer(actualDamage);
-                    Debug.Log($"Dealt {actualDamage} damage to PlayerSelf. New health: {playerManager.GetLocalPlayerHealth()}, Block: {playerManager.GetLocalPlayerBlock()}");
+
+                    if (actualDamage > 0)
+                    {
+                        playerManager.DamageLocalPlayer(actualDamage);
+                        Debug.Log($"Dealt {actualDamage} damage to PlayerSelf. (Base: {baseDamage}, TurnB: {turnBonusDamage}, PlayB: {playBonusDamage}, CopyB: {copyBonusDamage}, StrB: {strengthBonus}, Multiplier: {damageMultiplier:F2}). New health: {playerManager.GetLocalPlayerHealth()}, Block: {playerManager.GetLocalPlayerBlock()}");
+                    }
                 }
                 
-                if (cardData.block > 0)
+                // --- Block Processing ---
+                if (cardData.block > 0 || cardData.blockScalingPerTurn > 0 || cardData.blockScalingPerPlay > 0 || cardData.blockScalingPerCopy > 0)
                 {
-                    playerManager.AddBlockToLocalPlayer(cardData.block);
+                    int baseBlock = cardData.block;
+                    int turnBonusBlock = 0;
+                    int playBonusBlock = 0;
+                    int copyBonusBlock = 0;
+                    
+                    if (cardData.blockScalingPerTurn > 0)
+                    {
+                        turnBonusBlock = Mathf.FloorToInt(cardData.blockScalingPerTurn * currentTurn);
+                         Debug.Log($"Block Scaling (Turn): Base={baseBlock}, Scale/Turn={cardData.blockScalingPerTurn}, Turn={currentTurn}, Bonus={turnBonusBlock}");
+                    }
+                     if (cardData.blockScalingPerPlay > 0) 
+                    {
+                        playBonusBlock = Mathf.FloorToInt(cardData.blockScalingPerPlay * previousPlaysThisCombat);
+                        Debug.Log($"Block Scaling (Play): Base={baseBlock}, Scale/Play={cardData.blockScalingPerPlay}, PrevPlays={previousPlaysThisCombat}, Bonus={playBonusBlock}");
+                    }
+                    if (cardData.blockScalingPerCopy > 0)
+                    {
+                         copyBonusBlock = Mathf.FloorToInt(cardData.blockScalingPerCopy * totalCopies);
+                         Debug.Log($"Block Scaling (Copy): Base={baseBlock}, Scale/Copy={cardData.blockScalingPerCopy}, Copies={totalCopies}, Bonus={copyBonusBlock}");
+                    }
+                    int totalBlockBeforeEnhancements = baseBlock + turnBonusBlock + playBonusBlock + copyBonusBlock;
+                    float blockMultiplier = 1.0f;
+                    
+                    // Apply Low Health Multiplier
+                    if (isBelowHealthThreshold && cardData.blockMultiplierBelowThreshold > 1.0f) {
+                        blockMultiplier *= cardData.blockMultiplierBelowThreshold;
+                        Debug.Log($"Applying low health block multiplier: {cardData.blockMultiplierBelowThreshold}x");
+                    }
+                    
+                    int totalBlock = Mathf.FloorToInt(totalBlockBeforeEnhancements * blockMultiplier);
+                    
+                    if (totalBlock > 0)
+                    {
+                        playerManager.AddBlockToLocalPlayer(totalBlock);
+                         Debug.Log($"Applied {totalBlock} block to PlayerSelf. (Base: {baseBlock}, TurnB: {turnBonusBlock}, PlayB: {playBonusBlock}, CopyB: {copyBonusBlock}, Multiplier: {blockMultiplier:F2}).");
+                    }
                 }
                 
                 // Healing & Temp Max HP for Player
@@ -96,15 +302,32 @@ public class CardEffectService
                 }
                 
                 // Apply Status Effect to Player
-                if (cardData.statusToApply != StatusEffectType.None && cardData.statusDuration > 0)
+                if (cardData.statusToApply != StatusEffectType.None)
                 {
-                    playerManager.ApplyStatusEffectLocalPlayer(cardData.statusToApply, cardData.statusDuration);
+                    int valueToApply = 0;
+                    switch (cardData.statusToApply) {
+                        case StatusEffectType.Thorns: valueToApply = cardData.thornsAmount; break;
+                        case StatusEffectType.Strength: valueToApply = cardData.strengthAmount; break;
+                        default: valueToApply = cardData.statusDuration; break; // Weak, Break use duration
+                    }
+
+                    if (valueToApply > 0) {
+                        playerManager.ApplyStatusEffectLocalPlayer(cardData.statusToApply, valueToApply);
+                    } else {
+                         Debug.LogWarning($"Card {cardData.cardName} has {cardData.statusToApply} status but its corresponding amount (thornsAmount/strengthAmount/statusDuration) is 0.");
+                    }
                 }
                 
                 // Apply DoT to Player
                 if (cardData.dotDamageAmount > 0 && cardData.dotDuration > 0)
                 {
                     playerManager.ApplyDotLocalPlayer(cardData.dotDamageAmount, cardData.dotDuration);
+                }
+                
+                // Apply HoT to Player
+                if (cardData.hotAmount > 0 && cardData.hotDuration > 0)
+                {
+                    playerManager.ApplyHotLocalPlayer(cardData.hotAmount, cardData.hotDuration);
                 }
                 
                 // --- MOVED: Apply Energy Gain to Player ---
@@ -116,35 +339,116 @@ public class CardEffectService
                 break;
                 
             case CardDropZone.TargetType.OwnPet:
-                if (cardData.damage > 0)
+                // --- Damage Processing ---
+                if (cardData.damage > 0 || cardData.damageScalingPerTurn > 0 || cardData.damageScalingPerPlay > 0 || cardData.damageScalingPerCopy > 0)
                 {
+                    int baseDamage = cardData.damage;
+                    int turnBonusDamage = 0;
+                    int playBonusDamage = 0;
+                    int copyBonusDamage = 0;
+                    
+                    if (cardData.damageScalingPerTurn > 0) 
+                    {
+                        turnBonusDamage = Mathf.FloorToInt(cardData.damageScalingPerTurn * currentTurn);
+                        Debug.Log($"Pet Damage Scaling (Turn): Base={baseDamage}, Scale/Turn={cardData.damageScalingPerTurn}, Turn={currentTurn}, Bonus={turnBonusDamage}");
+                    }
+                     if (cardData.damageScalingPerPlay > 0) 
+                    {
+                        playBonusDamage = Mathf.FloorToInt(cardData.damageScalingPerPlay * previousPlaysThisCombat);
+                        Debug.Log($"Pet Damage Scaling (Play): Base={baseDamage}, Scale/Play={cardData.damageScalingPerPlay}, PrevPlays={previousPlaysThisCombat}, Bonus={playBonusDamage}");
+                    }
+                    if (cardData.damageScalingPerCopy > 0)
+                    {
+                         copyBonusDamage = Mathf.FloorToInt(cardData.damageScalingPerCopy * totalCopies);
+                         Debug.Log($"Pet Damage Scaling (Copy): Base={baseDamage}, Scale/Copy={cardData.damageScalingPerCopy}, Copies={totalCopies}, Bonus={copyBonusDamage}");
+                    }
+                    int totalDamageBeforeEnhancements = baseDamage + turnBonusDamage + playBonusDamage + copyBonusDamage;
+                    float damageMultiplier = 1.0f;
+                    
+                    // Apply Low Health Multiplier
+                    if (isBelowHealthThreshold && cardData.damageMultiplierBelowThreshold > 1.0f) {
+                        damageMultiplier *= cardData.damageMultiplierBelowThreshold;
+                        Debug.Log($"Applying low health pet damage multiplier: {cardData.damageMultiplierBelowThreshold}x");
+                    }
+                    
+                    int damageAfterMultipliers = Mathf.FloorToInt(totalDamageBeforeEnhancements * damageMultiplier);
+                    
+                    // Apply Player Strength Bonus
+                    int strengthBonus = playerManager.GetPlayerStrength();
+                    if (strengthBonus != 0) {
+                        damageAfterMultipliers += strengthBonus;
+                        Debug.Log($"Applying Player Strength Bonus to Pet Damage: +{strengthBonus}");
+                    }
+                    
+                    int totalDamageBeforeWeak = damageAfterMultipliers;
+                    int actualDamage = totalDamageBeforeWeak;
+                    
                     // Check Attacker (Player) Weakness
-                    int actualDamage = cardData.damage;
                     if (playerManager.IsPlayerWeak()) {
                         int reduction = Mathf.FloorToInt(actualDamage * 0.5f);
                         actualDamage = Mathf.Max(0, actualDamage - reduction);
-                        Debug.Log($"Player is Weak! Reducing pet damage from {cardData.damage} to {actualDamage} (-50%)");
+                        Debug.Log($"Player is Weak! Reducing pet damage from {totalDamageBeforeWeak} to {actualDamage} (-50%)");
                     }
-                    playerManager.DamageLocalPet(actualDamage);
-                    Debug.Log($"Dealt {actualDamage} damage to OwnPet. New health: {playerManager.GetLocalPetHealth()}, Block: {playerManager.GetLocalPetBlock()}");
+                    
+                    if (actualDamage > 0)
+                    {
+                        playerManager.DamageLocalPet(actualDamage);
+                        Debug.Log($"Dealt {actualDamage} damage to OwnPet. (Base: {baseDamage}, TurnB: {turnBonusDamage}, PlayB: {playBonusDamage}, CopyB: {copyBonusDamage}, StrB: {strengthBonus}, Multiplier: {damageMultiplier:F2}). New health: {playerManager.GetLocalPetHealth()}, Block: {playerManager.GetLocalPetBlock()}");
 
-                    // --- ADDED: Notify opponent about this damage ---
-                    Photon.Realtime.Player opponentPlayer = gameManager.GetPlayerManager().GetOpponentPlayer();
-                    if (opponentPlayer != null)
-                    {
-                        Debug.Log($"Sending RpcOpponentPetTookDamage({actualDamage}) to opponent {opponentPlayer.NickName} because local pet took damage from card effect.");
-                        gameManager.GetPhotonView().RPC("RpcOpponentPetTookDamage", opponentPlayer, actualDamage);
+                        // --- ADDED: Notify opponent about this damage ---
+                        Photon.Realtime.Player opponentPlayer = gameManager.GetPlayerManager().GetOpponentPlayer();
+                        if (opponentPlayer != null)
+                        {
+                            Debug.Log($"Sending RpcOpponentPetTookDamage({actualDamage}) to opponent {opponentPlayer.NickName} because local pet took damage from card effect.");
+                            gameManager.GetPhotonView().RPC("RpcOpponentPetTookDamage", opponentPlayer, actualDamage);
+                        }
+                        else
+                        {
+                             Debug.LogWarning("CardEffectService (OwnPet): Could not find opponent player to notify about pet damage.");
+                        }
+                        // --- END ADDED ---
                     }
-                    else
-                    {
-                         Debug.LogWarning("CardEffectService (OwnPet): Could not find opponent player to notify about pet damage.");
-                    }
-                    // --- END ADDED ---
                 }
                 
-                if (cardData.block > 0)
+                // --- Block Processing ---
+                if (cardData.block > 0 || cardData.blockScalingPerTurn > 0 || cardData.blockScalingPerPlay > 0 || cardData.blockScalingPerCopy > 0)
                 {
-                    playerManager.AddBlockToLocalPet(cardData.block);
+                    int baseBlock = cardData.block;
+                    int turnBonusBlock = 0;
+                    int playBonusBlock = 0;
+                    int copyBonusBlock = 0;
+                    
+                    if (cardData.blockScalingPerTurn > 0)
+                    {
+                        turnBonusBlock = Mathf.FloorToInt(cardData.blockScalingPerTurn * currentTurn);
+                        Debug.Log($"Pet Block Scaling (Turn): Base={baseBlock}, Scale/Turn={cardData.blockScalingPerTurn}, Turn={currentTurn}, Bonus={turnBonusBlock}");
+                    }
+                     if (cardData.blockScalingPerPlay > 0) 
+                    {
+                        playBonusBlock = Mathf.FloorToInt(cardData.blockScalingPerPlay * previousPlaysThisCombat);
+                        Debug.Log($"Pet Block Scaling (Play): Base={baseBlock}, Scale/Play={cardData.blockScalingPerPlay}, PrevPlays={previousPlaysThisCombat}, Bonus={playBonusBlock}");
+                    }
+                    if (cardData.blockScalingPerCopy > 0)
+                    {
+                        copyBonusBlock = Mathf.FloorToInt(cardData.blockScalingPerCopy * totalCopies);
+                        Debug.Log($"Pet Block Scaling (Copy): Base={baseBlock}, Scale/Copy={cardData.blockScalingPerCopy}, Copies={totalCopies}, Bonus={copyBonusBlock}");
+                    }
+                    int totalBlockBeforeEnhancements = baseBlock + turnBonusBlock + playBonusBlock + copyBonusBlock;
+                    float blockMultiplier = 1.0f;
+                    
+                    // Apply Low Health Multiplier
+                    if (isBelowHealthThreshold && cardData.blockMultiplierBelowThreshold > 1.0f) {
+                        blockMultiplier *= cardData.blockMultiplierBelowThreshold;
+                         Debug.Log($"Applying low health pet block multiplier: {cardData.blockMultiplierBelowThreshold}x");
+                    }
+                    
+                    int totalBlock = Mathf.FloorToInt(totalBlockBeforeEnhancements * blockMultiplier);
+                    
+                    if (totalBlock > 0)
+                    {
+                        playerManager.AddBlockToLocalPet(totalBlock);
+                        Debug.Log($"Applied {totalBlock} block to OwnPet. (Base: {baseBlock}, TurnB: {turnBonusBlock}, PlayB: {playBonusBlock}, CopyB: {copyBonusBlock}, Multiplier: {blockMultiplier:F2}).");
+                    }
                 }
                 
                 // Healing & Temp Max HP for Own Pet
@@ -154,15 +458,32 @@ public class CardEffectService
                 }
                 
                 // Apply Status Effect to Own Pet
-                if (cardData.statusToApply != StatusEffectType.None && cardData.statusDuration > 0)
+                if (cardData.statusToApply != StatusEffectType.None)
                 {
-                    playerManager.ApplyStatusEffectLocalPet(cardData.statusToApply, cardData.statusDuration);
+                     int valueToApply = 0;
+                    switch (cardData.statusToApply) {
+                        case StatusEffectType.Thorns: valueToApply = cardData.thornsAmount; break;
+                        case StatusEffectType.Strength: valueToApply = cardData.strengthAmount; break;
+                        default: valueToApply = cardData.statusDuration; break; // Weak, Break use duration
+                    }
+
+                    if (valueToApply > 0) {
+                        playerManager.ApplyStatusEffectLocalPet(cardData.statusToApply, valueToApply);
+                    } else {
+                         Debug.LogWarning($"Card {cardData.cardName} has {cardData.statusToApply} status but its corresponding amount (thornsAmount/strengthAmount/statusDuration) is 0.");
+                    }
                 }
                 
                 // Apply DoT to Own Pet
                 if (cardData.dotDamageAmount > 0 && cardData.dotDuration > 0)
                 {
                     playerManager.ApplyDotLocalPet(cardData.dotDamageAmount, cardData.dotDuration);
+                }
+                
+                // Apply HoT to Own Pet
+                if (cardData.hotAmount > 0 && cardData.hotDuration > 0)
+                {
+                    playerManager.ApplyHotLocalPet(cardData.hotAmount, cardData.hotDuration);
                 }
 
                 // --- ADDED: Apply Energy Gain to Own Pet --- 
@@ -274,10 +595,18 @@ public class CardEffectService
         // --- Apply Direct Damage ---
         if (cardToPlay.damage > 0)
         {
-            int actualDamage = cardToPlay.damage;
+            int baseDamage = cardToPlay.damage;
+            // --- ADDED: Apply Opponent Pet Strength Bonus --- 
+            int strengthBonus = playerManager.GetOpponentPetStrength();
+            if (strengthBonus != 0) {
+                baseDamage += strengthBonus;
+                 Debug.Log($"Applying Opponent Pet Strength Bonus: +{strengthBonus}");
+            }
+            // --- END ADDED ---
+            int actualDamage = baseDamage;
+            
             // Check Attacker (Pet) Weakness
-            if (playerManager.IsOpponentPetWeak()) 
-            { 
+            if (playerManager.IsOpponentPetWeak()) { 
                  int reduction = Mathf.FloorToInt(actualDamage * 0.5f);
                  actualDamage = Mathf.Max(0, actualDamage - reduction);
                  Debug.Log($"Opponent Pet is Weak! Reducing damage from {cardToPlay.damage} to {actualDamage} (-50%)");
@@ -286,12 +615,12 @@ public class CardEffectService
             if (target == OpponentPetTargetType.Player) 
             {
                 playerManager.DamageLocalPlayer(actualDamage);
-                Debug.Log($"Opponent Pet dealt {actualDamage} damage to Player. Player Health: {playerManager.GetLocalPlayerHealth()}, Block: {playerManager.GetLocalPlayerBlock()}");
+                Debug.Log($"Opponent Pet dealt {actualDamage} damage to Player. (Base: {cardToPlay.damage}, StrB: {strengthBonus}). Player Health: {playerManager.GetLocalPlayerHealth()}, Block: {playerManager.GetLocalPlayerBlock()}");
             }
             else if (target == OpponentPetTargetType.Self)
             {
                 playerManager.DamageOpponentPet(actualDamage); // Call the standard method
-                Debug.Log($"Opponent Pet dealt {actualDamage} damage to ITSELF. Pet Health: {playerManager.GetOpponentPetHealth()}, Block: {playerManager.GetOpponentPetBlock()}");
+                Debug.Log($"Opponent Pet dealt {actualDamage} damage to ITSELF. (Base: {cardToPlay.damage}, StrB: {strengthBonus}). Pet Health: {playerManager.GetOpponentPetHealth()}, Block: {playerManager.GetOpponentPetBlock()}");
             }
         }
         
@@ -326,17 +655,24 @@ public class CardEffectService
         }
         
         // --- Apply Status Effect ---
-        if (cardToPlay.statusToApply != StatusEffectType.None && cardToPlay.statusDuration > 0)
+        if (cardToPlay.statusToApply != StatusEffectType.None)
         { 
-            if (target == OpponentPetTargetType.Player)
-            {
-                playerManager.ApplyStatusEffectLocalPlayer(cardToPlay.statusToApply, cardToPlay.statusDuration);
-                Debug.Log($"Opponent Pet applied {cardToPlay.statusToApply} ({cardToPlay.statusDuration}t) to Player.");
+            int valueToApply = 0;
+            switch (cardToPlay.statusToApply) {
+                case StatusEffectType.Thorns: valueToApply = cardToPlay.thornsAmount; break;
+                case StatusEffectType.Strength: valueToApply = cardToPlay.strengthAmount; break;
+                default: valueToApply = cardToPlay.statusDuration; break; // Weak, Break use duration
             }
-            else if (target == OpponentPetTargetType.Self)
-            {
-                 playerManager.ApplyStatusEffectOpponentPet(cardToPlay.statusToApply, cardToPlay.statusDuration);
-                 Debug.Log($"Opponent Pet applied {cardToPlay.statusToApply} ({cardToPlay.statusDuration}t) to ITSELF.");
+
+            if (valueToApply > 0) {
+                if (target == OpponentPetTargetType.Player) {
+                    playerManager.ApplyStatusEffectLocalPlayer(cardToPlay.statusToApply, valueToApply);
+                    Debug.Log($"Opponent Pet applied {cardToPlay.statusToApply} ({valueToApply}) to Player.");
+                }
+                else if (target == OpponentPetTargetType.Self) {
+                     playerManager.ApplyStatusEffectOpponentPet(cardToPlay.statusToApply, valueToApply);
+                     Debug.Log($"Opponent Pet applied {cardToPlay.statusToApply} ({valueToApply}) to ITSELF.");
+                }
             }
         }
         
@@ -352,6 +688,21 @@ public class CardEffectService
             {
                 playerManager.ApplyDotOpponentPet(cardToPlay.dotDamageAmount, cardToPlay.dotDuration); // Call the standard method
                 Debug.Log($"Opponent Pet applied DoT ({cardToPlay.dotDamageAmount}dmg/{cardToPlay.dotDuration}t) to ITSELF.");
+            }
+        }
+        
+        // --- Apply HoT ---
+        if (cardToPlay.hotAmount > 0 && cardToPlay.hotDuration > 0)
+        { 
+            if (target == OpponentPetTargetType.Player)
+            {
+                playerManager.ApplyHotLocalPlayer(cardToPlay.hotAmount, cardToPlay.hotDuration);
+                Debug.Log($"Opponent Pet applied HoT ({cardToPlay.hotAmount}heal/{cardToPlay.hotDuration}t) to Player.");
+            }
+            else if (target == OpponentPetTargetType.Self)
+            {
+                playerManager.ApplyHotOpponentPet(cardToPlay.hotAmount, cardToPlay.hotDuration); 
+                Debug.Log($"Opponent Pet applied HoT ({cardToPlay.hotAmount}heal/{cardToPlay.hotDuration}t) to ITSELF.");
             }
         }
         

@@ -19,12 +19,26 @@ public class CombatStateManager
     public const string PLAYER_BASE_PET_HP_PROP = "BasePetHP";
     public const string COMBAT_PAIRINGS_PROP = "CombatPairings";
     // --- ADDED: Constants for Other Fights UI ---
-    public const string PLAYER_COMBAT_OPP_PET_HP_PROP = "OppPetHP";
-    public const string PLAYER_COMBAT_TURN_PROP = "CombatTurn";
+    public const string PLAYER_COMBAT_OPP_PET_HP_PROP = "combatOppPetHP";
+    public const string PLAYER_COMBAT_TURN_PROP = "combatTurn";
     // --- ADDED: Constant for Player Health in Combat ---
-    public const string PLAYER_COMBAT_PLAYER_HP_PROP = "PlayerHP";
+    public const string PLAYER_COMBAT_PLAYER_HP_PROP = "combatPlayerHP";
     // --- ADDED: Constant for Pet Energy in Combat ---
     public const string PLAYER_COMBAT_PET_ENERGY_PROP = "PetEnergy";
+    // --- END ADDED ---
+    
+    // --- ADDED: Player Stat Sync Properties ---
+    public const string PLAYER_COMBAT_PLAYER_BLOCK_PROP = "combatPlayerBlock";
+    public const string PLAYER_COMBAT_ENERGY_PROP = "combatEnergy";
+    public const string PLAYER_COMBAT_PLAYER_WEAK_PROP = "combatPlayerWeak";
+    public const string PLAYER_COMBAT_PLAYER_BREAK_PROP = "combatPlayerBreak";
+    public const string PLAYER_COMBAT_PLAYER_THORNS_PROP = "combatPlayerThorns";
+    public const string PLAYER_COMBAT_PLAYER_STRENGTH_PROP = "combatPlayerStrength";
+    public const string PLAYER_COMBAT_PLAYER_DOT_TURNS_PROP = "combatPlayerDotTurns";
+    public const string PLAYER_COMBAT_PLAYER_DOT_DMG_PROP = "combatPlayerDotDmg";
+    public const string PLAYER_COMBAT_PLAYER_HOT_TURNS_PROP = "combatPlayerHotTurns";
+    public const string PLAYER_COMBAT_PLAYER_HOT_AMT_PROP = "combatPlayerHotAmt";
+    public const string PLAYER_COMBAT_PLAYER_CRIT_PROP = "combatPlayerCrit"; // Stores total effective crit %
     // --- END ADDED ---
     
     public CombatStateManager(GameManager gameManager)

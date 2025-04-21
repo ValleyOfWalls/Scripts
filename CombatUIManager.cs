@@ -37,6 +37,18 @@ public class CombatUIManager
     private HandPanelHoverManager handPanelHoverManager;
     private GameObject opponentPetHandPanel;
     
+    // --- ADDED: HoT UI Fields ---
+    private TextMeshProUGUI playerHotText;
+    private TextMeshProUGUI ownPetHotText;
+    private TextMeshProUGUI opponentPetHotText;
+    // --- END ADDED ---
+    
+    // --- ADDED: Strength UI Fields ---
+    private TextMeshProUGUI playerStrengthText;
+    private TextMeshProUGUI ownPetStrengthText;
+    private TextMeshProUGUI opponentPetStrengthText;
+    // --- END ADDED ---
+    
     // Other Fights UI
     private GameObject othersStatusArea;
     private TextMeshProUGUI otherPlayerStatusTemplate;
@@ -74,9 +86,10 @@ public class CombatUIManager
         opponentPetBlockText = opponentArea?.Find("OpponentPetBlockText")?.GetComponent<TextMeshProUGUI>();
         opponentPetIntentText = opponentArea?.Find("OpponentPetIntentText")?.GetComponent<TextMeshProUGUI>();
         opponentPetDotText = opponentArea?.Find("OpponentPetDotText")?.GetComponent<TextMeshProUGUI>();
+        opponentPetHotText = opponentArea?.Find("OpponentPetHotText")?.GetComponent<TextMeshProUGUI>();
+        opponentPetStrengthText = opponentArea?.Find("OpponentPetStrengthText")?.GetComponent<TextMeshProUGUI>();
         
         // --- ADDED: Find Opponent Pet Hand Panel ---
-        // Assuming it's also under TopArea for layout purposes
         opponentPetHandPanel = topArea.Find("OpponentPetAreaContainer/OpponentPetHandPanel")?.gameObject;
         if (opponentPetHandPanel == null) 
         {
@@ -98,6 +111,8 @@ public class CombatUIManager
         ownPetHealthText = ownPetArea?.Find("OwnPetHealthText")?.GetComponent<TextMeshProUGUI>();
         ownPetBlockText = ownPetArea?.Find("OwnPetBlockText")?.GetComponent<TextMeshProUGUI>();
         ownPetDotText = ownPetArea?.Find("OwnPetDotText")?.GetComponent<TextMeshProUGUI>();
+        ownPetHotText = ownPetArea?.Find("OwnPetHotText")?.GetComponent<TextMeshProUGUI>();
+        ownPetStrengthText = ownPetArea?.Find("OwnPetStrengthText")?.GetComponent<TextMeshProUGUI>();
         
         // Find Other Fights UI Elements
         Transform othersStatusAreaTransform = topArea.Find("OthersStatusArea");
@@ -136,6 +151,8 @@ public class CombatUIManager
         energyText = statsRow?.Find("EnergyText")?.GetComponent<TextMeshProUGUI>();
         playerDotText = statsRow?.Find("PlayerDotText")?.GetComponent<TextMeshProUGUI>();
         comboCountText = statsRow?.Find("ComboCountText")?.GetComponent<TextMeshProUGUI>();
+        playerHotText = statsRow?.Find("PlayerHotText")?.GetComponent<TextMeshProUGUI>();
+        playerStrengthText = statsRow?.Find("PlayerStrengthText")?.GetComponent<TextMeshProUGUI>();
         
         Transform handPanelTransform = playerArea.Find("PlayerHandPanel");
         playerHandPanel = handPanelTransform?.gameObject;
@@ -337,6 +354,23 @@ public class CombatUIManager
             playerDotText.gameObject.SetActive(dotTurns > 0);
         }
 
+        // Player HoT
+        if (playerHotText != null)
+        {
+            int hotTurns = playerManager.GetPlayerHotTurns();
+            int hotHeal = playerManager.GetPlayerHotAmount();
+            playerHotText.text = (hotTurns > 0) ? $"Regen: {hotHeal} ({hotTurns}t)" : "";
+            playerHotText.gameObject.SetActive(hotTurns > 0);
+        }
+
+        // Player Strength
+        if (playerStrengthText != null)
+        {
+            int strength = playerManager.GetPlayerStrength();
+            playerStrengthText.text = (strength != 0) ? $"Strength: {strength:+0;-#}" : ""; // Format to show +/- sign
+            playerStrengthText.gameObject.SetActive(strength != 0);
+        }
+
         // Combo Count
         if (comboCountText != null)
         {
@@ -354,6 +388,23 @@ public class CombatUIManager
             ownPetDotText.gameObject.SetActive(dotTurns > 0);
         }
 
+        // Own Pet HoT
+        if (ownPetHotText != null)
+        {
+            int hotTurns = playerManager.GetLocalPetHotTurns();
+            int hotHeal = playerManager.GetLocalPetHotAmount();
+            ownPetHotText.text = (hotTurns > 0) ? $"Regen: {hotHeal} ({hotTurns}t)" : "";
+            ownPetHotText.gameObject.SetActive(hotTurns > 0);
+        }
+
+        // Own Pet Strength
+        if (ownPetStrengthText != null)
+        {
+            int strength = playerManager.GetLocalPetStrength();
+            ownPetStrengthText.text = (strength != 0) ? $"Strength: {strength:+0;-#}" : "";
+            ownPetStrengthText.gameObject.SetActive(strength != 0);
+        }
+
         // Opponent Pet DoT
         if (opponentPetDotText != null)
         {
@@ -361,6 +412,23 @@ public class CombatUIManager
             int dotDmg = playerManager.GetOpponentPetDotDamage();
             opponentPetDotText.text = (dotTurns > 0) ? $"DoT: {dotDmg} ({dotTurns}t)" : "";
             opponentPetDotText.gameObject.SetActive(dotTurns > 0);
+        }
+
+        // Opponent Pet HoT
+        if (opponentPetHotText != null)
+        {
+            int hotTurns = playerManager.GetOpponentPetHotTurns();
+            int hotHeal = playerManager.GetOpponentPetHotAmount();
+            opponentPetHotText.text = (hotTurns > 0) ? $"Regen: {hotHeal} ({hotTurns}t)" : "";
+            opponentPetHotText.gameObject.SetActive(hotTurns > 0);
+        }
+
+        // Opponent Pet Strength
+        if (opponentPetStrengthText != null)
+        {
+            int strength = playerManager.GetOpponentPetStrength();
+            opponentPetStrengthText.text = (strength != 0) ? $"Strength: {strength:+0;-#}" : "";
+            opponentPetStrengthText.gameObject.SetActive(strength != 0);
         }
     }
     

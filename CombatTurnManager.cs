@@ -10,6 +10,7 @@ public class CombatTurnManager
     private int startingPlayerEnergy;
     private int startingPetEnergy;
     private int currentTurnNumber = 0;
+    private int currentCombatTurn = 0;
     
     public CombatTurnManager(GameManager gameManager, CombatUIManager uiManager, int startingPlayerEnergy, int startingPetEnergy)
     {
@@ -24,6 +25,12 @@ public class CombatTurnManager
         Debug.Log("Starting Player Turn");
         PlayerManager playerManager = gameManager.GetPlayerManager();
 
+        // Initialize turn number if it's the first turn
+        if (currentCombatTurn == 0) 
+        {
+            currentCombatTurn = 1;
+        }
+        
         // Reset combo counter at the start of the turn
         playerManager.ResetComboCount();
 
@@ -83,6 +90,10 @@ public class CombatTurnManager
     {
         Debug.Log("Ending Player Turn");
         uiManager.SetEndTurnButtonInteractable(false); // Prevent double clicks
+
+        // --- INCREMENT COMBAT TURN --- 
+        currentCombatTurn++;
+        // --- END INCREMENT ---
 
         // Process End-of-Turn Hand Effects (Temp Upgrades, etc.)
         gameManager.GetCardManager().ProcessEndOfTurnHandEffects();
@@ -177,5 +188,10 @@ public class CombatTurnManager
     public int GetCurrentTurnNumber()
     {
         return currentTurnNumber;
+    }
+
+    public int GetCurrentCombatTurn()
+    {
+        return currentCombatTurn;
     }
 } 

@@ -25,6 +25,10 @@ public class CardManager
     private CardModificationService cardModificationService;
     private DraftService draftService;
     
+    // --- ADDED: Play Count Tracking ---
+    private Dictionary<CardData, int> cardPlayCountsThisCombat = new Dictionary<CardData, int>();
+    // --- END ADDED ---
+    
     // Constants (maintaining the original API for other classes)
     // Draft constants
     public const string DRAFT_PLAYER_QUEUES_PROP = "DraftQueues";
@@ -59,7 +63,16 @@ public class CardManager
     {
         deckManager.InitializeDecks();
         petDeckManager.ShuffleLocalPetDeck();
+        ResetCombatCardPlayCounts(); // Reset play counts when decks are initialized for combat
     }
+    
+    // --- ADDED: Reset Play Counts ---
+    public void ResetCombatCardPlayCounts()
+    {
+        cardPlayCountsThisCombat.Clear();
+        Debug.Log("Combat card play counts reset.");
+    }
+    // --- END ADDED ---
     
     public void DrawHand()
     {
@@ -150,13 +163,23 @@ public class CardManager
             playerManager.ConsumeEnergy(effectiveCost);
             Debug.Log($"Played card '{cardData.cardName}'. Energy remaining: {playerManager.GetCurrentEnergy()}");
             
+            // --- MODIFIED: Get play count BEFORE processing effects --- 
+            int previousPlays = GetCardPlayCountThisCombat(cardData);
+            // --- ADDED: Get copy count BEFORE processing effects ---
+            int totalCopies = GetTotalCardCopies(cardData);
+            
             // Apply card effects via CardEffectService
-            bool effectsProcessed = cardEffectService.ProcessCardEffect(cardData, targetType);
+            // --- MODIFIED: Pass totalCopies --- 
+            bool effectsProcessed = cardEffectService.ProcessCardEffect(cardData, targetType, previousPlays, totalCopies);
 
             // Update health/status UI AFTER effects are processed
             if (effectsProcessed)
             {
                 gameManager.UpdateHealthUI(); // This will also update status effects like combo
+                
+                // --- MODIFIED: Increment play count AFTER successful processing --- 
+                cardPlayCountsThisCombat[cardData] = previousPlays + 1;
+                Debug.Log($"Incremented play count for {cardData.cardName} to {previousPlays + 1}");
             }
             
             Debug.Log($"Successfully processed effects for card '{cardData.cardName}' on target '{targetType}'.");
@@ -168,6 +191,32 @@ public class CardManager
             return false;
         }
     }
+    
+    // --- ADDED: Get Play Count ---
+    public int GetCardPlayCountThisCombat(CardData cardData)
+    {
+        if (cardData == null) return 0;
+        return cardPlayCountsThisCombat.GetValueOrDefault(cardData, 0);
+    }
+    // --- END ADDED ---
+    
+    // --- ADDED: Get Total Card Copies ---
+    public int GetTotalCardCopies(CardData cardData)
+    {
+        if (cardData == null || string.IsNullOrEmpty(cardData.cardFamilyName))
+        {
+            Debug.LogWarning($"GetTotalCardCopies: Invalid CardData or missing cardFamilyName for '{cardData?.cardName}'. Returning 0.");
+            return 0;
+        }
+
+        string familyNameToCount = cardData.cardFamilyName;
+        List<CardData> allCards = deckManager.GetAllOwnedPlayerCards(); // Includes deck, hand, discard
+        int count = allCards.Count(card => card != null && card.cardFamilyName == familyNameToCount);
+        
+        // Debug.Log($"GetTotalCardCopies for family '{familyNameToCount}': Found {count} copies.");
+        return count;
+    }
+    // --- END ADDED ---
     
     public void ProcessOpponentPetCardEffect(CardData cardToPlay)
     {

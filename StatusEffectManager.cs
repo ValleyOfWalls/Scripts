@@ -2,20 +2,39 @@ using UnityEngine;
 using System.Collections.Generic;
 using Photon.Realtime;
 using Photon.Pun;
+using ExitGames.Client.Photon; // Added for Hashtable
+using System.Linq; // Added for ToList()
 
 public class StatusEffectManager
 {
     private GameManager gameManager;
     
-    // Status effect tracking
+    // Status effect tracking (Local Player)
     private int localPlayerWeakTurns = 0;
     private int localPlayerBreakTurns = 0;
+    private int localPlayerThorns = 0;
+    private int localPlayerStrength = 0;
+
+    // Status effect tracking (Local Pet)
     private int localPetWeakTurns = 0;
     private int localPetBreakTurns = 0;
+    private int localPetThorns = 0;
+    private int localPetStrength = 0;
+
+    // Status effect tracking (Opponent Pet - Local Sim)
     private int opponentPetWeakTurns = 0;
     private int opponentPetBreakTurns = 0;
+    private int opponentPetThorns = 0;
+    private int opponentPetStrength = 0;
     
-    // Combo tracking
+    // --- ADDED: Opponent Player Simulation Data ---
+    private int opponentPlayerWeakTurns = 0;
+    private int opponentPlayerBreakTurns = 0;
+    private int opponentPlayerThorns = 0;
+    private int opponentPlayerStrength = 0;
+    // --- END ADDED ---
+
+    // Combo tracking (Remains Local)
     private int currentComboCount = 0;
     
     public StatusEffectManager(GameManager gameManager)
@@ -32,9 +51,26 @@ public class StatusEffectManager
         localPetBreakTurns = 0;
         opponentPetWeakTurns = 0;
         opponentPetBreakTurns = 0;
+        localPlayerThorns = 0;
+        localPetThorns = 0;
+        opponentPetThorns = 0;
+        localPlayerStrength = 0;
+        localPetStrength = 0;
+        opponentPetStrength = 0;
+        
+        // --- ADDED: Reset Opponent Player Sim ---
+        opponentPlayerWeakTurns = 0;
+        opponentPlayerBreakTurns = 0;
+        opponentPlayerThorns = 0;
+        opponentPlayerStrength = 0;
+        // --- END ADDED ---
         
         // Reset combo
         currentComboCount = 0;
+
+        // --- ADDED: Set Initial Player Properties ---
+        UpdatePlayerStatusProperties();
+        // --- END ADDED ---
     }
     
     #region Status Effect Methods
@@ -42,17 +78,37 @@ public class StatusEffectManager
     public void ApplyStatusEffectLocalPlayer(StatusEffectType type, int duration)
     {
         if (duration <= 0) return;
+        bool changed = false;
         switch(type)
         {
             case StatusEffectType.Weak:
                 localPlayerWeakTurns += duration;
                 Debug.Log($"Applied Weak to Player for {duration} turns. Total: {localPlayerWeakTurns}");
+                changed = true;
                 break;
             case StatusEffectType.Break:
                 localPlayerBreakTurns += duration;
                 Debug.Log($"Applied Break to Player for {duration} turns. Total: {localPlayerBreakTurns}");
+                changed = true;
+                break;
+            case StatusEffectType.Thorns:
+                localPlayerThorns += duration; // Duration parameter used as amount for Thorns
+                Debug.Log($"Applied {duration} Thorns to Player. Total: {localPlayerThorns}");
+                changed = true;
+                break;
+            case StatusEffectType.Strength:
+                localPlayerStrength += duration; // Duration param used as amount
+                Debug.Log($"Applied {duration} Strength to Player. Total: {localPlayerStrength}");
+                changed = true;
                 break;
         }
+        
+        // --- ADDED: Update Property if changed ---
+        if (changed)
+        {
+            UpdatePlayerStatusProperties(type); // Update the specific status that changed
+        }
+        // --- END ADDED ---
     }
     
     public void ApplyStatusEffectLocalPet(StatusEffectType type, int duration)
@@ -68,7 +124,26 @@ public class StatusEffectManager
                 localPetBreakTurns += duration;
                 Debug.Log($"Applied Break to Local Pet for {duration} turns. Total: {localPetBreakTurns}");
                 break;
+            // --- ADDED: Handle Thorns --- 
+            case StatusEffectType.Thorns:
+                localPetThorns += duration; // Duration parameter used as amount for Thorns
+                Debug.Log($"Applied {duration} Thorns to Local Pet. Total: {localPetThorns}");
+                break;
+            // --- ADDED: Handle Strength --- 
+            case StatusEffectType.Strength:
+                localPetStrength += duration; // Duration param used as amount
+                Debug.Log($"Applied {duration} Strength to Local Pet. Total: {localPetStrength}");
+                break;
+            // --- END ADDED ---
         }
+
+        // --- ADDED: Notify others --- 
+        if (PhotonNetwork.InRoom)
+        {
+            // Send the type and the value (which is in the duration parameter for Thorns/Strength)
+            gameManager.GetPhotonView()?.RPC("RpcApplyStatusToMyPet", RpcTarget.Others, type, duration);
+        }
+        // --- END ADDED ---
     }
     
     public void ApplyStatusEffectOpponentPet(StatusEffectType type, int duration, bool originatedFromRPC = false)
@@ -84,13 +159,25 @@ public class StatusEffectManager
                 opponentPetBreakTurns += duration;
                 Debug.Log($"Applied Break to Opponent Pet for {duration} turns (local sim). Total: {opponentPetBreakTurns}");
                 break;
+            // --- ADDED: Handle Thorns --- 
+            case StatusEffectType.Thorns:
+                opponentPetThorns += duration; // Duration parameter used as amount for Thorns
+                Debug.Log($"Applied {duration} Thorns to Opponent Pet (local sim). Total: {opponentPetThorns}");
+                break;
+            // --- ADDED: Handle Strength --- 
+            case StatusEffectType.Strength:
+                opponentPetStrength += duration; // Duration param used as amount
+                Debug.Log($"Applied {duration} Strength to Opponent Pet (local sim). Total: {opponentPetStrength}");
+                break;
+            // --- END ADDED ---
         }
 
-        Debug.Log($"Applied Status {type} to Opponent Pet for {duration} turns (local sim)");
+        // --- MODIFIED: Log message to include Thorns --- 
+        Debug.Log($"Applied Status {type} (Value/Dur: {duration}) to Opponent Pet (local sim)");
 
         // Notify the actual owner
         Player opponentPlayer = gameManager.GetPlayerManager()?.GetOpponentPlayer();
-        if (PhotonNetwork.InRoom && opponentPlayer != null)
+        if (PhotonNetwork.InRoom && opponentPlayer != null && !originatedFromRPC) // Check originatedFromRPC
         {
             gameManager.GetPhotonView()?.RPC("RpcApplyStatusToMyPet", opponentPlayer, type, duration);
         }
@@ -102,23 +189,49 @@ public class StatusEffectManager
     
     public void DecrementPlayerStatusEffects()
     {
+        bool weakChanged = localPlayerWeakTurns > 0;
+        bool breakChanged = localPlayerBreakTurns > 0;
+        bool thornsChanged = localPlayerThorns > 0; // Thorns don't normally decrement, but Strength does
+        bool strengthChanged = localPlayerStrength > 0;
+
         if (localPlayerWeakTurns > 0) localPlayerWeakTurns--;
         if (localPlayerBreakTurns > 0) localPlayerBreakTurns--;
-        Debug.Log($"Decremented Player Status. Weak: {localPlayerWeakTurns}, Break: {localPlayerBreakTurns}");
+        // Thorns generally don't decay per turn unless specifically designed
+        // if (localPlayerThorns > 0) localPlayerThorns--; 
+        if (localPlayerStrength > 0) localPlayerStrength--; // Strength decays
+        
+        Debug.Log($"Decremented Player Status. Weak: {localPlayerWeakTurns}, Break: {localPlayerBreakTurns}, Thorns: {localPlayerThorns}, Strength: {localPlayerStrength}");
+
+        // --- ADDED: Update Properties if changed ---
+        List<string> propsToUpdate = new List<string>();
+        if (weakChanged) propsToUpdate.Add(CombatStateManager.PLAYER_COMBAT_PLAYER_WEAK_PROP);
+        if (breakChanged) propsToUpdate.Add(CombatStateManager.PLAYER_COMBAT_PLAYER_BREAK_PROP);
+        // if (thornsChanged) propsToUpdate.Add(CombatStateManager.PLAYER_COMBAT_PLAYER_THORNS_PROP); // Only if thorns decay
+        if (strengthChanged) propsToUpdate.Add(CombatStateManager.PLAYER_COMBAT_PLAYER_STRENGTH_PROP);
+
+        if (propsToUpdate.Count > 0)
+        {
+            UpdatePlayerStatusProperties(type: null, propertyKeysToUpdate: propsToUpdate.ToArray());
+        }
+        // --- END ADDED ---
     }
     
     public void DecrementLocalPetStatusEffects()
     {
         if (localPetWeakTurns > 0) localPetWeakTurns--;
         if (localPetBreakTurns > 0) localPetBreakTurns--;
-        Debug.Log($"Decremented Local Pet Status. Weak: {localPetWeakTurns}, Break: {localPetBreakTurns}");
+        // if (localPetThorns > 0) localPetThorns--; // Decrement Thorns if needed
+        if (localPetStrength > 0) localPetStrength--; // Decrement Strength
+        Debug.Log($"Decremented Local Pet Status. Weak: {localPetWeakTurns}, Break: {localPetBreakTurns}, Thorns: {localPetThorns}, Strength: {localPetStrength}");
     }
     
     public void DecrementOpponentPetStatusEffects()
     {
         if (opponentPetWeakTurns > 0) opponentPetWeakTurns--;
         if (opponentPetBreakTurns > 0) opponentPetBreakTurns--;
-        Debug.Log($"Decremented Opponent Pet Status (local sim). Weak: {opponentPetWeakTurns}, Break: {opponentPetBreakTurns}");
+        // if (opponentPetThorns > 0) opponentPetThorns--; // Decrement Thorns if needed
+        if (opponentPetStrength > 0) opponentPetStrength--; // Decrement Strength
+        Debug.Log($"Decremented Opponent Pet Status (local sim). Weak: {opponentPetWeakTurns}, Break: {opponentPetBreakTurns}, Thorns: {opponentPetThorns}, Strength: {opponentPetStrength}");
     }
     
     #endregion
@@ -151,6 +264,11 @@ public class StatusEffectManager
     public bool IsOpponentPetWeak() => opponentPetWeakTurns > 0;
     public bool IsOpponentPetBroken() => opponentPetBreakTurns > 0;
     
+    // --- ADDED: Opponent Player Checks ---
+    public bool IsOpponentPlayerWeak() => opponentPlayerWeakTurns > 0;
+    public bool IsOpponentPlayerBroken() => opponentPlayerBreakTurns > 0;
+    // --- END ADDED ---
+    
     #endregion
     
     #region Getters
@@ -164,5 +282,67 @@ public class StatusEffectManager
     public int GetOpponentPetWeakTurns() => opponentPetWeakTurns;
     public int GetOpponentPetBreakTurns() => opponentPetBreakTurns;
     
+    // --- ADDED: Thorns Getters --- 
+    public int GetPlayerThorns() => localPlayerThorns;
+    public int GetLocalPetThorns() => localPetThorns;
+    public int GetOpponentPetThorns() => opponentPetThorns;
+    // --- END ADDED ---
+    
+    // --- ADDED: Strength Getters ---
+    public int GetPlayerStrength() => localPlayerStrength;
+    public int GetLocalPetStrength() => localPetStrength;
+    public int GetOpponentPetStrength() => opponentPetStrength;
+    // --- END ADDED ---
+    
+    // --- ADDED: Opponent Player Getters ---
+    public int GetOpponentPlayerWeakTurns() => opponentPlayerWeakTurns;
+    public int GetOpponentPlayerBreakTurns() => opponentPlayerBreakTurns;
+    public int GetOpponentPlayerThorns() => opponentPlayerThorns;
+    public int GetOpponentPlayerStrength() => opponentPlayerStrength;
+    // --- END ADDED ---
+    
     #endregion
+
+    // --- ADDED: Opponent Player Setters (Called from GameManager.OnPlayerPropertiesUpdate) ---
+    public void SetOpponentPlayerWeakTurns(int value) { opponentPlayerWeakTurns = value; gameManager.UpdateHealthUI(); } // Update UI when opponent stats change
+    public void SetOpponentPlayerBreakTurns(int value) { opponentPlayerBreakTurns = value; gameManager.UpdateHealthUI(); }
+    public void SetOpponentPlayerThorns(int value) { opponentPlayerThorns = value; gameManager.UpdateHealthUI(); }
+    public void SetOpponentPlayerStrength(int value) { opponentPlayerStrength = value; gameManager.UpdateHealthUI(); }
+    // --- END ADDED ---
+
+    // --- ADDED: Helper to update player status properties ---
+    /// <summary>
+    /// Updates specific Photon Custom Properties for the local player's combat status effects.
+    /// Can update a single status based on type, specific keys, or all statuses.
+    /// </summary>
+    /// <param name="type">Optional StatusEffectType that changed.</param>
+    /// <param name="propertyKeysToUpdate">Optional list of specific property keys (from CombatStateManager) to update.</param>
+    public void UpdatePlayerStatusProperties(StatusEffectType? type = null, params string[] propertyKeysToUpdate)
+    {
+        if (!PhotonNetwork.InRoom || PhotonNetwork.LocalPlayer == null) return;
+
+        Hashtable propsToSet = new Hashtable();
+        List<string> keys = propertyKeysToUpdate.Length > 0 ? propertyKeysToUpdate.ToList() : new List<string>();
+        bool updateAll = keys.Count == 0 && type == null; // If no specific keys or type, update all
+
+        // Determine which properties to include
+        if (updateAll || type == StatusEffectType.Weak || keys.Contains(CombatStateManager.PLAYER_COMBAT_PLAYER_WEAK_PROP))
+            propsToSet[CombatStateManager.PLAYER_COMBAT_PLAYER_WEAK_PROP] = localPlayerWeakTurns;
+            
+        if (updateAll || type == StatusEffectType.Break || keys.Contains(CombatStateManager.PLAYER_COMBAT_PLAYER_BREAK_PROP))
+            propsToSet[CombatStateManager.PLAYER_COMBAT_PLAYER_BREAK_PROP] = localPlayerBreakTurns;
+            
+        if (updateAll || type == StatusEffectType.Thorns || keys.Contains(CombatStateManager.PLAYER_COMBAT_PLAYER_THORNS_PROP))
+            propsToSet[CombatStateManager.PLAYER_COMBAT_PLAYER_THORNS_PROP] = localPlayerThorns;
+            
+        if (updateAll || type == StatusEffectType.Strength || keys.Contains(CombatStateManager.PLAYER_COMBAT_PLAYER_STRENGTH_PROP))
+            propsToSet[CombatStateManager.PLAYER_COMBAT_PLAYER_STRENGTH_PROP] = localPlayerStrength;
+
+        if (propsToSet.Count > 0)
+        {
+            PhotonNetwork.LocalPlayer.SetCustomProperties(propsToSet);
+            // Debug.Log($"Updated player status properties: {string.Join(", ", propsToSet.Keys)}"); // Optional detailed log
+        }
+    }
+    // --- END ADDED ---
 }

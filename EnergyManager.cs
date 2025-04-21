@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Photon.Pun;
 using Photon.Realtime; // Add this for Player type
+using ExitGames.Client.Photon; // Added for Hashtable
 
 public class EnergyManager
 {
@@ -10,6 +11,10 @@ public class EnergyManager
     
     private int currentEnergy;
     private int startingEnergy;
+    
+    // --- ADDED: Opponent Player Simulation Data ---
+    private int opponentPlayerEnergy = 0; // Initial value, will be set by properties
+    // --- END ADDED ---
     
     // Card Cost Modification
     private struct CostModifierInfo
@@ -21,6 +26,18 @@ public class EnergyManager
     private Dictionary<CardData, CostModifierInfo> cardCostModifiers = new Dictionary<CardData, CostModifierInfo>();
     private int opponentHandCostModifierTurns = 0;
     private int opponentHandCostModifierAmount = 0;
+    
+    // Structure to hold cost modification details
+    private struct CostModifier
+    {
+        public int amount; // The change in cost (+/-)
+        public int duration; // Turns remaining
+        public int cardCount; // How many cards it applies to (-1 for all)
+        public bool appliedToOpponent; // Was this modifier sent *to* the opponent?
+        public List<CardData> affectedCards; // Specific cards affected (if count > 0)
+    }
+    // List to track active cost modifiers
+    private List<CostModifier> activeCostModifiers = new List<CostModifier>();
     
     public EnergyManager(GameManager gameManager)
     {
@@ -36,23 +53,47 @@ public class EnergyManager
         cardCostModifiers.Clear();
         opponentHandCostModifierTurns = 0;
         opponentHandCostModifierAmount = 0;
+        
+        // --- ADDED: Reset Opponent Player Sim ---
+        this.opponentPlayerEnergy = startingEnergy; // Assume symmetric start
+        // --- END ADDED ---
+        
+        // --- ADDED: Set Initial Property ---
+        UpdatePlayerEnergyProperty();
+        // --- END ADDED ---
     }
     
     #region Energy Methods
     
     public void ConsumeEnergy(int amount)
     {
-        currentEnergy -= amount;
-        if (currentEnergy < 0) currentEnergy = 0;
-        gameManager.UpdateEnergyUI();
+        if (amount > 0)
+        {
+            currentEnergy -= amount;
+            if (currentEnergy < 0) currentEnergy = 0; // Prevent negative energy
+            Debug.Log($"Consumed {amount} energy. Remaining: {currentEnergy}");
+            gameManager.UpdateEnergyUI();
+            
+            // --- ADDED: Update Property ---
+            UpdatePlayerEnergyProperty();
+            // --- END ADDED ---
+        }
     }
     
     public void GainEnergy(int amount)
     {
-        if (amount <= 0) return;
-        currentEnergy += amount;
-        Debug.Log($"Gained {amount} energy. New total: {currentEnergy}");
-        gameManager.UpdateEnergyUI();
+        if (amount > 0)
+        {
+            currentEnergy += amount;
+            // Optional: Add a cap if needed
+            // if (currentEnergy > startingEnergy * 2) currentEnergy = startingEnergy * 2;
+            Debug.Log($"Gained {amount} energy. New total: {currentEnergy}");
+            gameManager.UpdateEnergyUI();
+            
+            // --- ADDED: Update Property ---
+            UpdatePlayerEnergyProperty();
+            // --- END ADDED ---
+        }
     }
     
     #endregion
@@ -61,96 +102,100 @@ public class EnergyManager
     
     public void ApplyCostModifierToOpponentHand(int amount, int duration, int cardCount)
     {
-        opponentHandCostModifierAmount = amount;
-        opponentHandCostModifierTurns = duration; 
-        Debug.Log($"Applying Cost Modifier to Opponent Hand: Amount={amount}, Duration={duration}, Count={cardCount}. (Local state set)");
-        Player opponent = gameManager.GetPlayerManager().GetOpponentPlayer();
-        if (opponent != null)
+        if (duration <= 0) return;
+        Debug.Log($"Sending Cost Modifier to Opponent: Amount={amount}, Duration={duration}, Count={cardCount}");
+
+        // Send RPC to opponent
+        Player opponentPlayer = gameManager.GetPlayerManager()?.GetOpponentPlayer();
+        if (PhotonNetwork.InRoom && opponentPlayer != null)
         {
-            gameManager.GetPhotonView().RPC("RpcApplyHandCostModifier", opponent, amount, duration, cardCount);
-            Debug.Log($"Sent RpcApplyHandCostModifier to {opponent.NickName}");
-        }
-        else
-        {
-            Debug.LogError("ApplyCostModifierToOpponentHand: Cannot send RPC, opponentPlayer is null!");
+            gameManager.GetPhotonView()?.RPC("RpcApplyHandCostModifier", opponentPlayer, amount, duration, cardCount);
         }
     }
     
     public void ApplyCostModifierToLocalHand(int amount, int duration, int cardCount)
     {
-        Debug.Log($"ApplyCostModifierToLocalHand called: Amount={amount}, Duration={duration}, Count={cardCount}");
-        List<CardData> currentHand = gameManager.GetCardManager().GetHand();
-        if (currentHand.Count == 0) return;
+        if (duration <= 0) return;
+        Debug.Log($"Received Cost Modifier: Amount={amount}, Duration={duration}, Count={cardCount}");
 
-        List<CardData> cardsToModify = new List<CardData>();
-
-        if (cardCount <= 0 || cardCount >= currentHand.Count) // Affect all cards
-        {
-            cardsToModify.AddRange(currentHand);
-            Debug.Log("Applying cost modifier to all cards in hand.");
-        }
-        else // Affect specific number of random cards
-        {
-            System.Random rng = new System.Random();
-            cardsToModify = currentHand.OrderBy(x => rng.Next()).Take(cardCount).ToList();
-            Debug.Log($"Applying cost modifier to {cardCount} random cards in hand.");
-        }
-
-        foreach (CardData card in cardsToModify)
-        {
-            // Overwrite existing modifier or add new one
-            cardCostModifiers[card] = new CostModifierInfo { amount = amount, durationTurns = duration };
-            Debug.Log($" -> Set cost modifier for '{card.cardName}': Amount={amount}, Duration={duration}");
-        }
-
-        // Trigger UI update as costs might have changed
-        gameManager.UpdateHandUI(); 
+        activeCostModifiers.Add(new CostModifier 
+        { 
+            amount = amount, 
+            duration = duration, 
+            cardCount = cardCount, 
+            appliedToOpponent = false, // This affects *our* hand
+            affectedCards = new List<CardData>()
+        });
+        
+        // Trigger a hand UI update to reflect potential cost changes
+        gameManager.UpdateHandUI();
     }
     
     public int GetLocalHandCostModifier(CardData card)
     {
-        if (card != null && cardCostModifiers.TryGetValue(card, out CostModifierInfo info))
+        int totalModifier = 0;
+        foreach (var modifier in activeCostModifiers)
         {
-            return info.amount;
+            // Check if modifier applies to all cards OR this specific card is affected
+            if (modifier.cardCount == -1 || (modifier.affectedCards != null && modifier.affectedCards.Contains(card)))
+            {
+                 totalModifier += modifier.amount;
+            }
         }
-        return 0; // No modifier for this specific card
+        return totalModifier;
     }
     
     public void RemoveCostModifierForCard(CardData card)
-    {
-        if (card != null && cardCostModifiers.Remove(card))
+    { 
+        if (card == null) return;
+        
+        bool handNeedsUpdate = false;
+        for (int i = activeCostModifiers.Count - 1; i >= 0; i--)
         {
-            Debug.Log($"Removed cost modifier tracking for card: {card.cardName}");
+            CostModifier mod = activeCostModifiers[i];
+            if (mod.affectedCards != null && mod.affectedCards.Contains(card))
+            {
+                mod.affectedCards.Remove(card);
+                 // If the modifier had a specific count and we just removed the last affected card, 
+                 // we could potentially remove the modifier itself, but the duration check handles expiration.
+                activeCostModifiers[i] = mod; // Update the list
+                handNeedsUpdate = true; // Cost might change immediately
+                Debug.Log($"Removed card {card.cardName} from cost modifier effect (Amount: {mod.amount}).");
+            }
+        }
+        
+        if (handNeedsUpdate)
+        {
+            gameManager.UpdateHandUI();
         }
     }
     
     public void DecrementCostModifiers()
     {
-        List<CardData> expiredModifiers = new List<CardData>();
-        List<CardData> currentModKeys = new List<CardData>(cardCostModifiers.Keys);
-        foreach (CardData card in currentModKeys)
+        bool handNeedsUpdate = false;
+        // Iterate backwards to allow removal
+        for (int i = activeCostModifiers.Count - 1; i >= 0; i--)
         {
-            if (cardCostModifiers.TryGetValue(card, out CostModifierInfo info))
+            CostModifier modifier = activeCostModifiers[i];
+            modifier.duration--;
+
+            if (modifier.duration <= 0)
             {
-                info.durationTurns--;
-                if (info.durationTurns <= 0)
-                {
-                    expiredModifiers.Add(card);
-                    Debug.Log($"Cost modifier expired for card: {card.cardName}");
-                }
-                else
-                {
-                    cardCostModifiers[card] = info; // Update duration
-                }
+                Debug.Log($"Cost Modifier expired: Amount={modifier.amount}, Count={modifier.cardCount}");
+                activeCostModifiers.RemoveAt(i);
+                handNeedsUpdate = true; // Costs will change
+            }
+            else
+            {
+                activeCostModifiers[i] = modifier; // Update duration in the list
             }
         }
-        foreach (CardData cardToRemove in expiredModifiers)
-        {
-            cardCostModifiers.Remove(cardToRemove);
-        }
         
-        // Opponent hand cost modifiers (for tracking)
-        if (opponentHandCostModifierTurns > 0) opponentHandCostModifierTurns--;
+        if (handNeedsUpdate)
+        {
+             // Update hand UI to reflect expired modifiers
+             gameManager.UpdateHandUI();
+        }
     }
     
     #endregion
@@ -162,5 +207,29 @@ public class EnergyManager
     public int GetStartingEnergy() => startingEnergy;
     public void SetStartingEnergy(int energy) => startingEnergy = energy;
     
+    // --- ADDED: Opponent Player Getters/Setters ---
+    public int GetOpponentPlayerEnergy() => opponentPlayerEnergy;
+    public void SetOpponentPlayerEnergy(int value) 
+    {
+        opponentPlayerEnergy = value;
+        // Optionally update UI elements that might show opponent energy, if any
+        // gameManager.UpdateHealthUI(); // Or a more specific UI update if needed
+    }
+    // --- END ADDED ---
+    
     #endregion
+    
+    // --- ADDED: Helper to update player energy property ---
+    private void UpdatePlayerEnergyProperty()
+    {
+        if (!PhotonNetwork.InRoom || PhotonNetwork.LocalPlayer == null) return;
+
+        Hashtable propsToSet = new Hashtable
+        {
+            { CombatStateManager.PLAYER_COMBAT_ENERGY_PROP, currentEnergy }
+        };
+        PhotonNetwork.LocalPlayer.SetCustomProperties(propsToSet);
+        // Debug.Log($"Updated player energy property to {currentEnergy}");
+    }
+    // --- END ADDED ---
 }

@@ -126,41 +126,84 @@ public class GameManager : MonoBehaviourPunCallbacks
     {
         photonManager.OnPlayerPropertiesUpdate(targetPlayer, changedProps);
         
-        // --- ADDED: Update local simulation based on opponent property changes ---
+        // --- MODIFIED: Update local simulation based on ANY player property changes ---
+        if (targetPlayer == null) return; // Safety check
+
         Player opponentPlayer = playerManager?.GetOpponentPlayer();
-        if (opponentPlayer != null && targetPlayer == opponentPlayer)
+        bool isOpponent = opponentPlayer != null && targetPlayer == opponentPlayer;
+        bool isSelf = targetPlayer == PhotonNetwork.LocalPlayer;
+
+        // --- Pet Energy Update (Applies to Opponent Pet Sim or Local Pet Property) ---
+        if (changedProps.ContainsKey(CombatStateManager.PLAYER_COMBAT_PET_ENERGY_PROP))
         {
-            // Check if opponent's pet energy changed
-            if (changedProps.ContainsKey(CombatStateManager.PLAYER_COMBAT_PET_ENERGY_PROP))
+            try
             {
-                try
+                int newPetEnergy = (int)changedProps[CombatStateManager.PLAYER_COMBAT_PET_ENERGY_PROP];
+                if (isOpponent)
                 {
-                    int newOpponentPetEnergy = (int)changedProps[CombatStateManager.PLAYER_COMBAT_PET_ENERGY_PROP];
-                    Debug.Log($"OnPlayerPropertiesUpdate: Opponent ({targetPlayer.NickName}) pet energy changed to {newOpponentPetEnergy}. Updating local simulation.");
-                    cardManager?.GetPetDeckManager()?.SetOpponentPetEnergy(newOpponentPetEnergy);
+                    // Update our simulation of the opponent's pet
+                    Debug.Log($"OnPlayerPropertiesUpdate: Opponent ({targetPlayer.NickName}) pet energy changed to {newPetEnergy}. Updating local simulation.");
+                    cardManager?.GetPetDeckManager()?.SetOpponentPetEnergy(newPetEnergy);
                 }
-                catch (System.Exception e)
-                {
-                    Debug.LogError($"Failed to cast opponent pet energy property: {e.Message}");
-                }
+                // No action needed if isSelf, as the property was set locally.
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogError($"Failed to cast pet energy property: {e.Message}");
+            }
+        }
+
+        // --- Player Stat Updates (Apply to Opponent Player Simulation) ---
+        if (isOpponent)
+        {
+            HealthManager hm = playerManager?.GetHealthManager();
+            StatusEffectManager sem = playerManager?.GetStatusEffectManager();
+            EnergyManager em = playerManager?.GetEnergyManager();
+
+            if (hm != null) 
+            {
+                if (changedProps.TryGetValue(CombatStateManager.PLAYER_COMBAT_PLAYER_HP_PROP, out object hpVal)) 
+                    hm.SetOpponentPlayerHealth((int)hpVal);
+                if (changedProps.TryGetValue(CombatStateManager.PLAYER_COMBAT_PLAYER_BLOCK_PROP, out object blockVal)) 
+                    hm.SetOpponentPlayerBlock((int)blockVal);
+                if (changedProps.TryGetValue(CombatStateManager.PLAYER_COMBAT_PLAYER_DOT_TURNS_PROP, out object dotTurnsVal) && 
+                    changedProps.TryGetValue(CombatStateManager.PLAYER_COMBAT_PLAYER_DOT_DMG_PROP, out object dotDmgVal)) 
+                    hm.SetOpponentPlayerDot((int)dotTurnsVal, (int)dotDmgVal);
+                if (changedProps.TryGetValue(CombatStateManager.PLAYER_COMBAT_PLAYER_HOT_TURNS_PROP, out object hotTurnsVal) && 
+                    changedProps.TryGetValue(CombatStateManager.PLAYER_COMBAT_PLAYER_HOT_AMT_PROP, out object hotAmtVal)) 
+                    hm.SetOpponentPlayerHot((int)hotTurnsVal, (int)hotAmtVal);
+                if (changedProps.TryGetValue(CombatStateManager.PLAYER_COMBAT_PLAYER_CRIT_PROP, out object critVal)) 
+                    hm.SetOpponentPlayerCritChance((int)critVal);
             }
             
-            // TODO: Add similar checks here if other opponent properties need to update the local simulation 
-            // (e.g., if opponent pet HP was also just synced via props instead of RPCs)
+            if (sem != null)
+            {
+                 if (changedProps.TryGetValue(CombatStateManager.PLAYER_COMBAT_PLAYER_WEAK_PROP, out object weakVal)) 
+                    sem.SetOpponentPlayerWeakTurns((int)weakVal);
+                 if (changedProps.TryGetValue(CombatStateManager.PLAYER_COMBAT_PLAYER_BREAK_PROP, out object breakVal)) 
+                    sem.SetOpponentPlayerBreakTurns((int)breakVal);
+                 if (changedProps.TryGetValue(CombatStateManager.PLAYER_COMBAT_PLAYER_THORNS_PROP, out object thornsVal)) 
+                    sem.SetOpponentPlayerThorns((int)thornsVal);
+                 if (changedProps.TryGetValue(CombatStateManager.PLAYER_COMBAT_PLAYER_STRENGTH_PROP, out object strengthVal)) 
+                    sem.SetOpponentPlayerStrength((int)strengthVal);
+            }
+            
+            if (em != null)
+            {
+                if (changedProps.TryGetValue(CombatStateManager.PLAYER_COMBAT_ENERGY_PROP, out object energyVal)) 
+                    em.SetOpponentPlayerEnergy((int)energyVal);
+            }
+            
+            Debug.Log($"Updated opponent ({targetPlayer.NickName}) simulated stats based on received properties.");
         }
-        // --- END ADDED ---
+        // --- END Player Stat Updates ---
         
-        // Update Score UI if in Combat or Draft (score persists)
+        // Update Score UI and Other Fights UI regardless of who changed properties, if in relevant game states
         if (gameStateManager.GetCurrentState() == GameState.Combat || gameStateManager.GetCurrentState() == GameState.Drafting)
         {
             playerManager.GetCombatStateManager().UpdateScoreUI(); // Use CombatStateManager via PlayerManager
-             // --- ADDED: Update Other Fights UI on property change ---
-             combatManager.GetCombatUIManager().UpdateOtherFightsUI();
-             // --- END ADDED ---
-
-             // --- ADDED: Update main Health UI as well for property changes (like pet energy) ---
-             combatManager.UpdateHealthUI();
-             // --- END ADDED ---
+            combatManager.GetCombatUIManager().UpdateOtherFightsUI();
+            combatManager.UpdateHealthUI(); // Update main Health UI as well for property changes
         }
     }
     public override void OnRoomPropertiesUpdate(Hashtable propertiesThatChanged) => photonManager.OnRoomPropertiesUpdate(propertiesThatChanged);
@@ -657,6 +700,28 @@ public class GameManager : MonoBehaviourPunCallbacks
         }
     }
 
+    // --- ADDED: RPC Receiver for Applying HoT to Local Pet ---
+    [PunRPC]
+    private void RpcApplyHoTToMyPet(int amount, int duration, PhotonMessageInfo info)
+    {
+        Player opponentPlayer = playerManager?.GetOpponentPlayer();
+        if (info.Sender == null || info.Sender.IsLocal) return;
+
+        if (opponentPlayer != null && info.Sender == opponentPlayer)
+        {
+            // Sender is our current opponent, apply HoT to our local pet
+            Debug.Log($"RPC: Received RpcApplyHoTToMyPet(Amt={amount}, Dur={duration}) from current opponent {info.Sender.NickName}. Applying HoT to LOCAL pet.");
+            playerManager?.ApplyHotLocalPet(amount, duration);
+        }
+        else
+        {
+            // Sender is NOT our current opponent (it's someone else applying HoT to their own pet)
+            // Apply it to our simulation of their pet (which is our opponentPet)
+            Debug.Log($"RPC: Received RpcApplyHoTToMyPet(Amt={amount}, Dur={duration}) from other player {info.Sender.NickName}. Applying HoT to OPPONENT pet (local sim).");
+            playerManager?.GetHealthManager()?.ApplyHotOpponentPet(amount, duration, originatedFromRPC: true);
+        }
+    }
+
     public PhotonView GetPhotonView()
     {
         return photonViewComponent;
@@ -740,6 +805,13 @@ public class GameManager : MonoBehaviourPunCallbacks
     {
         return draftManager;
     }
+
+    // --- ADDED: Proxy for CombatTurnManager ---
+    public CombatTurnManager GetCombatTurnManager()
+    {
+        return combatManager?.GetCombatTurnManager();
+    }
+    // --- END ADDED ---
 
     // --- ADDED: Getter for CombatUIManager ---
     public CombatUIManager GetCombatUIManager()

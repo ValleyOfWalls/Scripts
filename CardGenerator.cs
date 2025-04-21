@@ -282,6 +282,16 @@ public class CardGenerator : MonoBehaviour
             card.healingAmount = 6;
         });
 
+        // --- ADDED: Regeneration Card --- 
+        CreateCard("Soothing Balm", "Restore 2 health per turn for 3 turns.", 1, card => {
+            card.hotAmount = 2;
+            card.hotDuration = 3;
+        }, "Soothing Balm+", "Restore 3 health per turn for 4 turns.", 1, card => {
+            card.hotAmount = 3;
+            card.hotDuration = 4;
+        });
+        // --- END ADDED ---
+
         // Temporary max health increase
         CreateCard("Hypertrophic Growth", "Increase max health by 5 for this combat.", 2, card => {
             // REMOVED: card.tempMaxHealthChange = 5;
@@ -292,6 +302,18 @@ public class CardGenerator : MonoBehaviour
 
     private static void GenerateSpecialCards()
     {
+        // --- ADDED: Strength Card ---
+        CreateCard("Fungal Might", "Gain 2 Strength.", 1, card => {
+            card.statusToApply = StatusEffectType.Strength;
+            card.strengthAmount = 2;
+            card.statusDuration = 1; // Set > 0 for ApplyStatusEffect check
+        }, "Fungal Might+", "Gain 3 Strength.", 1, card => {
+            card.statusToApply = StatusEffectType.Strength;
+            card.strengthAmount = 3;
+            card.statusDuration = 1;
+        });
+        // --- END ADDED ---
+        
         // Multi-effect card: Damage + Block
         CreateCard("Chitinous Extrusion", "Deal 5 damage and gain 3 block.", 1, card => {
             card.damage = 5;
@@ -368,6 +390,20 @@ public class CardGenerator : MonoBehaviour
             card.block = 4;
             card.drawAmount = 1;
         });
+
+        // --- ADDED: Thorns Card --- 
+        CreateCard("Barbed Carapace", "Gain 4 block and 3 Thorns.", 1, card => {
+            card.block = 4;
+            card.statusToApply = StatusEffectType.Thorns;
+            card.thornsAmount = 3;
+            card.statusDuration = 1; // Duration > 0 needed for ApplyStatusEffect check, but value ignored for Thorns amount
+        }, "Barbed Carapace+", "Gain 6 block and 5 Thorns.", 1, card => {
+            card.block = 6;
+            card.statusToApply = StatusEffectType.Thorns;
+            card.thornsAmount = 5;
+            card.statusDuration = 1; 
+        });
+        // --- END ADDED ---
     }
 
     private static void GeneratePetCards()
@@ -464,6 +500,17 @@ public class CardGenerator : MonoBehaviour
     
     private static void GenerateHighRiskCards()
     {
+        // --- ADDED: Low Health Attack --- 
+        CreateCard("Desperate Lunge", "Deal 8 damage. Deals double damage if you are below 50% HP.", 1, card => {
+            card.damage = 8;
+            card.healthThresholdPercent = 50;
+            card.damageMultiplierBelowThreshold = 2.0f;
+        }, "Desperate Lunge+", "Deal 12 damage. Deals double damage if you are below 50% HP.", 1, card => {
+            card.damage = 12;
+            card.healthThresholdPercent = 50;
+            card.damageMultiplierBelowThreshold = 2.0f;
+        });
+        
         // Self-damage for benefit
         CreateCard("Hemophagic Symbiosis", "Take 3 damage and draw 2 cards.", 0, card => {
             card.drawAmount = 2;
@@ -489,6 +536,25 @@ public class CardGenerator : MonoBehaviour
     
     private static void GenerateScalingCards()
     {
+        // --- ADDED: Basic Turn Scaling Attack ---
+        CreateCard("Growing Rage", "Deal 1 damage for each turn passed this combat.", 1, card => {
+            card.damage = 0; // Base damage is 0
+            card.damageScalingPerTurn = 1f; 
+        }, "Growing Rage+", "Deal 2 damage for each turn passed this combat.", 1, card => {
+            card.damage = 0;
+            card.damageScalingPerTurn = 2f;
+        });
+        // --- END ADDED ---
+        
+        // --- ADDED: Copy Scaling Attack ---
+        CreateCard("Collective Consciousness", "Deal damage equal to the number of Collective Consciousness cards you own.", 1, card => {
+            card.damage = 0; // Base damage is 0
+            card.damageScalingPerCopy = 1f;
+        }, "Collective Consciousness+", "Deal damage equal to 2 times the number of Collective Consciousness cards you own.", 1, card => {
+            card.damage = 0;
+            card.damageScalingPerCopy = 2f;
+        });
+        
         // Scaling with damage taken
         CreateCard("Traumatic Adaptation", "Deal damage equal to the damage you've taken this combat.", 1, card => {
             // Would need a way to track damage taken
@@ -509,6 +575,16 @@ public class CardGenerator : MonoBehaviour
         }, "Bioluminescent Discharge+", "Deal damage equal to 2x your spent energy this turn.", 0, card => {
             // More powerful version
         });
+        
+        // --- ADDED: Basic Play Count Scaling Attack ---
+        CreateCard("Echoing Strike", "Deal 3 damage. Increases by 2 damage each time it's played this combat.", 1, card => {
+            card.damage = 3; 
+            card.damageScalingPerPlay = 2f; 
+        }, "Echoing Strike+", "Deal 4 damage. Increases by 3 damage each time it's played this combat.", 1, card => {
+            card.damage = 4;
+            card.damageScalingPerPlay = 3f;
+        });
+        // --- END ADDED ---
     }
     
     private static void GenerateDeckManipulationCards()
@@ -601,6 +677,7 @@ public class CardGenerator : MonoBehaviour
         // Create the upgraded version first (so we can link to it)
         CardData upgradedCard = ScriptableObject.CreateInstance<CardData>();
         upgradedCard.cardName = cardName; // Keep the base name, adding '+' in the filename
+        upgradedCard.cardFamilyName = cardName; // Set family name to base name
         upgradedCard.cost = upgradedCost;
         upgradedCard.description = upgradedDescription;
         
@@ -614,6 +691,7 @@ public class CardGenerator : MonoBehaviour
         // Create the base card
         CardData baseCard = ScriptableObject.CreateInstance<CardData>();
         baseCard.cardName = cardName;
+        baseCard.cardFamilyName = cardName; // Set family name to base name
         baseCard.cost = cost;
         baseCard.description = description;
         baseCard.upgradedVersion = upgradedCard; // Link to the upgraded version

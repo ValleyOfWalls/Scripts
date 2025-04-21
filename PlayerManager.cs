@@ -51,6 +51,7 @@ public class PlayerManager
     {
         // Apply DoT Damage FIRST
         healthManager.ProcessPlayerDotEffect();
+        healthManager.ProcessPlayerHotEffect();
         
         // Then Decrement Status Effects & Cost Modifiers
         statusEffectManager.DecrementPlayerStatusEffects();
@@ -64,6 +65,7 @@ public class PlayerManager
     {
         // Apply DoT Damage FIRST
         healthManager.ProcessLocalPetDotEffect();
+        healthManager.ProcessLocalPetHotEffect();
         
         // Then Decrement Status Effects
         statusEffectManager.DecrementLocalPetStatusEffects();
@@ -76,6 +78,7 @@ public class PlayerManager
     {
         // Apply DoT Damage FIRST
         healthManager.ProcessOpponentPetDotEffect();
+        healthManager.ProcessOpponentPetHotEffect();
         
         // Then Decrement Status Effects
         statusEffectManager.DecrementOpponentPetStatusEffects();
@@ -112,6 +115,10 @@ public class PlayerManager
     public void ApplyDotLocalPlayer(int damage, int duration) => healthManager.ApplyDotLocalPlayer(damage, duration);
     public void ApplyDotLocalPet(int damage, int duration) => healthManager.ApplyDotLocalPet(damage, duration);
     public void ApplyDotOpponentPet(int damage, int duration) => healthManager.ApplyDotOpponentPet(damage, duration);
+    
+    public void ApplyHotLocalPlayer(int amount, int duration) => healthManager.ApplyHotLocalPlayer(amount, duration);
+    public void ApplyHotLocalPet(int amount, int duration) => healthManager.ApplyHotLocalPet(amount, duration);
+    public void ApplyHotOpponentPet(int amount, int duration) => healthManager.ApplyHotOpponentPet(amount, duration);
     
     public void IncrementComboCount() => statusEffectManager.IncrementComboCount();
     public void ResetComboCount() => statusEffectManager.ResetComboCount();
@@ -242,6 +249,27 @@ public class PlayerManager
     
     // Energy Getters for Pet Deck
     public int GetStartingPetEnergy() => gameManager.GetStartingPetEnergy();
+    
+    // --- ADDED: Thorns Proxies --- 
+    public int GetPlayerThorns() => statusEffectManager.GetPlayerThorns();
+    public int GetLocalPetThorns() => statusEffectManager.GetLocalPetThorns();
+    public int GetOpponentPetThorns() => statusEffectManager.GetOpponentPetThorns();
+    // --- END ADDED ---
+    
+    // --- ADDED: HoT Getters --- 
+    public int GetPlayerHotTurns() => healthManager.GetPlayerHotTurns();
+    public int GetPlayerHotAmount() => healthManager.GetPlayerHotAmount();
+    public int GetLocalPetHotTurns() => healthManager.GetLocalPetHotTurns();
+    public int GetLocalPetHotAmount() => healthManager.GetLocalPetHotAmount();
+    public int GetOpponentPetHotTurns() => healthManager.GetOpponentPetHotTurns();
+    public int GetOpponentPetHotAmount() => healthManager.GetOpponentPetHotAmount();
+    // --- END ADDED ---
+    
+    // --- ADDED: Strength Getters --- 
+    public int GetPlayerStrength() => statusEffectManager.GetPlayerStrength();
+    public int GetLocalPetStrength() => statusEffectManager.GetLocalPetStrength();
+    public int GetOpponentPetStrength() => statusEffectManager.GetOpponentPetStrength();
+    // --- END ADDED ---
     
     #endregion
 }

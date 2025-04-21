@@ -125,4 +125,9 @@ public class CombatManager
     {
         return uiManager;
     }
+
+    public CombatTurnManager GetCombatTurnManager()
+    {
+        return turnManager;
+    }
 }

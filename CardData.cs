@@ -54,6 +54,7 @@ public enum OpponentPetTargetType
 public class CardData : ScriptableObject
 {
     public string cardName = "New Card";
+    public string cardFamilyName = ""; // Added: Base name for grouping base/upgraded cards
     public int cost = 1;
     public string description = "Card Effect Description";
     
@@ -70,13 +71,36 @@ public class CardData : ScriptableObject
     public int healingAmount = 0; // Amount of health to restore (0 if none)
     // Add other effects like buffs, debuffs, etc.
 
+    [Header("Turn Scaling Effect")]
+    public float damageScalingPerTurn = 0f; // Bonus damage added per combat turn passed
+    public float blockScalingPerTurn = 0f; // Bonus block added per combat turn passed
+
+    [Header("Play Count Scaling Effect")]
+    public float damageScalingPerPlay = 0f; // Bonus damage per previous play this combat
+    public float blockScalingPerPlay = 0f; // Bonus block per previous play this combat
+
+    [Header("Low Health Enhancement")]
+    [Range(0, 100)] public int healthThresholdPercent = 0; // HP % below which effect is enhanced (0 = disabled)
+    public float damageMultiplierBelowThreshold = 1.0f; // Multiplier for damage when below threshold
+    public float blockMultiplierBelowThreshold = 1.0f; // Multiplier for block when below threshold
+
+    [Header("Copy Scaling Effect")]
+    public float damageScalingPerCopy = 0f; // Bonus damage per copy in deck+hand+discard
+    public float blockScalingPerCopy = 0f; // Bonus block per copy in deck+hand+discard
+
     [Header("Status Effect Application")]
     public StatusEffectType statusToApply = StatusEffectType.None;
-    public int statusDuration = 0; // Turns the status lasts
+    public int statusDuration = 0; // Turns the status lasts (Used as Amount for Thorns/Strength)
+    public int thornsAmount = 0; // Amount of Thorns to apply (0 if none)
+    public int strengthAmount = 0; // Amount of Strength to apply (0 if none)
 
     [Header("Damage Over Time (DoT)")]
     public int dotDamageAmount = 0; // Damage per turn
     public int dotDuration = 0; // Turns the DoT lasts
+
+    [Header("Heal Over Time (HoT)")]
+    public int hotAmount = 0; // Healing per turn
+    public int hotDuration = 0; // Turns the HoT lasts
 
     [Header("Combo Effect")]
     public bool isComboStarter = false; // Does this card contribute to/start a combo?
