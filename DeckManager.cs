@@ -1,5 +1,6 @@
 using UnityEngine;
 using System.Collections.Generic;
+using System.Linq;
 
 public class DeckManager
 {
@@ -146,24 +147,60 @@ public class DeckManager
         Debug.Log("Deck shuffled.");
     }
     
-    public void DiscardRandomCards(int amount)
+    public List<CardData> DiscardRandomCards(int amount)
     {
+        List<CardData> discardedCards = new List<CardData>(); // List to return
         System.Random rng = new System.Random();
         int cardsToDiscardCount = Mathf.Min(amount, hand.Count); // Can't discard more than in hand
         
-        for (int i = 0; i < cardsToDiscardCount; i++)
+        // We need to find the cards first, trigger animations, then remove/add
+        List<CardData> cardsToProcess = new List<CardData>();
+        List<int> indicesToRemove = new List<int>();
+        
+        if (hand.Count > 0 && cardsToDiscardCount > 0)
         {
-            if (hand.Count == 0) break; // Safety check
+            // Select indices to remove without duplicates
+            List<int> availableIndices = Enumerable.Range(0, hand.Count).ToList();
+            for (int i = 0; i < cardsToDiscardCount; i++)
+            {
+                int randomIndexInAvailable = rng.Next(availableIndices.Count);
+                int actualHandIndex = availableIndices[randomIndexInAvailable];
+                indicesToRemove.Add(actualHandIndex);
+                availableIndices.RemoveAt(randomIndexInAvailable); // Prevent selecting the same index again
+            }
             
-            int randomIndex = rng.Next(hand.Count);
-            CardData cardToDiscard = hand[randomIndex];
-            hand.RemoveAt(randomIndex);
-            discardPile.Add(cardToDiscard);
-            Debug.Log($"Randomly discarded player card: {cardToDiscard.cardName}");
-            
-            // The discard trigger is handled by CardManager
-            gameManager.GetCardManager().HandleDiscardTrigger(cardToDiscard);
+            // Sort indices descending so removing doesn't mess up subsequent indices
+            indicesToRemove.Sort((a, b) => b.CompareTo(a)); 
+
+            // Get the cards and trigger animations
+            CombatUIManager combatUIManager = gameManager.GetCombatUIManager();
+            foreach (int index in indicesToRemove)
+            {
+                 CardData cardToDiscard = hand[index];
+                 cardsToProcess.Add(cardToDiscard);
+                 combatUIManager?.TriggerDiscardAnimation(cardToDiscard);
+            }
+
+            // Now actually remove from hand, add to discard, and track for return
+            foreach (CardData cardToDiscard in cardsToProcess)
+            {
+                if (hand.Remove(cardToDiscard)) // Remove the specific card instance
+                {
+                    discardPile.Add(cardToDiscard);
+                    discardedCards.Add(cardToDiscard); // Add to return list
+                    Debug.Log($"Randomly discarded player card: {cardToDiscard.cardName}");
+
+                    // The discard trigger is handled by CardManager (if the card has an effect)
+                    gameManager.GetCardManager().HandleDiscardTrigger(cardToDiscard);
+                }
+                else
+                {
+                     Debug.LogWarning($"[DiscardRandomCards] Failed to remove card {cardToDiscard.cardName} from hand list during processing. Was it removed elsewhere?");
+                }
+            }
         }
+        
+        return discardedCards; // Return the list
     }
     
     public void AddCardToPlayerDeck(CardData card)

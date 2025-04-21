@@ -49,7 +49,11 @@ public class PhotonManager : MonoBehaviourPunCallbacks
 
     public void TryJoinGameRoom()
     {
-        RoomOptions roomOptions = new RoomOptions { MaxPlayers = 4 };
+        RoomOptions roomOptions = new RoomOptions 
+        {
+            MaxPlayers = 4, 
+            PlayerTtl = 60000 // Keep player slot open for 60 seconds (60000ms) after disconnect
+        };
         PhotonNetwork.JoinOrCreateRoom("asd", roomOptions, TypedLobby.Default);
     }
 
@@ -80,6 +84,8 @@ public class PhotonManager : MonoBehaviourPunCallbacks
     {
         Debug.Log($"Joined Room: {PhotonNetwork.CurrentRoom.Name}");
         
+        gameManager.GetGameStateManager().HideReconnectingUI();
+        
         // Set the pet name as a custom property
         if (!string.IsNullOrEmpty(pendingPetName))
         {
@@ -100,6 +106,7 @@ public class PhotonManager : MonoBehaviourPunCallbacks
     public override void OnLeftRoom()
     {
         Debug.Log("Left Room");
+        gameManager.GetGameStateManager().SetWasInRoom(false);
         gameManager.GetGameStateManager().SetUserInitiatedConnection(false);
         gameManager.GetGameStateManager().SetCurrentState(GameState.Connecting);
         gameManager.GetGameStateManager().ShowStartScreen();
@@ -108,9 +115,18 @@ public class PhotonManager : MonoBehaviourPunCallbacks
     public override void OnJoinRoomFailed(short returnCode, string message)
     {
         Debug.LogError($"Join Room Failed: ({returnCode}) {message}");
-        gameManager.GetGameStateManager().SetUserInitiatedConnection(false);
-        Button connectBtn = gameManager.GetGameStateManager().GetConnectButton();
-        if (connectBtn != null) connectBtn.interactable = true;
+        gameManager.GetGameStateManager().HideReconnectingUI();
+        if (!gameManager.GetGameStateManager().IsUserInitiatedConnection() && gameManager.GetGameStateManager().WasInRoomWhenDisconnected())
+        {
+            Debug.LogWarning("Rejoin failed, handling as full disconnect.");
+            gameManager.GetGameStateManager().HandleFullDisconnect();
+        }
+        else
+        {
+            gameManager.GetGameStateManager().SetUserInitiatedConnection(false);
+            Button connectBtn = gameManager.GetGameStateManager().GetConnectButton();
+            if (connectBtn != null) connectBtn.interactable = true;
+        }
     }
 
     public override void OnCreateRoomFailed(short returnCode, string message)
@@ -124,7 +140,40 @@ public class PhotonManager : MonoBehaviourPunCallbacks
     public override void OnDisconnected(DisconnectCause cause)
     {
         Debug.LogWarning($"Disconnected from Photon: {cause}");
-        gameManager.GetGameStateManager().OnDisconnected();
+        
+        // Check if the disconnect cause is potentially recoverable and we were in a room
+        if (ShouldAttemptReconnect(cause) && gameManager.GetGameStateManager().WasInRoomWhenDisconnected())
+        {
+            Debug.Log("Attempting to ReconnectAndRejoin...");
+            gameManager.GetGameStateManager().ShowReconnectingUI(); // Show some UI indication
+            if (!PhotonNetwork.ReconnectAndRejoin())
+            {
+                Debug.LogError("ReconnectAndRejoin failed immediately. Likely no previous room or connection issue.");
+                gameManager.GetGameStateManager().HandleFullDisconnect();
+            }
+        }
+        else
+        {
+            gameManager.GetGameStateManager().HandleFullDisconnect();
+        }
+    }
+    
+    // Helper function to check if reconnection should be attempted
+    private bool ShouldAttemptReconnect(DisconnectCause cause)
+    {
+        switch (cause)
+        {
+            case DisconnectCause.Exception:
+            case DisconnectCause.ServerTimeout:
+            case DisconnectCause.ClientTimeout:
+            case DisconnectCause.DisconnectByServerLogic:
+            case DisconnectCause.AuthenticationTicketExpired:
+            case DisconnectCause.DisconnectByServerReasonUnknown:
+                return true;
+            // Add other cases if needed, e.g., specific OpResponse errors
+            default:
+                return false; // Explicit leave, connection errors, etc.
+        }
     }
 
     public override void OnPlayerEnteredRoom(Player newPlayer)

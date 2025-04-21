@@ -171,4 +171,25 @@ public class HandPanelHoverManager : MonoBehaviour, IPointerMoveHandler, IPointe
         return currentlyHoveredCard;
     }
     // --- END ADDED ---
+    
+    // --- ADDED: Method to reset all cards to their base state --- 
+    public void ResetAllHovers()
+    {
+        // Clear the currently hovered card immediately to prevent ExitHover being called twice
+        currentlyHoveredCard = null; 
+        
+        // Tell each card to exit its hover state (which animates it back)
+        foreach (CardDragHandler card in cardsInHand)
+        {
+            if (card != null && card.gameObject.activeSelf)
+            {
+                card.ExitHoverState();
+            }
+        }
+        
+        // Resort sibling indices to put them back in default order
+        ResortSiblingIndices(); 
+        Debug.Log("[HandPanelHoverManager] ResetAllHovers called.");
+    }
+    // --- END ADDED ---
 } 

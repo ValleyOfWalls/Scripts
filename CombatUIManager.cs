@@ -448,16 +448,25 @@ public class CombatUIManager
             CardDragHandler unusedHandler = unusedGO?.GetComponent<CardDragHandler>();
             bool isCurrentlyDiscarding = unusedHandler != null && unusedHandler.isDiscarding;
 
-            if (!isCurrentlyDiscarding && unusedGO != null) // Only destroy if *not* discarding 
-            { 
+            // --- MODIFIED: Only destroy if NOT null AND NOT currently discarding ---
+            if (unusedGO != null && !isCurrentlyDiscarding) 
+            {
                 Debug.LogWarning($"[UpdateHandUI] Destroying unused GO: {unusedGO.name} (Card: {currentGOMap.GetValueOrDefault(unusedGO)?.cardName ?? "Unknown"})");
                  DOTween.Kill(unusedGO.transform, true); // Kill tweens immediately
                  Object.Destroy(unusedGO);
             }
+            // --- END MODIFIED ---
             else if (isCurrentlyDiscarding)
             {
                  Debug.Log($"[UpdateHandUI] Skipping destruction of {unusedGO.name} because it is animating discard.");
             }
+            // --- ADDED: Handle case where unusedGO might be null already ---
+            else if (unusedGO == null)
+            {
+                // This might happen if it was destroyed elsewhere unexpectedly
+                // Debug.LogWarning("[UpdateHandUI] Found a null entry in availableGOs during cleanup.");
+            }
+            // --- END ADDED ---
         }
 
         // 6. Update Hover Manager
@@ -785,18 +794,20 @@ public class CombatUIManager
             CardDragHandler handler = child.GetComponent<CardDragHandler>();
             CanvasGroup cg = child.GetComponent<CanvasGroup>();
 
-            // Check if GO matches data, is active, and is not already fading out (alpha > 0)
-            if (handler != null && handler.cardData == cardData && child.gameObject.activeSelf && (cg == null || cg.alpha > 0.1f))
+            // Check if GO matches data, is active, and is not already fading out (alpha > 0.1f)
+            if (handler != null && handler.cardData == cardData && child.gameObject.activeSelf && !handler.isDiscarding && (cg == null || cg.alpha > 0.1f))
             {
                 // Check if it's already animating a discard (e.g., via DOTween ID or check active tweens)
                  // Simple check: If a tween is active on its RectTransform, assume it might be animating.
                  // This isn't perfect but avoids starting a second discard animation.
-                 if (!DOTween.IsTweening(child.GetComponent<RectTransform>()))
-                 {
+                 // if (!DOTween.IsTweening(child.GetComponent<RectTransform>()))
+                 // { 
+                 // Removed IsTweening check, relying on isDiscarding flag now
                     cardGOToDiscard = child.gameObject;
                     break; // Found a suitable GO to animate
-                 }
+                 // }
             }
+            // --- END MODIFIED ---
         }
 
         if (cardGOToDiscard != null)

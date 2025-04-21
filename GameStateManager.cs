@@ -52,6 +52,7 @@ public class GameStateManager
     private GameState currentState = GameState.Connecting;
     private bool userInitiatedConnection = false;
     private bool isWaitingToStartCombatRPC = false;
+    private bool wasInRoom = false; // ADDED: Track if we were in a room before disconnect
     
     // --- ADDED: State for Draft Deck View Toggle ---
     private enum DeckViewType { None, Player, Pet } // Simpler enum for draft screen
@@ -290,48 +291,55 @@ public class GameStateManager
     
     public void TransitionToLobby()
     {
-        currentState = GameState.Lobby;
+        SetCurrentState(GameState.Lobby);
         HideStartScreen();
         HideCombatScreen();
         HideDraftScreen();
         ShowLobbyScreen();
+        wasInRoom = true; // Set flag when entering lobby
     }
     
     public void TransitionToCombat()
     {
-        currentState = GameState.Combat;
-        HideStartScreen();
+        SetCurrentState(GameState.Combat);
         HideLobbyScreen();
         HideDraftScreen();
         ShowCombatScreen();
+        wasInRoom = true; // Set flag when starting combat
     }
     
     public void TransitionToDraft()
     {
-        currentState = GameState.Drafting;
-        HideStartScreen();
-        HideLobbyScreen();
+        SetCurrentState(GameState.Drafting);
         HideCombatScreen();
+        HideLobbyScreen(); 
         ShowDraftScreen();
+        wasInRoom = true; // Set flag when starting draft
     }
     
     public void TransitionToGameOver()
     {
-        currentState = GameState.GameOver;
-        HideStartScreen();
+        // You might want to set wasInRoom = false here depending on desired flow
+        // For now, assume we stay "in room" technically until explicitly leaving or disconnected
+        SetCurrentState(GameState.GameOver);
+        HideCombatScreen();
+        HideDraftScreen();
+        HideLobbyScreen();
+        // Show a game over screen here...
+        Debug.Log("GAME OVER - Transitioning back to Start Screen for now");
+        ShowStartScreen(); // Placeholder
+    }
+    
+    public void HandleFullDisconnect()
+    {
+        Debug.Log("HandleFullDisconnect: Resetting state and showing Start Screen.");
+        wasInRoom = false; // Clear flag on full disconnect
         HideLobbyScreen();
         HideCombatScreen();
         HideDraftScreen();
-        // Show game over screen if you have one
-    }
-    
-    public void OnDisconnected()
-    {
-        currentState = GameState.Connecting;
-        if (lobbyInstance != null) Object.Destroy(lobbyInstance);
-        if (combatInstance != null) Object.Destroy(combatInstance);
-        if (draftInstance != null) Object.Destroy(draftInstance);
+        // TODO: Hide Reconnecting UI if it exists
         ShowStartScreen();
+        SetCurrentState(GameState.Connecting); // Return to initial state
     }
     
     public bool IsUserInitiatedConnection()
@@ -560,4 +568,41 @@ public class GameStateManager
         }
     }
     // --- END ADDED SECTION ---
+
+    // --- ADDED: Getter for wasInRoom state ---
+    public bool WasInRoomWhenDisconnected()
+    {
+        return wasInRoom;
+    }
+    // --- END ADDED ---
+
+    // --- ADDED: Setter for wasInRoom state ---
+    public void SetWasInRoom(bool value)
+    {
+        wasInRoom = value;
+    }
+    // --- END ADDED ---
+
+    // --- ADDED: Method to display reconnection attempt UI ---
+    public void ShowReconnectingUI()
+    {
+        // TODO: Implement actual UI (e.g., enable a Panel with a Text message)
+        Debug.LogWarning("ShowReconnectingUI: Displaying 'Attempting to Reconnect...' message.");
+        // Example: reconnectingText.gameObject.SetActive(true);
+        if (startScreenInstance != null && connectButton != null) connectButton.interactable = false; // Disable connect button
+    }
+    
+    // --- ADDED: Method to hide reconnection attempt UI ---
+    public void HideReconnectingUI()
+    {
+        // TODO: Implement actual UI hiding
+        Debug.Log("HideReconnectingUI: Hiding reconnection message.");
+        // Example: reconnectingText.gameObject.SetActive(false);
+        // Re-enable connect button ONLY if we failed and are back at start screen
+        if (currentState == GameState.Connecting && startScreenInstance != null && connectButton != null)
+        {
+            connectButton.interactable = true;
+        }
+    }
+    // --- END ADDED ---
 }

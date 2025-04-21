@@ -60,7 +60,7 @@ Search Folders: Assets/Prefabs
                 - OwnPetHealthText (Components: CanvasRenderer, TextMeshProUGUI, ContentSizeFitter)
                 - OwnPetBlockText (Components: CanvasRenderer, TextMeshProUGUI, ContentSizeFitter, LayoutElement)
                 - OwnPetDotText (Components: CanvasRenderer, TextMeshProUGUI, ContentSizeFitter, LayoutElement)
-        - OthersStatusArea (Components: CanvasRenderer, Image, VerticalLayoutGroup, ContentSizeFitter)
+        - OthersStatusArea (Components: CanvasRenderer, Image, VerticalLayoutGroup, ContentSizeFitter, Button)
             - OtherStatusTitle (Components: CanvasRenderer, TextMeshProUGUI, ContentSizeFitter)
             - OtherPlayerStatusTemplate (Components: CanvasRenderer, TextMeshProUGUI, ContentSizeFitter)
     - PlayerArea (Components: CanvasRenderer, Image)
@@ -91,6 +91,7 @@ Search Folders: Assets/Prefabs
             - Spacer (Components: LayoutElement)
             - EndTurnButton (Components: CanvasRenderer, Image, Button, LayoutElement)
                 - Text (TMP) (Components: CanvasRenderer, TextMeshProUGUI, ContentSizeFitter)
+    - BackToMyFightButton (Components: Button, MeshRenderer, CanvasRenderer, TextMeshProUGUI)
 
 --- Prefab: Assets/Prefabs/UI/DeckViewerPanel.prefab ---
 - DeckViewerPanel (Components: CanvasRenderer, Image, VerticalLayoutGroup, ContentSizeFitter, DeckViewController)

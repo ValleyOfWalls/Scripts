@@ -205,9 +205,13 @@ public class CardEffectService
         if (cardData.discardRandomAmount > 0)
         {
             Debug.Log($"Discarding {cardData.discardRandomAmount} random cards from hand.");
-            gameManager.GetCardManager().GetDeckManager().DiscardRandomCards(cardData.discardRandomAmount);
-            gameManager.UpdateHandUI();
-            gameManager.UpdateDeckCountUI();
+            List<CardData> discarded = gameManager.GetCardManager().GetDeckManager().DiscardRandomCards(cardData.discardRandomAmount);
+            // Animation is triggered within DiscardRandomCards, but we need to update UI after.
+            if (discarded.Count > 0)
+            {
+                gameManager.UpdateHandUI(); // Update hand if any cards were actually discarded
+                gameManager.UpdateDeckCountUI();
+            }
         }
         
         // Combo Check

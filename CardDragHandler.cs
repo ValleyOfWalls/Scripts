@@ -70,30 +70,28 @@ public class CardDragHandler : MonoBehaviour, IBeginDragHandler, IDragHandler, I
 
     public void OnBeginDrag(PointerEventData eventData)
     {
-        if (gameManager == null || !gameManager.IsPlayerTurn())
-        {
-            eventData.pointerDrag = null;
-            return;
-        }
-
-        // --- ADDED: Stop animations and reset hover state if dragging starts mid-hover ---
-        if (isHovering)
-        {
-            // Reset state instantly, neighbours will be reset by HoverManager potentially
-            ResetToOriginalStateInstantly(false); // false = don't tell neighbors 
-            isHovering = false;
-        }
+        if (isDiscarding) return; // Don't allow dragging during discard animation
         
-        // Store index *after* potential reset and *before* reparenting
-        originalSiblingIndex = transform.GetSiblingIndex(); 
+        Debug.Log($"CardDragHandler.OnBeginDrag on {cardData.cardName}");
+        startPosition = rectTransform.position; // Store initial screen position
+        originalParent = transform.parent; // Remember the hand panel
+        originalSiblingIndex = transform.GetSiblingIndex(); // Remember layer order
 
-        startPosition = rectTransform.position;
-        originalParent = transform.parent;
-        originalScale = rectTransform.localScale; // Store scale just before drag
-
+        // Reparent to canvas root so it renders above everything
         transform.SetParent(rootCanvas.transform, true);
-        transform.SetAsLastSibling();
-        canvasGroup.blocksRaycasts = false;
+        transform.SetAsLastSibling(); // Ensure it's on top while dragging
+        
+        // --- ADDED: Reset rotation to upright for drag ---
+        rectTransform.localRotation = Quaternion.identity;
+        // --- END ADDED ---
+
+        canvasGroup.blocksRaycasts = false; // Prevent it blocking raycasts for drop zones
+
+        // --- ADDED: Notify Hover Manager that dragging started ---
+        // This is important so neighbours don't immediately try to push the dragged card
+        HandPanelHoverManager hoverManager = originalParent?.GetComponent<HandPanelHoverManager>();
+        hoverManager?.OnPointerExit(eventData); // Simulate pointer leaving panel to reset hover state
+        // --- END ADDED ---
     }
 
     public void OnDrag(PointerEventData eventData)
@@ -146,6 +144,11 @@ public class CardDragHandler : MonoBehaviour, IBeginDragHandler, IDragHandler, I
             }
             */
             // --- END REMOVED ---
+            
+            // --- ADDED: Force reset of hover states for all cards ---
+            HandPanelHoverManager hoverManager = originalParent?.GetComponent<HandPanelHoverManager>();
+            hoverManager?.ResetAllHovers();
+            // --- END ADDED ---
         }
         // If played successfully, GameManager's UpdateHandUI will handle removal/re-layout
     }
