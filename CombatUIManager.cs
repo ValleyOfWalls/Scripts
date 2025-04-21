@@ -7,6 +7,17 @@ using Photon.Pun;
 using Photon.Realtime;
 using DG.Tweening; // Added DOTween
 
+// --- ADDED: Helper Struct for Other Fights UI Sorting ---
+struct PlayerStatusInfo
+{
+    public string Nickname;
+    public int PlayerHP;
+    public int TurnNum;
+    public int OppPetHP;
+    public int Score;
+}
+// --- END ADDED ---
+
 public class CombatUIManager
 {
     private GameManager gameManager;
@@ -231,8 +242,10 @@ public class CombatUIManager
             int breakTurns = playerManager.GetPlayerBreakTurns();
             if (breakTurns > 0) playerStatus.Append($" | Break: {breakTurns}t");
             
-            int critChance = playerManager.GetPlayerEffectiveCritChance();
-            if (critChance > playerManager.GetBaseCritChance()) playerStatus.Append($" | Crit: {critChance}%"); // Only show if bonus exists
+            // --- MODIFIED: Always show Crit Chance ---
+            int critChancePlayer = playerManager.GetPlayerEffectiveCritChance();
+            playerStatus.Append($" | Crit: {critChancePlayer}%"); 
+            // --- END MODIFIED ---
 
             playerBlockText.text = playerStatus.ToString();
         }
@@ -277,7 +290,13 @@ public class CombatUIManager
                 }
             }
             
-            ownPetBlockText.text = $"Block: {petBlock} | Energy: {petEnergy}";
+            // --- MODIFIED: Always show Crit Chance for Own Pet ---
+            System.Text.StringBuilder petStatus = new System.Text.StringBuilder();
+            petStatus.Append($"Block: {petBlock} | Energy: {petEnergy}");
+            int critChancePet = playerManager.GetPetEffectiveCritChance(); // Get Own Pet Crit
+            petStatus.Append($" | Crit: {critChancePet}%"); 
+            ownPetBlockText.text = petStatus.ToString();
+            // --- END MODIFIED ---
         }
 
         // Opponent Pet Health & Block
@@ -311,9 +330,10 @@ public class CombatUIManager
             int breakTurns = playerManager.GetOpponentPetBreakTurns();
             if (breakTurns > 0) oppPetStatus.Append($" | Break: {breakTurns}t");
             
-            // Assuming an equivalent getter exists for opponent pet crit chance
-            int critChance = playerManager.GetOpponentPetEffectiveCritChance(); 
-            if (critChance > playerManager.GetBaseCritChance()) oppPetStatus.Append($" | Crit: {critChance}%"); // Only show if bonus exists
+            // --- MODIFIED: Always show Crit Chance for Opponent Pet ---
+            int critChanceOppPet = playerManager.GetOpponentPetEffectiveCritChance(); 
+            oppPetStatus.Append($" | Crit: {critChanceOppPet}%"); 
+            // --- END MODIFIED ---
 
             opponentPetBlockText.text = oppPetStatus.ToString();
         }
@@ -850,7 +870,11 @@ public class CombatUIManager
             }
         }
 
-        // Loop through players and display their status
+        // --- MODIFIED: Create a list to hold player status info for sorting ---
+        List<PlayerStatusInfo> playerStatuses = new List<PlayerStatusInfo>();
+        // --- END MODIFIED ---
+
+        // Loop through players and gather their status
         foreach (Player player in PhotonNetwork.PlayerList)
         {
             if (player.IsLocal) continue; // Skip self
@@ -858,9 +882,11 @@ public class CombatUIManager
             int oppPetHP = -1;
             int turnNum = -1;
             int playerHP = -1;
+            int playerScore = 0; // Add score
             bool hpFound = false;
             bool turnFound = false;
             bool playerHpFound = false;
+            bool scoreFound = false; // Add score flag
 
             if (player.CustomProperties.TryGetValue(CombatStateManager.PLAYER_COMBAT_OPP_PET_HP_PROP, out object hpObj))
             {
@@ -874,25 +900,52 @@ public class CombatUIManager
             {
                  try { playerHP = (int)playerHpObj; playerHpFound = true; } catch { /* Ignore */ }
             }
+            // --- ADDED: Get Player Score ---
+            if (player.CustomProperties.TryGetValue(CombatStateManager.PLAYER_SCORE_PROP, out object scoreObj))
+            {
+                try { playerScore = (int)scoreObj; scoreFound = true; } catch { /* Ignore */ }
+            }
+            // --- END ADDED ---
 
             // Only display if we have valid data for all fields
-            if (hpFound && turnFound && playerHpFound)
+            if (hpFound && turnFound && playerHpFound && scoreFound) // Check for scoreFound too
             {
-                GameObject statusEntryGO = Object.Instantiate(otherPlayerStatusTemplate.gameObject, othersStatusArea.transform);
-                statusEntryGO.name = $"Status_{player.NickName}";
-                TextMeshProUGUI statusText = statusEntryGO.GetComponent<TextMeshProUGUI>();
-                
-                if (statusText != null)
+                // --- MODIFIED: Add to list instead of instantiating directly ---
+                playerStatuses.Add(new PlayerStatusInfo
                 {
-                    statusText.text = $"{player.NickName}: HP:{playerHP} | T{turnNum}, OppHP: {oppPetHP}";
-                    statusEntryGO.SetActive(true);
-                }
-                else
-                {
-                    Object.Destroy(statusEntryGO);
-                }
+                    Nickname = player.NickName,
+                    PlayerHP = playerHP,
+                    TurnNum = turnNum,
+                    OppPetHP = oppPetHP,
+                    Score = playerScore
+                });
+                // --- END MODIFIED ---
             }
         }
+
+        // --- ADDED: Sort the list by score descending ---
+        playerStatuses.Sort((a, b) => b.Score.CompareTo(a.Score));
+        // --- END ADDED ---
+
+        // --- ADDED: Instantiate sorted entries ---
+        foreach (var statusInfo in playerStatuses)
+        {
+            GameObject statusEntryGO = Object.Instantiate(otherPlayerStatusTemplate.gameObject, othersStatusArea.transform);
+            statusEntryGO.name = $"Status_{statusInfo.Nickname}";
+            TextMeshProUGUI statusText = statusEntryGO.GetComponent<TextMeshProUGUI>();
+            
+            if (statusText != null)
+            {
+                // Include Score in the text
+                statusText.text = $"{statusInfo.Nickname} (Score: {statusInfo.Score}) | HP:{statusInfo.PlayerHP} | T{statusInfo.TurnNum}, OppHP: {statusInfo.OppPetHP}";
+                statusEntryGO.SetActive(true);
+            }
+            else
+            {
+                Object.Destroy(statusEntryGO);
+            }
+        }
+        // --- END ADDED ---
     }
     
     public void ClearAllHandCardObjects()

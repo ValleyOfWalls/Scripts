@@ -24,8 +24,6 @@ public class EnergyManager
     }
     
     private Dictionary<CardData, CostModifierInfo> cardCostModifiers = new Dictionary<CardData, CostModifierInfo>();
-    private int opponentHandCostModifierTurns = 0;
-    private int opponentHandCostModifierAmount = 0;
     
     // Structure to hold cost modification details
     private struct CostModifier
@@ -51,8 +49,6 @@ public class EnergyManager
         
         // Reset cost modifiers
         cardCostModifiers.Clear();
-        opponentHandCostModifierTurns = 0;
-        opponentHandCostModifierAmount = 0;
         
         // --- ADDED: Reset Opponent Player Sim ---
         this.opponentPlayerEnergy = startingEnergy; // Assume symmetric start

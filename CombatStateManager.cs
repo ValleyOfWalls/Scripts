@@ -301,32 +301,15 @@ public class CombatStateManager
         TMPro.TextMeshProUGUI scoreText = gameManager.GetScoreText();
         if (scoreText == null) return;
         
-        // Fetch scores from Player Properties
+        // Fetch local player's score
         int localScore = 0;
         if (PhotonNetwork.LocalPlayer.CustomProperties.TryGetValue(PLAYER_SCORE_PROP, out object localScoreVal))
         {
             try { localScore = (int)localScoreVal; } catch { /* Ignore cast error, keep 0 */ }
         }
         
-        int opponentScore = 0;
-        // Find the opponent player (simple 2-player logic assumption)
-        Player currentOpponent = null; 
-        foreach(Player p in PhotonNetwork.PlayerList)
-        {
-            if (p != PhotonNetwork.LocalPlayer) 
-            {
-                currentOpponent = p;
-                break;
-            }
-        }
-        
-        if (currentOpponent != null && currentOpponent.CustomProperties.TryGetValue(PLAYER_SCORE_PROP, out object oppScoreVal))
-        {
-            try { opponentScore = (int)oppScoreVal; } catch { /* Ignore cast error, keep 0 */ }
-        }
-        
-        // Basic 2-player score display
-        scoreText.text = $"Score: You: {localScore} / Opp: {opponentScore}";
+        // Display only local score
+        scoreText.text = $"Score: {localScore}";
     }
     
     #region Getters and Setters

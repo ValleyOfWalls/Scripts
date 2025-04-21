@@ -26,6 +26,10 @@ public class GameManager : MonoBehaviourPunCallbacks
     [SerializeField] private List<CardData> allPlayerCardPool = new List<CardData>();
     [SerializeField] private List<CardData> allPetCardPool = new List<CardData>();
 
+    // --- ADDED: Win Condition ---
+    [SerializeField] private int targetScoreToWin = 10; // Default score to win
+    // --- END ADDED ---
+
     [Header("UI Panels")]
     [SerializeField] private GameObject startScreenCanvasPrefab;
     [SerializeField] private GameObject lobbyCanvasPrefab;
@@ -860,6 +864,13 @@ public class GameManager : MonoBehaviourPunCallbacks
     public void SetStartingPetEnergy(int value)
     {
         startingPetEnergy = value;
+    }
+    // --- END ADDED ---
+
+    // --- ADDED: Getter for Target Score ---
+    public int GetTargetScoreToWin()
+    {
+        return targetScoreToWin;
     }
     // --- END ADDED ---
 
