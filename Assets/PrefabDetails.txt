@@ -6,6 +6,9 @@ Search Folders: Assets/Prefabs
 - CardPrefab
     - Visual (Components: MeshFilter, BoxCollider, MeshRenderer)
 
+--- Prefab: Assets/Prefabs/Effects/Effect Test.prefab ---
+- Effect Test (Components: SpriteRenderer, Animator)
+
 --- Prefab: Assets/Prefabs/PetPrefab.prefab ---
 - PetPrefab (Components: PhotonView)
     - Visual (Components: MeshFilter, BoxCollider, MeshRenderer)
@@ -46,6 +49,7 @@ Search Folders: Assets/Prefabs
                 - OpponentIntentRow (Components: CanvasRenderer, Image, HorizontalLayoutGroup, ContentSizeFitter)
             - OpponentPetDropZone (Components: CanvasRenderer, Image, CardDropZone)
                 - HighlightGraphic (Components: CanvasRenderer, Image)
+            - OpponentPetHandPanel (Components: CanvasRenderer, Image, HandPanelHoverManager)
         - OwnPetAreaContainer (Components: CanvasRenderer, Image)
             - OwnPetDropZone (Components: CanvasRenderer, Image, CardDropZone)
                 - HighlightGraphic (Components: CanvasRenderer, Image)
@@ -94,14 +98,14 @@ Search Folders: Assets/Prefabs
     - BackToMyFightButton (Components: Button, MeshRenderer, CanvasRenderer, TextMeshProUGUI)
 
 --- Prefab: Assets/Prefabs/UI/DeckViewerPanel.prefab ---
-- DeckViewerPanel (Components: CanvasRenderer, Image, VerticalLayoutGroup, ContentSizeFitter, DeckViewController)
+- DeckViewerPanel (Components: CanvasRenderer, Image, DeckViewController)
     - HeaderRow (Components: CanvasRenderer, Image, LayoutElement, HorizontalLayoutGroup, ContentSizeFitter)
         - TitleText (Components: CanvasRenderer, TextMeshProUGUI, ContentSizeFitter, LayoutElement)
         - CloseButton (Components: CanvasRenderer, Image, Button, LayoutElement)
             - Text (TMP) (Components: CanvasRenderer, TextMeshProUGUI, ContentSizeFitter)
     - CardScrollView (Components: ScrollRect, CanvasRenderer, Image, LayoutElement)
         - Viewport (Components: Mask, CanvasRenderer, Image)
-            - Content (Components: VerticalLayoutGroup, ContentSizeFitter, ContentSizeFitter)
+            - Content (Components: GridLayoutGroup)
         - ScrollbarVertical (Components: Scrollbar, CanvasRenderer, Image)
             - Handle (Components: CanvasRenderer, Image)
 

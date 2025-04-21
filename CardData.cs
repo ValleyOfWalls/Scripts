@@ -1,4 +1,5 @@
 using UnityEngine;
+using System.Collections.Generic;
 
 // --- ADDED: Enum for Discard Effects --- 
 public enum DiscardEffectType
@@ -56,7 +57,7 @@ public class CardData : ScriptableObject
     public string cardName = "New Card";
     public string cardFamilyName = ""; // Added: Base name for grouping base/upgraded cards
     public int cost = 1;
-    public string description = "Card Effect Description";
+    [TextArea(3, 10)] public string description = "Card Effect Description";
     
     [Header("Card Targeting")]
     [Tooltip("When played by an opponent pet, who is the primary target? Player = the player fighting the pet. Self = the pet itself.")]
@@ -131,6 +132,15 @@ public class CardData : ScriptableObject
 
     [Header("Upgrade Info")]
     public CardData upgradedVersion = null; // Link to the ScriptableObject representing the upgraded version of this card
+
+    // --- MODIFIED Art & Effect Fields ---
+    public Sprite cardArt;          // Image displayed on the card itself
+    public GameObject targetEffectPrefab; // Prefab with animation to play on target
+    // --- END MODIFIED ---
+
+    // --- REMOVED Undefined List ---
+    // public List<CardEffect> effects = new List<CardEffect>();
+    // --- END REMOVED ---
 
     // Add more properties later (e.g., damage, block, effects)
 } 

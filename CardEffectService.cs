@@ -2,6 +2,7 @@ using UnityEngine;
 using System.Collections.Generic;
 using Photon.Realtime;
 using Photon.Pun;
+using System.Collections;
 
 public class CardEffectService
 {
@@ -40,6 +41,13 @@ public class CardEffectService
             }
         }
         // --- END ADDED ---
+        
+        // --- MODIFIED: Play Target Visual Effect --- 
+        if (cardData.targetEffectPrefab != null) // Check prefab field now
+        {
+            PlayTargetEffectPrefab(targetType, cardData.targetEffectPrefab); // Call renamed method
+        }
+        // --- END MODIFIED ---
         
         // Apply effects based on target
         switch (targetType)
@@ -856,4 +864,86 @@ public class CardEffectService
                 break;
         }
     }
+
+    // --- MODIFIED: Helper method to visualize target effects --- 
+    private void PlayTargetEffectPrefab(CardDropZone.TargetType targetType, GameObject effectPrefab)
+    {
+        if (effectPrefab == null || gameManager == null) return;
+
+        // Find target transform based on type
+        Transform targetTransform = null;
+        CombatUIManager uiManager = gameManager.GetCombatUIManager();
+        if (uiManager == null) return; // Need UI Manager for positions
+
+        switch (targetType)
+        {
+            case CardDropZone.TargetType.EnemyPet:
+                // Find the opponent pet's UI element (e.g., health bar or representation)
+                // This requires access to UI elements, ideally via CombatUIManager
+                GameObject oppPetUI = uiManager.GetOpponentPetUIArea(); // Assuming such a getter exists or can be added
+                if (oppPetUI != null) targetTransform = oppPetUI.transform;
+                break;
+            case CardDropZone.TargetType.PlayerSelf:
+                GameObject playerUI = uiManager.GetPlayerUIArea(); // Assuming such a getter exists
+                if (playerUI != null) targetTransform = playerUI.transform;
+                break;
+            case CardDropZone.TargetType.OwnPet:
+                 GameObject ownPetUI = uiManager.GetOwnPetUIArea(); // Assuming such a getter exists
+                if (ownPetUI != null) targetTransform = ownPetUI.transform;
+                break;
+        }
+
+        if (targetTransform != null)
+        {
+            // Get the main combat canvas to instantiate under
+            GameObject combatCanvas = gameManager.GetGameStateManager()?.GetCombatInstance();
+            if (combatCanvas != null)
+            {
+                // Use targetTransform.position for world space effects
+                // For UI Canvas, might need ScreenToWorldPoint or adjustments
+                gameManager.StartCoroutine(InstantiateAndDestroyEffect(effectPrefab, targetTransform.position, combatCanvas.transform));
+            }
+            else
+            {
+                Debug.LogError("PlayTargetEffectPrefab: Could not find Combat Canvas instance!");
+            }
+        }
+        else
+        {
+            Debug.LogWarning($"PlayTargetEffectPrefab: Could not find target transform for {targetType}");
+        }
+    }
+
+    private IEnumerator InstantiateAndDestroyEffect(GameObject prefab, Vector3 targetPosition, Transform parentTransform)
+    {
+        // Create a temporary GameObject by instantiating the prefab
+        GameObject effectGO = Object.Instantiate(prefab, parentTransform); 
+        effectGO.transform.position = targetPosition; // Set position
+        
+        // --- ADDED: Attempt to get Animator and animation length --- 
+        Animator animator = effectGO.GetComponent<Animator>();
+        float duration = 1.0f; // Default duration if animator/clip not found
+        
+        if (animator != null && animator.runtimeAnimatorController != null && animator.runtimeAnimatorController.animationClips.Length > 0)
+        {
+            // Assuming the first animation clip is the one we want the length of
+            duration = animator.runtimeAnimatorController.animationClips[0].length;
+            Debug.Log($"Target Effect: Found animation clip, duration: {duration}s");
+        }
+        else
+        {
+             Debug.LogWarning("Target Effect: Animator or Animation Clip not found on prefab. Using default duration.");
+        }
+        // --- END ADDED ---
+
+        // Wait for the determined duration
+        yield return new WaitForSeconds(duration);
+
+        // Cleanup - Destroy the instantiated effect object
+        if (effectGO != null) // Check if it wasn't destroyed elsewhere
+        {
+            Object.Destroy(effectGO);
+        }
+    }
+    // --- END MODIFIED ---
 }

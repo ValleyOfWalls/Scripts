@@ -727,6 +727,7 @@ public class CombatUIManager
          TextMeshProUGUI costText = headerPanel?.Find("CostText")?.GetComponent<TextMeshProUGUI>();
          TextMeshProUGUI descText = descPanel?.Find("CardDescText")?.GetComponent<TextMeshProUGUI>();
          Image cardBackground = cardGO.GetComponent<Image>(); 
+         Image artImage = artPanel?.GetComponent<Image>(); // Get the Image component from ArtPanel
 
          if (nameText != null) 
          {
@@ -748,6 +749,19 @@ public class CombatUIManager
 
          if (descText != null) descText.text = card.description;
 
+         if (artImage != null)
+         {
+             if (card.cardArt != null)
+             {
+                 artImage.sprite = card.cardArt;
+                 artImage.enabled = true; // Ensure it's visible if it was hidden
+             }
+             else
+             {
+                 artImage.enabled = false; // Hide the art panel if no sprite is assigned
+             }
+         }
+        
          if (cardBackground != null) // Reset background color first
          {
             cardBackground.color = Color.white; // Or your default card background color
@@ -1169,4 +1183,10 @@ public class CombatUIManager
         }
         // Optional: Add simple fade-in/pop-in animation later if desired
     }
+    
+    // --- ADDED: Getters for Area Transforms (for Target Effects) --- 
+    public GameObject GetOpponentPetUIArea() => opponentPetNameText?.transform.parent.gameObject; // Assumes name text is direct child of the area GO
+    public GameObject GetPlayerUIArea() => playerNameText?.transform.parent.gameObject; // Assumes name text is direct child of the stats row
+    public GameObject GetOwnPetUIArea() => ownPetNameText?.transform.parent.gameObject; // Assumes name text is direct child of the area GO
+    // --- END ADDED ---
 } 
