@@ -35,6 +35,7 @@ public class CombatUIManager
     private Button endTurnButton;
     private TextMeshProUGUI opponentPetDotText;
     private HandPanelHoverManager handPanelHoverManager;
+    private GameObject opponentPetHandPanel;
     
     // Other Fights UI
     private GameObject othersStatusArea;
@@ -73,6 +74,15 @@ public class CombatUIManager
         opponentPetBlockText = opponentArea?.Find("OpponentPetBlockText")?.GetComponent<TextMeshProUGUI>();
         opponentPetIntentText = opponentArea?.Find("OpponentPetIntentText")?.GetComponent<TextMeshProUGUI>();
         opponentPetDotText = opponentArea?.Find("OpponentPetDotText")?.GetComponent<TextMeshProUGUI>();
+        
+        // --- ADDED: Find Opponent Pet Hand Panel ---
+        // Assuming it's also under TopArea for layout purposes
+        opponentPetHandPanel = topArea.Find("OpponentPetAreaContainer/OpponentPetHandPanel")?.gameObject;
+        if (opponentPetHandPanel == null) 
+        {
+            Debug.LogWarning("OpponentPetHandPanel GameObject not found under TopArea/OpponentPetAreaContainer.");
+        }
+        // --- END ADDED ---
         
         // Hide the opponent intent text as it's currently unused
         if (opponentPetIntentText != null)
@@ -363,7 +373,8 @@ public class CombatUIManager
         }
 
         // 2. Prepare for matching
-        List<System.Tuple<Vector3, Quaternion, Vector3>> targetTransforms = CalculateLayoutTransforms(currentHand.Count);
+        // List<System.Tuple<Vector3, Quaternion, Vector3>> targetTransforms = CalculateLayoutTransforms(currentHand.Count);
+        List<System.Tuple<Vector3, Quaternion, Vector3>> targetTransforms = CalculateLayoutTransforms(currentHand.Count, playerHandPanel.GetComponent<RectTransform>()); // Pass panel rect
         List<GameObject> finalGOs = new List<GameObject>(currentHand.Count); // GOs in the final layout order
         List<GameObject> availableGOs = new List<GameObject>(existingGOs); // Copy list of GOs available to be reused
         bool[] handCardMatched = new bool[currentHand.Count]; // Track which hand slots have been filled
@@ -485,10 +496,41 @@ public class CombatUIManager
         }
     }
     
-    private List<System.Tuple<Vector3, Quaternion, Vector3>> CalculateLayoutTransforms(int numCards)
+    private List<System.Tuple<Vector3, Quaternion, Vector3>> CalculateLayoutTransforms(int numCards, RectTransform panelRect)
     {
         List<System.Tuple<Vector3, Quaternion, Vector3>> transforms = new List<System.Tuple<Vector3, Quaternion, Vector3>>();
-        if (numCards == 0) return transforms;
+        if (numCards == 0 || panelRect == null) return transforms;
+
+        // --- Dynamic Spacing Calculation ---
+        float panelWidth = panelRect.rect.width;
+        // Estimate card width (could be more precise if needed)
+        float cardWidth = gameManager.GetCardPrefab()?.GetComponent<RectTransform>().rect.width ?? 100f; 
+        // Target total width: leave some padding
+        float targetTotalWidth = panelWidth * 0.9f; 
+        // Calculate dynamic spacing
+        float dynamicCardSpacing = cardSpacing; // Start with default
+        if (numCards > 1) {
+            // Calculate spacing needed to fit all cards, considering overlap
+            // This is an approximation, might need tuning depending on desired overlap
+            float requiredWidth = cardWidth * numCards * 0.7f; // Assume cards overlap significantly
+            if (requiredWidth > targetTotalWidth)
+            {
+                 // Reduce spacing to fit
+                 dynamicCardSpacing = (targetTotalWidth - cardWidth) / (numCards - 1);
+            }
+            else
+            {
+                // Use default spacing if enough room, but don't exceed panel width
+                float defaultWidth = cardSpacing * (numCards - 1) + cardWidth;
+                if (defaultWidth > targetTotalWidth)
+                {
+                    dynamicCardSpacing = (targetTotalWidth - cardWidth) / (numCards - 1);
+                }
+            }
+        }
+        dynamicCardSpacing = Mathf.Max(dynamicCardSpacing, cardWidth * 0.5f); // Ensure minimum overlap/spacing
+        Debug.Log($"CalculateLayoutTransforms: PanelWidth={panelWidth}, NumCards={numCards}, CalculatedSpacing={dynamicCardSpacing}");
+        // --- End Dynamic Spacing ---
 
         float middleIndex = (numCards - 1) / 2.0f;
         Vector3 baseScale = gameManager.GetCardPrefab()?.GetComponent<RectTransform>().localScale ?? Vector3.one;
@@ -497,9 +539,9 @@ public class CombatUIManager
         {
             float offsetFromCenter = i - middleIndex;
 
-            // Calculate Position
-            float posX = offsetFromCenter * cardSpacing;
-            posX += Mathf.Sign(offsetFromCenter) * Mathf.Pow(Mathf.Abs(offsetFromCenter), 2) * curveFactor * cardSpacing * 0.1f;
+            // Calculate Position using dynamic spacing
+            float posX = offsetFromCenter * dynamicCardSpacing;
+            posX += Mathf.Sign(offsetFromCenter) * Mathf.Pow(Mathf.Abs(offsetFromCenter), 2) * curveFactor * dynamicCardSpacing * 0.1f; // Curve adjusted by spacing
             float posY = -Mathf.Abs(offsetFromCenter) * offsetYPerCard; 
             posY -= Mathf.Pow(offsetFromCenter, 2) * offsetYPerCard * 0.1f; 
 
@@ -755,19 +797,37 @@ public class CombatUIManager
     
     public void ClearAllHandCardObjects()
     {
-        if (playerHandPanel == null) return;
-
-        foreach (Transform child in playerHandPanel.transform)
+        // Clear Player Hand
+        if (playerHandPanel != null)
         {
-            if (child.gameObject.name != "CardTemplate")
+            foreach (Transform child in playerHandPanel.transform)
             {
-                 if (child.gameObject != null) {
-                    DOTween.Kill(child.transform, true); // Kill tweens
-                    Object.Destroy(child.gameObject);
-                 }
-            } else { child.gameObject.SetActive(false); }
+                if (child.gameObject.name != "CardTemplate")
+                {
+                     if (child.gameObject != null) {
+                        DOTween.Kill(child.transform, true); // Kill tweens
+                        Object.Destroy(child.gameObject);
+                     }
+                } else { child.gameObject.SetActive(false); }
+            }
+            Debug.Log("ClearAllHandCardObjects: Destroyed all card GameObjects in player hand panel");
         }
-        Debug.Log("ClearAllHandCardObjects: Destroyed all card GameObjects in hand panel");
+
+        // Clear Opponent Pet Hand
+        if (opponentPetHandPanel != null)
+        {
+             foreach (Transform child in opponentPetHandPanel.transform)
+            {
+                if (child.gameObject.name != "CardTemplate")
+                {
+                     if (child.gameObject != null) {
+                        DOTween.Kill(child.transform, true); // Kill tweens
+                        Object.Destroy(child.gameObject);
+                     }
+                } else { child.gameObject.SetActive(false); }
+            }
+            Debug.Log("ClearAllHandCardObjects: Destroyed all card GameObjects in opponent pet hand panel");
+        }
     }
     
     public GameObject GetPlayerHandPanel() => playerHandPanel;
@@ -881,5 +941,79 @@ public class CombatUIManager
 
         // Wait for the animation duration before the coroutine finishes (optional, but good practice)
         yield return new WaitForSeconds(discardAnimDuration);
+    }
+
+    /// <summary>
+    /// Updates the UI for the Opponent Pet's hand.
+    /// Instantiates/updates card GameObjects and disables interaction.
+    /// </summary>
+    public void UpdateOpponentPetHandUI()
+    {
+        if (opponentPetHandPanel == null) 
+        { 
+            // Debug.Log("UpdateOpponentPetHandUI: Opponent hand panel not found, skipping.");
+            return; 
+        }
+
+        GameObject cardPrefab = gameManager.GetCardPrefab();
+        // PlayerManager playerManager = gameManager.GetPlayerManager(); // Not needed directly for visuals?
+        PetDeckManager petDeckManager = gameManager.GetCardManager().GetPetDeckManager();
+        List<CardData> opponentHand = petDeckManager.GetOpponentPetHand();
+
+        if (cardPrefab == null)
+        {
+            Debug.LogError("Cannot UpdateOpponentPetHandUI - CardPrefab is missing!");
+            return;
+        }
+        
+        // Simplified Logic compared to Player Hand (No drag handling complexity needed here)
+        
+        // 1. Clear existing card GOs (except template)
+        foreach (Transform child in opponentPetHandPanel.transform)
+        {
+            if (child.gameObject.name != "CardTemplate")
+            {
+                DOTween.Kill(child, true); // Kill any animations
+                Object.Destroy(child.gameObject);
+            }
+            else
+            {
+                child.gameObject.SetActive(false); // Keep template hidden
+            }
+        }
+        
+        // 2. Calculate layout transforms (reuse player hand logic, maybe scale down?)
+        // TODO: Consider a separate layout function or scaling factor for opponent hand
+        // List<System.Tuple<Vector3, Quaternion, Vector3>> targetTransforms = CalculateLayoutTransforms(opponentHand.Count);
+        List<System.Tuple<Vector3, Quaternion, Vector3>> targetTransforms = CalculateLayoutTransforms(opponentHand.Count, opponentPetHandPanel.GetComponent<RectTransform>()); // Pass panel rect
+        float opponentCardScaleFactor = 0.8f; // Example: Make opponent cards smaller
+
+        // 3. Instantiate and position new card GOs
+        for (int i = 0; i < opponentHand.Count; i++)
+        {
+            CardData cardData = opponentHand[i];
+            GameObject newGO = Object.Instantiate(cardPrefab, opponentPetHandPanel.transform);
+            newGO.name = $"OpponentCard_{cardData.cardName}_{i}"; // Simpler naming
+
+            // Update visuals (Use playerManager context for cost mods? Opponent perspective?) 
+            // For now, use local player manager for simplicity, assuming opponent pet cost mods aren't visualized
+            UpdateCardVisuals(newGO, cardData, gameManager.GetPlayerManager(), gameManager.GetCardManager());
+            
+            // Disable interaction
+            CardDragHandler dragHandler = newGO.GetComponent<CardDragHandler>();
+            if (dragHandler != null) dragHandler.enabled = false;
+            CanvasGroup canvasGroup = newGO.GetComponent<CanvasGroup>() ?? newGO.AddComponent<CanvasGroup>();
+            canvasGroup.blocksRaycasts = false; // Disable raycasting
+            
+            // Apply calculated transform
+            RectTransform cardRect = newGO.GetComponent<RectTransform>();
+            System.Tuple<Vector3, Quaternion, Vector3> target = targetTransforms[i];
+            cardRect.localPosition = target.Item1;
+            cardRect.localRotation = target.Item2;
+            cardRect.localScale = target.Item3 * opponentCardScaleFactor; // Apply scale factor
+            
+            newGO.SetActive(true);
+        }
+        // Optional: Add simple fade-in/pop-in animation later if desired
     }
 } 

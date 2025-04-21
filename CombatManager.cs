@@ -66,6 +66,14 @@ public class CombatManager
     public void StartTurn()
     {
         turnManager.StartTurn();
+        
+        // --- ADDED: Draw Opponent Pet's Hand at Player Turn Start ---
+        // Debug.Log("CombatManager.StartTurn: Drawing opponent pet's hand.");
+        // int petCardsToDraw = 5; // Assuming same draw count as player
+        // gameManager.GetCardManager().GetPetDeckManager().DrawOpponentPetHand(petCardsToDraw);
+        // UpdateOpponentPetHandUI() is called inside DrawOpponentPetHand
+        // --- END ADDED ---
+        // --- MOVED to CombatTurnManager.StartTurn ---
     }
 
     public IEnumerator EndTurn()

@@ -59,7 +59,13 @@ public class CombatTurnManager
         currentTurnNumber++;
         PublishCombatStatus();
 
-        // Draw cards
+        // Draw Opponent Pet Hand
+        Debug.Log("CombatTurnManager.StartTurn: Drawing opponent pet's hand.");
+        int petCardsToDraw = 5; // Assuming same draw count as player
+        gameManager.GetCardManager().GetPetDeckManager().DrawOpponentPetHand(petCardsToDraw);
+        // UI is updated within DrawOpponentPetHand
+
+        // Draw player cards
         gameManager.GetCardManager().DrawHand();
         uiManager.UpdateHandUI();
         uiManager.UpdateDeckCountUI();

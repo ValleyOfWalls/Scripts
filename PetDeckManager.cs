@@ -66,6 +66,7 @@ public class PetDeckManager
     // Opponent Pet Deck Methods
     public void InitializeOpponentPetDeck(List<string> cardNames)
     {
+        Debug.Log($"[PetDeckManager.InitializeOpponentPetDeck] STARTING - Reconstructing opponent pet deck.");
         opponentPetDeck.Clear(); // Clear previous round's deck
 
         if (cardNames == null || cardNames.Count == 0)
@@ -97,7 +98,7 @@ public class PetDeckManager
         opponentPetDiscard.Clear();
         ShuffleOpponentPetDeck(); // Shuffle the reconstructed or starter deck
 
-        Debug.Log($"Opponent Pet Deck initialized with {opponentPetDeck.Count} cards.");
+        Debug.Log($"Opponent Pet Deck initialized with {opponentPetDeck.Count} cards. Hand ({opponentPetHand.Count}) and Discard ({opponentPetDiscard.Count}) cleared.");
     }
     
     public void ShuffleOpponentPetDeck()
@@ -123,6 +124,10 @@ public class PetDeckManager
             DrawOpponentPetCard();
         }
         Debug.Log($"Opponent Pet drew {opponentPetHand.Count} cards.");
+        
+        // --- ADDED: Update Opponent Hand UI ---
+        gameManager.GetCombatUIManager()?.UpdateOpponentPetHandUI();
+        // --- END ADDED ---
     }
     
     public void DrawOpponentPetCard()
@@ -153,6 +158,9 @@ public class PetDeckManager
         {
             opponentPetDiscard.Add(card);
         }
+        // --- ADDED: Update Opponent Hand UI ---
+        gameManager.GetCombatUIManager()?.UpdateOpponentPetHandUI();
+        // --- END ADDED ---
     }
     
     public void DiscardRandomOpponentPetCards(int amount)
@@ -174,10 +182,11 @@ public class PetDeckManager
     
     public void ReshuffleOpponentPetDiscardPile()
     {
-        Debug.Log("Reshuffling Opponent Pet discard pile into deck.");
+        Debug.Log($"[PetDeckManager.ReshuffleOpponentPetDiscardPile] STARTING - Reshuffling {opponentPetDiscard.Count} cards into deck (current size: {opponentPetDeck.Count})");
         opponentPetDeck.AddRange(opponentPetDiscard);
         opponentPetDiscard.Clear();
         ShuffleOpponentPetDeck();
+        Debug.Log($"[PetDeckManager.ReshuffleOpponentPetDiscardPile] END - Deck size: {opponentPetDeck.Count}, Discard size: {opponentPetDiscard.Count}");
     }
 
     // MODIFIED: Returns IEnumerator to allow yielding
@@ -197,8 +206,8 @@ public class PetDeckManager
         gameManager.GetPlayerManager().ProcessOpponentPetTurnStartEffects();
         
         // Determine how many cards the pet should draw
-        int petCardsToDraw = 5; // MODIFIED: Draw 5 cards, like the player
-        DrawOpponentPetHand(petCardsToDraw);
+        // int petCardsToDraw = 5; // MODIFIED: Draw 5 cards, like the player
+        // DrawOpponentPetHand(petCardsToDraw); // MOVED to CombatManager.StartTurn
         
         // Simple AI: Play cards until out of energy or no playable cards left
         bool cardPlayedThisLoop;
@@ -235,9 +244,13 @@ public class PetDeckManager
 
                 // NOW deduct energy and update hand/discard
                 opponentPetEnergy -= cardToPlay.cost;
-                opponentPetHand.RemoveAt(cardIndex);
+                opponentPetHand.Remove(cardToPlay);
                 opponentPetDiscard.Add(cardToPlay);
                 cardPlayedThisLoop = true; // Indicate a card was processed, loop again
+                
+                // --- ADDED: Update Opponent Hand UI ---
+                gameManager.GetCombatUIManager()?.UpdateOpponentPetHandUI();
+                // --- END ADDED ---
                 
                 Debug.Log($"Opponent Pet energy remaining after playing {cardToPlay.cardName}: {opponentPetEnergy}");
                 gameManager.UpdateHealthUI(); // Update UI to show energy change *after* card play completes
@@ -248,9 +261,8 @@ public class PetDeckManager
         Debug.Log("Opponent Pet finished playing cards.");
         DiscardOpponentPetHand();
         Debug.Log("---> Ending Opponent Pet Turn <---");
-
-        // NOTE: Final energy state is no longer sent via RPC here.
-        // Energy is updated incrementally on the owner's client via RpcOpponentPlayedCard.
+        // Update UI called within DiscardOpponentPetHand
+        yield break; // Ensure coroutine yields null at the end
     }
 
     private void SyncLocalPetDeckToCustomProperties()
