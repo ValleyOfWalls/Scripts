@@ -49,32 +49,51 @@ public class PhotonManager : MonoBehaviourPunCallbacks
 
     public void TryJoinGameRoom()
     {
+        Debug.Log("Attempting to JoinRoom(\"asd\")...");
+        if (!PhotonNetwork.JoinRoom("asd"))
+        {
+            Debug.LogError("PhotonNetwork.JoinRoom failed immediately. Check connection and room name format.");
+        }
+    }
+
+    private void CreateRoom()
+    {
+        Debug.Log("Creating room 'asd'...");
         RoomOptions roomOptions = new RoomOptions 
         {
             MaxPlayers = 4, 
             PlayerTtl = 60000 // Keep player slot open for 60 seconds (60000ms) after disconnect
         };
-        PhotonNetwork.JoinOrCreateRoom("asd", roomOptions, TypedLobby.Default);
+        PhotonNetwork.CreateRoom("asd", roomOptions, TypedLobby.Default);
     }
 
     public void LeaveRoom()
     {
-        Debug.Log("Leave Button Clicked");
-        PhotonNetwork.LeaveRoom();
+        Debug.Log("Leave Button Clicked - Disconnecting from Photon...");
+        PhotonNetwork.Disconnect();
     }
 
     // PUN Callbacks
     public override void OnConnectedToMaster()
     {
         Debug.Log($"Connected to Master Server. Player Nickname: {PhotonNetwork.NickName}");
+        // Automatically join the default lobby after connecting.
+        Debug.Log("Connected to Master. Attempting to join default lobby...");
+        PhotonNetwork.JoinLobby(); 
+    }
+
+    public override void OnJoinedLobby()
+    {
+        Debug.Log("Joined Default Lobby.");
+        // Now that we are in the lobby, attempt to join or create the room if connection was user-initiated.
         if (gameManager.GetGameStateManager().IsUserInitiatedConnection())
         {
-            Debug.Log("User initiated connection - attempting to join/create room...");
+            Debug.Log("User initiated connection - attempting to join/create room from lobby...");
             TryJoinGameRoom();
         }
         else
         {
-            Debug.Log("Connected to Master, but not user-initiated. Waiting for user action.");
+             Debug.Log("Joined lobby, but connection wasn't user-initiated. Waiting...");
         }
     }
 
@@ -114,13 +133,26 @@ public class PhotonManager : MonoBehaviourPunCallbacks
     {
         Debug.LogError($"Join Room Failed: ({returnCode}) {message}");
         gameManager.GetGameStateManager().HideReconnectingUI();
-        if (!gameManager.GetGameStateManager().IsUserInitiatedConnection() && gameManager.GetGameStateManager().WasInRoomWhenDisconnected())
+
+        if (returnCode == ErrorCode.GameDoesNotExist)
         {
-            Debug.LogWarning("Rejoin failed, handling as full disconnect.");
-            gameManager.GetGameStateManager().HandleFullDisconnect();
+            Debug.Log("OnJoinRoomFailed reported GameDoesNotExist. Attempting to create the room now.");
+            CreateRoom();
+        }
+        else if (returnCode == ErrorCode.JoinFailedFoundInactiveJoiner)
+        {
+            Debug.Log("OnJoinRoomFailed reported JoinFailedFoundInactiveJoiner. Attempting to rejoin the room now.");
+            if (!PhotonNetwork.RejoinRoom("asd"))
+            {
+                Debug.LogError("PhotonNetwork.RejoinRoom failed immediately after Join failed. Check connection?");
+                gameManager.GetGameStateManager().SetUserInitiatedConnection(false);
+                Button connectBtn = gameManager.GetGameStateManager().GetConnectButton();
+                if (connectBtn != null) connectBtn.interactable = true;
+            }
         }
         else
         {
+            Debug.LogWarning($"JoinRoom failed with unhandled error code {returnCode}. Resetting flags and button.");
             gameManager.GetGameStateManager().SetUserInitiatedConnection(false);
             Button connectBtn = gameManager.GetGameStateManager().GetConnectButton();
             if (connectBtn != null) connectBtn.interactable = true;
@@ -190,7 +222,7 @@ public class PhotonManager : MonoBehaviourPunCallbacks
         if (gameManager.GetGameStateManager().GetLobbyInstance() != null && 
             gameManager.GetGameStateManager().GetLobbyInstance().activeSelf)
         {
-            gameManager.UpdatePlayerList();
+            gameManager.StartCoroutine(gameManager.DelayedUpdatePlayerList());
         }
     }
 
