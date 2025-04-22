@@ -5,6 +5,9 @@ using System.Linq;
 
 public class HandPanelHoverManager : MonoBehaviour, IPointerMoveHandler, IPointerExitHandler
 {
+    [Tooltip("The Camera rendering the UI Canvas this panel belongs to.")]
+    public Camera uiCamera;
+
     private List<CardDragHandler> cardsInHand = new List<CardDragHandler>();
     private CardDragHandler currentlyHoveredCard = null;
     private RectTransform panelRectTransform;
@@ -88,6 +91,14 @@ public class HandPanelHoverManager : MonoBehaviour, IPointerMoveHandler, IPointe
 
     private CardDragHandler FindClosestCard(Vector2 screenPosition)
     {
+        // --- ADDED: Camera check ---
+        if (uiCamera == null)
+        {
+            Debug.LogError("[HandPanelHoverManager] uiCamera is not assigned!");
+            return null;
+        }
+        // --- END ADDED ---
+
         CardDragHandler closest = null;
         float minDistanceSqr = float.MaxValue;
 
@@ -97,7 +108,10 @@ public class HandPanelHoverManager : MonoBehaviour, IPointerMoveHandler, IPointe
 
             // Use RectTransformUtility to convert screen point to card's local space if needed,
             // but comparing distances in screen space to the card's screen position is simpler here.
-            Vector2 cardScreenPosition = RectTransformUtility.WorldToScreenPoint(null, card.transform.position); // Use null for camera if Canvas is ScreenSpaceOverlay
+            // --- MODIFIED: Use the assigned uiCamera ---
+            // Vector2 cardScreenPosition = RectTransformUtility.WorldToScreenPoint(null, card.transform.position); // Use null for camera if Canvas is ScreenSpaceOverlay
+            Vector2 cardScreenPosition = RectTransformUtility.WorldToScreenPoint(uiCamera, card.transform.position); 
+            // --- END MODIFIED ---
             
             // Alternative: Use card's pivot point projected to screen space
             // Vector2 cardPivotScreenPosition = RectTransformUtility.WorldToScreenPoint(null, card.GetComponent<RectTransform>().position); 
