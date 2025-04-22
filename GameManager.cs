@@ -231,22 +231,6 @@ public class GameManager : MonoBehaviourPunCallbacks
 
     #region Lobby Functions
 
-    // --- ADDED: Coroutine for delayed list update ---
-    public System.Collections.IEnumerator DelayedUpdatePlayerList()
-    {
-        // Wait for the end of the frame to allow Photon's list to update
-        // yield return new WaitForEndOfFrame(); 
-        // --- MODIFIED: Wait until the next frame instead ---
-        // yield return null; 
-        // --- MODIFIED AGAIN: Wait for two frames ---
-        yield return null;
-        yield return null;
-        // --- END MODIFIED ---
-        Debug.Log("DelayedUpdatePlayerList: Updating after wait.");
-        UpdatePlayerList();
-    }
-    // --- END ADDED ---
-
     public void UpdatePlayerList()
     {
         playerManager.UpdatePlayerList(gameStateManager.GetPlayerListPanel(), gameStateManager.GetPlayerEntryTemplate());
@@ -294,14 +278,9 @@ public class GameManager : MonoBehaviourPunCallbacks
         }
         if (!playerManager.CheckAllPlayersReady())
         {
-            Debug.LogWarning("StartGame clicked, but not all players are ready.");
+            Debug.LogWarning("StartGame clicked, but not enough active players are ready.");
             // Optional: Update UI to show not ready? Maybe disable button again briefly?
             // UpdateLobbyControls(); 
-            return;
-        }
-        if (PhotonNetwork.PlayerList.Length < 2)
-        {
-            Debug.LogWarning("StartGame clicked, but not enough players.");
             return;
         }
 
@@ -333,13 +312,8 @@ public class GameManager : MonoBehaviourPunCallbacks
         }
         if (!playerManager.CheckAllPlayersReady())
         {
-            Debug.LogWarning("RpcRequestStartGame received, but not all players are ready.");
+            Debug.LogWarning("RpcRequestStartGame received, but not enough active players are ready.");
             // Inform the requesting client? Might be overkill.
-            return;
-        }
-         if (PhotonNetwork.PlayerList.Length < 2)
-        {
-            Debug.LogWarning("RpcRequestStartGame received, but not enough players.");
             return;
         }
 

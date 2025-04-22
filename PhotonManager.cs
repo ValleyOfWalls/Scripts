@@ -222,7 +222,7 @@ public class PhotonManager : MonoBehaviourPunCallbacks
         if (gameManager.GetGameStateManager().GetLobbyInstance() != null && 
             gameManager.GetGameStateManager().GetLobbyInstance().activeSelf)
         {
-            gameManager.StartCoroutine(gameManager.DelayedUpdatePlayerList());
+            gameManager.UpdatePlayerList();
         }
     }
 
