@@ -101,13 +101,14 @@ public class DeckManager
         }
     }
     
-    public bool DiscardCard(CardData card)
+    public bool DiscardCard(CardData card, GameObject cardGO = null)
     {
         // Trigger animation *before* removing from hand list
         CombatUIManager combatUIManager = gameManager.GetCombatUIManager();
         if (combatUIManager != null)
-        {
-            combatUIManager.TriggerDiscardAnimation(card);
+        {   
+            // Pass the optional GameObject along
+            combatUIManager.TriggerDiscardAnimation(card, cardGO);
         }
         else
         {

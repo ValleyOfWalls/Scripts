@@ -125,7 +125,8 @@ public class CardManager
         cardEffectService.HandleDiscardTrigger(card);
     }
     
-    public bool AttemptPlayCard(CardData cardData, CardDropZone.TargetType targetType)
+    // --- MODIFIED: Accept optional GameObject --- 
+    public bool AttemptPlayCard(CardData cardData, CardDropZone.TargetType targetType, GameObject cardGO = null)
     {
         Debug.Log($"CardManager.AttemptPlayCard called: Card '{cardData.cardName}', TargetType '{targetType}'");
         
@@ -148,7 +149,8 @@ public class CardManager
         }
         
         // Attempt to remove the card from the hand list
-        bool removed = deckManager.DiscardCard(cardData);
+        // --- MODIFIED: Pass cardGO to DiscardCard ---
+        bool removed = deckManager.DiscardCard(cardData, cardGO); 
         Debug.Log($"Attempting to remove card '{cardData.cardName}' from hand. Result: {removed}");
         
         if (removed)

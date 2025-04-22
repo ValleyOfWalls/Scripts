@@ -684,7 +684,12 @@ public class CombatUIManager
     private void AnimateCardDraw(GameObject cardGO, int index, Vector3 targetPos, Quaternion targetRot, Vector3 targetScale)
     {
         RectTransform cardRect = cardGO.GetComponent<RectTransform>();
+        // --- ADDED: Get/Add CanvasGroup and disable interaction ---
+        CanvasGroup canvasGroup = cardGO.GetComponent<CanvasGroup>() ?? cardGO.AddComponent<CanvasGroup>();
         if (cardRect == null) return;
+        
+        canvasGroup.blocksRaycasts = false; // Disable hover interaction during animation
+        // --- END ADDED ---
 
         float drawAnimDuration = 0.4f;
         float staggerDelay = index * 0.08f;
@@ -693,17 +698,26 @@ public class CombatUIManager
         cardRect.localPosition = targetPos + Vector3.down * 400f;
         cardRect.localRotation = Quaternion.identity;
         cardRect.localScale = targetScale * 0.7f;
+        // --- ADDED: Start fully transparent for fade-in effect ---
+        canvasGroup.alpha = 0f; 
+        // --- END ADDED ---
         
         // Kill existing tweens just in case
         DOTween.Kill(cardRect);
+        // --- ADDED: Kill canvas group tweens ---
+        DOTween.Kill(canvasGroup);
+        // --- END ADDED ---
 
         // Create Sequence
         Sequence drawSequence = DOTween.Sequence();
         drawSequence.SetTarget(cardRect); // Associate tween with the RectTransform
         drawSequence.AppendInterval(staggerDelay);
+        // --- MODIFIED: Join fade-in with movement/rotation/scale ---
         drawSequence.Append(cardRect.DOLocalMove(targetPos, drawAnimDuration).SetEase(Ease.OutBack));
         drawSequence.Join(cardRect.DOLocalRotateQuaternion(targetRot, drawAnimDuration).SetEase(Ease.OutBack));
         drawSequence.Join(cardRect.DOScale(targetScale, drawAnimDuration).SetEase(Ease.OutBack));
+        drawSequence.Join(canvasGroup.DOFade(1f, drawAnimDuration * 0.5f)); // Fade in quicker
+        // --- END MODIFIED ---
         
         // Update handler's original transform once animation is complete
         drawSequence.OnComplete(() => {
@@ -714,6 +728,9 @@ public class CombatUIManager
                 handler.originalRotation = targetRot;
                 handler.originalScale = targetScale;
             }
+            // --- ADDED: Re-enable interaction ---
+            if (canvasGroup != null) canvasGroup.blocksRaycasts = true;
+             // --- END ADDED ---
         });
 
         drawSequence.Play();
@@ -1014,56 +1031,83 @@ public class CombatUIManager
     /// Call this method *BEFORE* removing the card data from the CardManager's hand list.
     /// It finds the associated GameObject and starts the discard animation.
     /// </summary>
-    public void TriggerDiscardAnimation(CardData cardData)
+    /// <param name="cardData">The data of the card to discard.</param>
+    /// <param name="cardGOToDiscard">Optional specific GameObject instance to animate. If null, searches the hand panel.</param>
+    public void TriggerDiscardAnimation(CardData cardData, GameObject cardGOToDiscard = null)
     {
-        GameObject cardGOToDiscard = null;
-        // Find the *first* active, non-animating GO matching the card data
-        foreach (Transform child in playerHandPanel.transform)
+        // If a specific GO is provided, use it directly
+        if (cardGOToDiscard != null)
         {
-            if (child.gameObject.name == "CardTemplate") continue;
-
-            CardDragHandler handler = child.GetComponent<CardDragHandler>();
-            CanvasGroup cg = child.GetComponent<CanvasGroup>();
-
-            // Check if GO matches data, is active, and is not already fading out (alpha > 0.1f)
-            if (handler != null && handler.cardData == cardData && child.gameObject.activeSelf && !handler.isDiscarding && (cg == null || cg.alpha > 0.1f))
+            // --- ADDED: Check if the provided GO is actually suitable ---
+            CardDragHandler handler = cardGOToDiscard.GetComponent<CardDragHandler>();
+            CanvasGroup cg = cardGOToDiscard.GetComponent<CanvasGroup>();
+            if (handler != null && handler.cardData == cardData && cardGOToDiscard.activeSelf && !handler.isDiscarding)
             {
-                // Check if it's already animating a discard (e.g., via DOTween ID or check active tweens)
-                 // Simple check: If a tween is active on its RectTransform, assume it might be animating.
-                 // This isn't perfect but avoids starting a second discard animation.
-                 // if (!DOTween.IsTweening(child.GetComponent<RectTransform>()))
-                 // { 
-                 // Removed IsTweening check, relying on isDiscarding flag now
-                    cardGOToDiscard = child.gameObject;
-                    break; // Found a suitable GO to animate
-                 // }
+                 Debug.Log($"[TriggerDiscardAnimation] Using provided GO {cardGOToDiscard.name} for {cardData.cardName}. Starting animation.");
+                 // Set isDiscarding flag IMMEDIATELY
+                 handler.isDiscarding = true;
+                 Debug.Log($"[TriggerDiscardAnimation] Set isDiscarding = true for {cardGOToDiscard.name}");
+                 // Start animation
+                 gameManager.StartCoroutine(AnimateCardDiscardAndRemove(cardData, cardGOToDiscard));
+                 return; // Successfully started animation on provided GO
             }
-            // --- END MODIFIED ---
+            else
+            {
+                // Provided GO was unsuitable (wrong data, inactive, already discarding, etc.)
+                // Fall through to search logic below
+                 Debug.LogWarning($"[TriggerDiscardAnimation] Provided GO {cardGOToDiscard.name} for {cardData.cardName} was unsuitable. Falling back to search.");
+                 cardGOToDiscard = null; // Reset to null so search happens
+            }
+             // --- END ADDED ---
         }
+
+        // --- MODIFIED: Search logic now only runs if cardGOToDiscard was null or unsuitable ---
+        if (cardGOToDiscard == null)
+        {
+            Debug.Log($"[TriggerDiscardAnimation] Searching panel for {cardData.cardName} GO.");
+            // Find the *first* active, non-animating GO matching the card data in the panel
+            foreach (Transform child in playerHandPanel.transform)
+            {
+                if (child.gameObject.name == "CardTemplate") continue;
+
+                CardDragHandler handler = child.GetComponent<CardDragHandler>();
+                // CanvasGroup cg = child.GetComponent<CanvasGroup>(); // No longer needed here
+
+                // Check if GO matches data, is active, and is not already discarding
+                if (handler != null && handler.cardData == cardData && child.gameObject.activeSelf && !handler.isDiscarding)
+                {
+                    cardGOToDiscard = child.gameObject;
+                    break; // Found a suitable GO to animate via search
+                }
+            }
+        }
+        // --- END MODIFIED ---
+
 
         if (cardGOToDiscard != null)
         {
-            Debug.Log($"[TriggerDiscardAnimation] Found GO {cardGOToDiscard.name} for {cardData.cardName}. Starting animation.");
-            
-            // --- ADDED: Set isDiscarding flag IMMEDIATELY --- 
+            // --- MOVED: Logic from above ---
+            Debug.Log($"[TriggerDiscardAnimation] Found GO {cardGOToDiscard.name} via search for {cardData.cardName}. Starting animation.");
             CardDragHandler handlerToDiscard = cardGOToDiscard.GetComponent<CardDragHandler>();
-            if (handlerToDiscard != null) 
-            { 
-                handlerToDiscard.isDiscarding = true; 
-                Debug.Log($"[TriggerDiscardAnimation] Set isDiscarding = true for {cardGOToDiscard.name}");
-            }
-            else 
+            if (handlerToDiscard != null)
             {
-                Debug.LogWarning($"[TriggerDiscardAnimation] Could not find CardDragHandler on {cardGOToDiscard.name} to set flag immediately.");
+                handlerToDiscard.isDiscarding = true;
+                Debug.Log($"[TriggerDiscardAnimation] Set isDiscarding = true for {cardGOToDiscard.name}");
+                gameManager.StartCoroutine(AnimateCardDiscardAndRemove(cardData, cardGOToDiscard));
             }
-            // --- END ADDED ---
-            
-            // Start animation - AnimateCardDiscardAndRemove will destroy the GO
-            gameManager.StartCoroutine(AnimateCardDiscardAndRemove(cardData, cardGOToDiscard));
+            else
+            {
+                 Debug.LogWarning($"[TriggerDiscardAnimation] Could not find CardDragHandler on found {cardGOToDiscard.name} to set flag.");
+                 // Should we still try to animate? Maybe just destroy?
+                 Object.Destroy(cardGOToDiscard);
+            }
+             // --- END MOVED ---
         }
         else
         {
-            Debug.LogWarning($"[TriggerDiscardAnimation] Card {cardData.cardName} not found or already animating discard in hand panel.");
+             // --- MODIFIED: Log message reflects search failure ---
+            Debug.LogWarning($"[TriggerDiscardAnimation] Card {cardData.cardName} not found (or already animating discard) in hand panel via search.");
+             // --- END MODIFIED ---
         }
     }
 

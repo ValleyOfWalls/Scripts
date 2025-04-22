@@ -106,9 +106,9 @@ public class CombatManager
         return turnManager.IsPlayerTurn();
     }
 
-    public bool AttemptPlayCard(CardData cardData, CardDropZone.TargetType targetType)
+    public bool AttemptPlayCard(CardData cardData, CardDropZone.TargetType targetType, GameObject cardGO = null)
     {
-        return gameManager.GetCardManager().AttemptPlayCard(cardData, targetType);
+        return gameManager.GetCardManager().AttemptPlayCard(cardData, targetType, cardGO);
     }
 
     public void DisableEndTurnButton()

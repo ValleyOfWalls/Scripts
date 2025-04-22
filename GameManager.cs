@@ -405,9 +405,15 @@ public class GameManager : MonoBehaviourPunCallbacks
         return combatManager.IsPlayerTurn();
     }
 
-    public bool AttemptPlayCard(CardData cardData, CardDropZone.TargetType targetType)
+    public bool AttemptPlayCard(CardData cardData, CardDropZone.TargetType targetType, GameObject cardGO = null)
     {
-        return combatManager.AttemptPlayCard(cardData, targetType);
+        if (!IsPlayerTurn())
+        {
+            Debug.LogWarning("AttemptPlayCard: Cannot play card, not player's turn.");
+            return false;
+        }
+        // Pass the optional GameObject along
+        return combatManager.AttemptPlayCard(cardData, targetType, cardGO);
     }
 
     #endregion

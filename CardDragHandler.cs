@@ -200,39 +200,25 @@ public class CardDragHandler : MonoBehaviour, IBeginDragHandler, IDragHandler, I
         Transform currentParent = transform.parent;
         // --- END MODIFIED ---
         
-        transform.SetParent(originalParent, true); // Return to hand panel first
-        
-        // --- ADDED: Debugging for parent check ---
-        if (transform.parent != originalParent)
-        {
-            Debug.LogError($"Card {cardData.cardName} failed to reparent to {originalParent?.name}. Current parent: {transform.parent?.name}", this.gameObject);
-            // --- ADDED: Try again with worldPositionStays=false ---
-            transform.SetParent(originalParent, false);
-            if (transform.parent != originalParent)
-            {
-                Debug.LogError($"Card {cardData.cardName} STILL failed to reparent with worldPositionStays=false. Emergency return to canvas.", this.gameObject);
-                // Emergency fallback - parent to canvas
-                transform.SetParent(rootCanvas.transform, true);
-            }
-            // --- END ADDED ---
-        }
-        else
-        {
-            //Debug.Log($"Card {cardData.cardName} successfully reparented to {transform.parent.name}");
-        }
-        // --- END ADDED ---
+        // --- MODIFIED: Reparenting is handled differently now based on play success ---
+        // transform.SetParent(originalParent, true); // Return to hand panel first
 
         bool playedSuccessfully = false;
         if (eventData.pointerEnter != null && eventData.pointerEnter.TryGetComponent<CardDropZone>(out CardDropZone dropZone))
         {
             if (gameManager != null)
             {
-                playedSuccessfully = gameManager.AttemptPlayCard(cardData, dropZone.targetType);
+                // --- MODIFIED: Pass the dragged GameObject (eventData.pointerDrag) to AttemptPlayCard ---
+                playedSuccessfully = gameManager.AttemptPlayCard(cardData, dropZone.targetType, eventData.pointerDrag);
             }
         }
 
+        // --- MODIFIED: Handle reparenting based on play success ---
         if (!playedSuccessfully)
         {
+            // Card was NOT played, return it to the hand panel
+            transform.SetParent(originalParent, true); // Return to hand panel
+
             // --- MODIFIED: Additional logging and robustness checks --- 
             Debug.Log($"Card {cardData.cardName} was not played. Snapping back to original position/rotation/scale.", this.gameObject);
             
@@ -281,6 +267,14 @@ public class CardDragHandler : MonoBehaviour, IBeginDragHandler, IDragHandler, I
             HandPanelHoverManager hoverManager = originalParent?.GetComponent<HandPanelHoverManager>();
             hoverManager?.ResetAllHovers();
             // --- END ADDED ---
+        }
+        else
+        {
+            // Card WAS played successfully.
+            // The AttemptPlayCard -> DiscardCard -> TriggerDiscardAnimation path will now handle
+            // animating this specific GameObject (eventData.pointerDrag).
+            // We do NOT reparent it back to the hand panel here, as the animation will handle its lifecycle.
+            Debug.Log($"Card {cardData.cardName} played successfully. Discard animation should handle this GameObject.", this.gameObject);
         }
         // If played successfully, GameManager's UpdateHandUI will handle removal/re-layout
     }
