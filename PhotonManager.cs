@@ -75,8 +75,6 @@ public class PhotonManager : MonoBehaviourPunCallbacks
         else
         {
             Debug.Log("Connected to Master, but not user-initiated. Waiting for user action.");
-            Button connectBtn = gameManager.GetGameStateManager().GetConnectButton();
-            if (connectBtn != null) connectBtn.interactable = true;
         }
     }
 

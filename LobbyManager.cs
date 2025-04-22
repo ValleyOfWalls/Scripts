@@ -36,7 +36,11 @@ public class LobbyManager
             Object.Destroy(entry);
         
         playerListEntries.Clear();
-        
+
+        // --- ADDED: Log current player list state ---
+        Debug.Log($"UpdatePlayerList called. Players in PhotonNetwork.PlayerList ({PhotonNetwork.PlayerList.Length}): {string.Join(", ", PhotonNetwork.PlayerList.Select(p => p.NickName))}");
+        // --- END ADDED ---
+
         foreach (Player player in PhotonNetwork.PlayerList.OrderBy(p => p.ActorNumber))
         {
             GameObject newEntry = Object.Instantiate(playerEntryTemplate, playerListPanel.transform);

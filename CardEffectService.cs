@@ -7,19 +7,29 @@ using System.Collections;
 public class CardEffectService
 {
     private GameManager gameManager;
-    private CombatTurnManager combatTurnManager; // Cache reference
+    private CombatTurnManager _combatTurnManager;
     private Transform effectsCanvasTransform; // Added: Reference to the effects canvas
     private Camera effectsCanvasCamera; // Added: Camera assigned to the effects canvas
     private float effectsCanvasPlaneDistance; // Added: Plane distance for position calculation
     
+    private CombatTurnManager CombatTurnManagerInstance
+    {
+        get
+        {
+            if (_combatTurnManager == null)
+            {
+                _combatTurnManager = gameManager.GetCombatManager()?.GetCombatTurnManager();
+                if (_combatTurnManager == null) {
+                     Debug.LogError("CardEffectService failed to get CombatTurnManager on demand!");
+                }
+            }
+            return _combatTurnManager;
+        }
+    }
+    
     public CardEffectService(GameManager gameManager)
     {
         this.gameManager = gameManager;
-        // Get the CombatTurnManager reference via CombatManager
-        this.combatTurnManager = gameManager.GetCombatManager()?.GetCombatTurnManager(); 
-        if (this.combatTurnManager == null) {
-            Debug.LogError("CardEffectService could not get CombatTurnManager!");
-        }
         
         // Find the Effects Canvas and its camera
         GameObject effectsCanvasGO = GameObject.Find("EffectsCanvas"); // Find by name (adjust if needed)
@@ -50,7 +60,7 @@ public class CardEffectService
     public bool ProcessCardEffect(CardData cardData, CardDropZone.TargetType targetType, int previousPlaysThisCombat, int totalCopies)
     {
         PlayerManager playerManager = gameManager.GetPlayerManager();
-        int currentTurn = combatTurnManager?.GetCurrentCombatTurn() ?? 1; // Get current turn, default to 1 if manager missing
+        int currentTurn = CombatTurnManagerInstance?.GetCurrentCombatTurn() ?? 1; // Get current turn, default to 1 if manager missing
         
         // --- ADDED: Check Player Health Status for Threshold --- 
         bool isBelowHealthThreshold = false;
