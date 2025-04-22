@@ -8,6 +8,9 @@ public class CardEffectService
 {
     private GameManager gameManager;
     private CombatTurnManager combatTurnManager; // Cache reference
+    private Transform effectsCanvasTransform; // Added: Reference to the effects canvas
+    private Camera effectsCanvasCamera; // Added: Camera assigned to the effects canvas
+    private float effectsCanvasPlaneDistance; // Added: Plane distance for position calculation
     
     public CardEffectService(GameManager gameManager)
     {
@@ -16,6 +19,31 @@ public class CardEffectService
         this.combatTurnManager = gameManager.GetCombatManager()?.GetCombatTurnManager(); 
         if (this.combatTurnManager == null) {
             Debug.LogError("CardEffectService could not get CombatTurnManager!");
+        }
+        
+        // Find the Effects Canvas and its camera
+        GameObject effectsCanvasGO = GameObject.Find("EffectsCanvas"); // Find by name (adjust if needed)
+        if (effectsCanvasGO != null)
+        {
+            Canvas canvas = effectsCanvasGO.GetComponent<Canvas>();
+            if (canvas != null && canvas.renderMode == RenderMode.ScreenSpaceCamera)
+            {
+                effectsCanvasTransform = effectsCanvasGO.transform;
+                effectsCanvasCamera = canvas.worldCamera; 
+                effectsCanvasPlaneDistance = canvas.planeDistance;
+                if (effectsCanvasCamera == null)
+                {
+                     Debug.LogError("EffectsCanvas found, but it has no Render Camera assigned!");
+                }
+            }
+            else
+            {
+                 Debug.LogError("Found EffectsCanvas, but it's not set to Screen Space - Camera mode!");
+            }
+        }
+        else
+        {
+             Debug.LogError("CardEffectService could not find the EffectsCanvas GameObject! Make sure it exists in the scene and is named correctly.");
         }
     }
     
@@ -868,9 +896,13 @@ public class CardEffectService
     // --- MODIFIED: Helper method to visualize target effects --- 
     private void PlayTargetEffectPrefab(CardDropZone.TargetType targetType, GameObject effectPrefab)
     {
-        if (effectPrefab == null || gameManager == null) return;
+        if (effectPrefab == null || gameManager == null || effectsCanvasTransform == null || effectsCanvasCamera == null) 
+        {
+            Debug.LogError("Cannot play target effect: Missing dependencies (prefab, gameManager, effectsCanvas, or effectsCamera).");
+            return; // Missing dependencies
+        }
 
-        // Find target transform based on type
+        // Find target transform based on type (UI element)
         Transform targetTransform = null;
         CombatUIManager uiManager = gameManager.GetCombatUIManager();
         if (uiManager == null) return; // Need UI Manager for positions
@@ -895,18 +927,22 @@ public class CardEffectService
 
         if (targetTransform != null)
         {
-            // Get the main combat canvas to instantiate under
-            GameObject combatCanvas = gameManager.GetGameStateManager()?.GetCombatInstance();
-            if (combatCanvas != null)
-            {
-                // Use targetTransform.position for world space effects
-                // For UI Canvas, might need ScreenToWorldPoint or adjustments
-                gameManager.StartCoroutine(InstantiateAndDestroyEffect(effectPrefab, targetTransform.position, combatCanvas.transform));
-            }
-            else
-            {
-                Debug.LogError("PlayTargetEffectPrefab: Could not find Combat Canvas instance!");
-            }
+            // Calculate screen position of the UI target
+            // For Overlay canvas, the transform.position is often close enough to screen pos,
+            // but using WorldToScreenPoint is safer if anchors/pivots are complex.
+            // We need the *Combat UI* canvas's camera (or null for overlay) here.
+            // --- MODIFIED: Get canvas from root instance ---
+            GameObject uiRoot = uiManager?.GetCombatRootInstance();
+            Canvas uiCanvas = uiRoot?.GetComponentInParent<Canvas>();
+            // --- END MODIFIED ---
+            Camera uiCamera = (uiCanvas?.renderMode == RenderMode.ScreenSpaceOverlay) ? null : uiCanvas?.worldCamera;
+            Vector2 screenPos = RectTransformUtility.WorldToScreenPoint(uiCamera, targetTransform.position);
+
+            // Convert screen position to world position on the Effects Canvas plane
+            Vector3 worldPos = effectsCanvasCamera.ScreenToWorldPoint(new Vector3(screenPos.x, screenPos.y, effectsCanvasPlaneDistance));
+            
+            // Instantiate under the *Effects Canvas* and set world position
+            gameManager.StartCoroutine(InstantiateAndDestroyEffect(effectPrefab, worldPos, effectsCanvasTransform)); 
         }
         else
         {
@@ -914,11 +950,11 @@ public class CardEffectService
         }
     }
 
-    private IEnumerator InstantiateAndDestroyEffect(GameObject prefab, Vector3 targetPosition, Transform parentTransform)
+    private IEnumerator InstantiateAndDestroyEffect(GameObject prefab, Vector3 worldPosition, Transform parentTransform)
     {
-        // Create a temporary GameObject by instantiating the prefab
+        // Create a temporary GameObject by instantiating the prefab under the correct parent (Effects Canvas)
         GameObject effectGO = Object.Instantiate(prefab, parentTransform); 
-        effectGO.transform.position = targetPosition; // Set position
+        effectGO.transform.position = worldPosition; // Set world position
         
         // --- ADDED: Attempt to get Animator and animation length --- 
         Animator animator = effectGO.GetComponent<Animator>();
@@ -944,6 +980,7 @@ public class CardEffectService
         {
             Object.Destroy(effectGO);
         }
+        // yield return null; // Keep the coroutine running for one frame to ensure instantiation happens
     }
     // --- END MODIFIED ---
 }

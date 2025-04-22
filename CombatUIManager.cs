@@ -21,6 +21,7 @@ struct PlayerStatusInfo
 public class CombatUIManager
 {
     private GameManager gameManager;
+    private GameObject combatRootInstance; // Added: Reference to the root combat UI GameObject
     
     // UI References
     private TextMeshProUGUI playerNameText;
@@ -78,6 +79,7 @@ public class CombatUIManager
     public void InitializeUIReferences(GameObject combatInstance)
     {
         if (combatInstance == null) return;
+        this.combatRootInstance = combatInstance; // Store the root instance
 
         Transform topArea = combatInstance.transform.Find("TopArea");
         Transform playerArea = combatInstance.transform.Find("PlayerArea");
@@ -1188,5 +1190,9 @@ public class CombatUIManager
     public GameObject GetOpponentPetUIArea() => opponentPetNameText?.transform.parent.gameObject; // Assumes name text is direct child of the area GO
     public GameObject GetPlayerUIArea() => playerNameText?.transform.parent.gameObject; // Assumes name text is direct child of the stats row
     public GameObject GetOwnPetUIArea() => ownPetNameText?.transform.parent.gameObject; // Assumes name text is direct child of the area GO
+    // --- END ADDED ---
+
+    // --- ADDED: Getter for Combat Root Instance ---
+    public GameObject GetCombatRootInstance() => combatRootInstance;
     // --- END ADDED ---
 } 

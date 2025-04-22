@@ -30,11 +30,7 @@ public class GameManager : MonoBehaviourPunCallbacks
     [SerializeField] private int targetScoreToWin = 10; // Default score to win
     // --- END ADDED ---
 
-    [Header("UI Panels")]
-    [SerializeField] private GameObject startScreenCanvasPrefab;
-    [SerializeField] private GameObject lobbyCanvasPrefab;
-    [SerializeField] private GameObject combatCanvasPrefab;
-    [SerializeField] private GameObject draftCanvasPrefab;
+    [Header("UI Prefabs")]
     [SerializeField] private GameObject cardPrefab;
     [SerializeField] private GameObject deckViewerPanelPrefab;
 
@@ -85,7 +81,7 @@ public class GameManager : MonoBehaviourPunCallbacks
 
         // Initialize Managers (Constructors)
         // Pass UI Prefabs to GameStateManager constructor
-        gameStateManager = new GameStateManager(this, startScreenCanvasPrefab, lobbyCanvasPrefab, combatCanvasPrefab, draftCanvasPrefab);
+        gameStateManager = new GameStateManager(this);
         playerManager = new PlayerManager(this);
         cardManager = new CardManager(this, starterDeck, starterPetDeck, allPlayerCardPool, allPetCardPool, cardsToDraw);
         photonManager = gameObject.AddComponent<PhotonManager>(); // Add as component

@@ -12,13 +12,7 @@ public class GameStateManager
 {
     private GameManager gameManager;
     
-    [Header("UI Prefabs")]
-    private GameObject startScreenCanvasPrefab;
-    private GameObject lobbyCanvasPrefab;
-    private GameObject combatCanvasPrefab;
-    private GameObject draftCanvasPrefab;
-    
-    // Instantiated Canvases
+    // Canvas GameObject references
     private GameObject startScreenInstance;
     private GameObject lobbyInstance;
     private GameObject combatInstance;
@@ -60,14 +54,9 @@ public class GameStateManager
     // --- END ADDED ---
     
     // Constructor for dependency injection
-    public GameStateManager(GameManager gameManager, GameObject startScreenCanvasPrefab, GameObject lobbyCanvasPrefab, 
-                           GameObject combatCanvasPrefab, GameObject draftCanvasPrefab)
+    public GameStateManager(GameManager gameManager)
     {
         this.gameManager = gameManager;
-        this.startScreenCanvasPrefab = startScreenCanvasPrefab;
-        this.lobbyCanvasPrefab = lobbyCanvasPrefab;
-        this.combatCanvasPrefab = combatCanvasPrefab;
-        this.draftCanvasPrefab = draftCanvasPrefab;
     }
     
     public GameState GetCurrentState()
@@ -84,11 +73,37 @@ public class GameStateManager
     {
         currentState = GameState.Connecting;
         
-        // Instantiate and setup Start Screen
-        if (startScreenCanvasPrefab != null)
+        // Find and setup canvases that now exist in the scene
+        FindAndSetupCanvases();
+        
+        // Ensure only StartScreenCanvas is enabled initially
+        if (startScreenInstance != null) startScreenInstance.SetActive(true);
+        if (lobbyInstance != null) lobbyInstance.SetActive(false);
+        if (combatInstance != null) combatInstance.SetActive(false);
+        if (draftInstance != null) draftInstance.SetActive(false);
+    }
+    
+    private void FindAndSetupCanvases()
+    {
+        // Find all canvases in the scene, including inactive ones
+        Canvas[] allCanvases = Object.FindObjectsOfType<Canvas>(true);
+        
+        // Find canvases by name
+        foreach (Canvas canvas in allCanvases)
         {
-            startScreenInstance = Object.Instantiate(startScreenCanvasPrefab);
-            
+            if (canvas.gameObject.name == "StartScreenCanvas")
+                startScreenInstance = canvas.gameObject;
+            else if (canvas.gameObject.name == "LobbyCanvas")
+                lobbyInstance = canvas.gameObject;
+            else if (canvas.gameObject.name == "CombatCanvas")
+                combatInstance = canvas.gameObject;
+            else if (canvas.gameObject.name == "DraftCanvas")
+                draftInstance = canvas.gameObject;
+        }
+        
+        // Set up Start Screen
+        if (startScreenInstance != null)
+        {
             Transform centerPanel = startScreenInstance.transform.Find("CenterPanel");
             if (centerPanel != null)
             {
@@ -100,23 +115,136 @@ public class GameStateManager
                 {
                     connectButton.onClick.AddListener(gameManager.ConnectToPhoton);
                 }
-                else Debug.LogError("ConnectButton not found within CenterPanel in StartScreenCanvasPrefab!");
+                else Debug.LogError("ConnectButton not found within CenterPanel in StartScreenCanvas!");
                 
-                if (playerNameInput == null) Debug.LogError("PlayerNameInput not found within CenterPanel in StartScreenCanvasPrefab!");
+                if (playerNameInput == null) Debug.LogError("PlayerNameInput not found within CenterPanel in StartScreenCanvas!");
                 else playerNameInput.text = "Player_" + Random.Range(1000, 9999);
                 
-                if (petNameInput == null) Debug.LogError("PetNameInput not found within CenterPanel in StartScreenCanvasPrefab!");
+                if (petNameInput == null) Debug.LogError("PetNameInput not found within CenterPanel in StartScreenCanvas!");
                 else petNameInput.text = "Buddy_" + Random.Range(100, 999);
             }
             else
             {
-                Debug.LogError("CenterPanel not found in StartScreenCanvasPrefab!");
+                Debug.LogError("CenterPanel not found in StartScreenCanvas!");
                 connectButton = null;
                 playerNameInput = null;
                 petNameInput = null;
             }
         }
-        else Debug.LogError("StartScreenCanvasPrefab is not assigned to GameManager!");
+        else Debug.LogError("StartScreenCanvas not found in the scene!");
+        
+        // Set up Lobby canvas
+        if (lobbyInstance != null)
+        {
+            // Find Lobby elements
+            Transform panelTransform = lobbyInstance.transform.Find("PlayerListPanel");
+            playerListPanel = panelTransform?.gameObject;
+            playerEntryTemplate = panelTransform?.Find("PlayerEntryTemplate")?.gameObject;
+            readyButton = lobbyInstance.transform.Find("ReadyButton")?.GetComponent<Button>();
+            leaveButton = lobbyInstance.transform.Find("LeaveButton")?.GetComponent<Button>();
+            startGameButton = lobbyInstance.transform.Find("StartGameButton")?.GetComponent<Button>();
+            
+            // Assign listeners
+            readyButton?.onClick.AddListener(gameManager.ToggleReadyStatus);
+            leaveButton?.onClick.AddListener(gameManager.LeaveRoom);
+            startGameButton?.onClick.AddListener(gameManager.StartGame);
+            
+            if (playerListPanel == null || playerEntryTemplate == null || readyButton == null || leaveButton == null || startGameButton == null)
+                Debug.LogError("One or more Lobby UI elements not found in LobbyCanvas!");
+            
+            playerEntryTemplate?.SetActive(false);
+        }
+        else Debug.LogError("LobbyCanvas not found in the scene!");
+        
+        // Set up Combat canvas - just find it but don't initialize references yet
+        if (combatInstance != null)
+        {
+            // Find ScoreText
+            Transform topArea = combatInstance.transform.Find("TopArea");
+            if (topArea != null)
+            {
+                scoreText = topArea.Find("ScoreText")?.GetComponent<TextMeshProUGUI>();
+            }
+        }
+        else Debug.LogError("CombatCanvas not found in the scene!");
+        
+        // Set up Draft canvas
+        if (draftInstance != null)
+        {
+            // Find Draft UI Elements
+            draftOptionsPanel = draftInstance.transform.Find("DraftOptionsPanel")?.gameObject;
+            draftTurnText = draftInstance.transform.Find("DraftTurnText")?.GetComponent<TextMeshProUGUI>();
+            draftOptionButtonTemplate = draftOptionsPanel?.transform.Find("OptionButtonTemplate")?.gameObject;
+            
+            // Find Draft Deck View Buttons & Controller
+            Transform deckButtonsPanel = draftInstance.transform.Find("DeckButtonsPanel");
+            viewDraftPlayerDeckButton = deckButtonsPanel?.Find("ViewPlayerDeckButton")?.GetComponent<Button>();
+            viewDraftPetDeckButton = deckButtonsPanel?.Find("ViewPetDeckButton")?.GetComponent<Button>();
+            
+            // Logging for button discovery
+            if (viewDraftPlayerDeckButton != null)
+            {
+                Debug.Log("Successfully found ViewPlayerDeckButton.");
+            }
+            else
+            {
+                Debug.LogError("ViewPlayerDeckButton component NOT found on DeckButtonsPanel/ViewPlayerDeckButton object!");
+            }
+
+            // Find or instantiate DeckViewController
+            GameObject deckViewerPanelInstance = draftInstance.transform.Find("DeckViewerPanel")?.gameObject;
+            if (deckViewerPanelInstance == null && gameManager.GetDeckViewerPanelPrefab() != null) 
+            {
+                Debug.Log("DeckViewerPanel not found, attempting to instantiate from prefab.");
+                deckViewerPanelInstance = Object.Instantiate(gameManager.GetDeckViewerPanelPrefab(), draftInstance.transform);
+                deckViewerPanelInstance.name = "DeckViewerPanel"; 
+            }
+            
+            if (deckViewerPanelInstance != null)
+            {
+                deckViewController = deckViewerPanelInstance.GetComponent<DeckViewController>();
+                if (deckViewController == null) 
+                {
+                    Debug.LogError("DeckViewController component not found on DeckViewerPanel!");
+                }
+                else
+                {
+                    // Set up DeckViewerPanel (initially hidden)
+                    deckViewerPanelInstance.SetActive(false);
+                    Debug.Log("DeckViewerPanel found and initialized.");
+                    
+                    // Add button handlers
+                    if (viewDraftPlayerDeckButton != null)
+                    {
+                        viewDraftPlayerDeckButton.onClick.RemoveAllListeners();
+                        viewDraftPlayerDeckButton.onClick.AddListener(ShowDraftPlayerDeck);
+                        Debug.Log("ViewPlayerDeckButton listener added.");
+                    }
+                    
+                    if (viewDraftPetDeckButton != null)
+                    {
+                        viewDraftPetDeckButton.onClick.RemoveAllListeners();
+                        viewDraftPetDeckButton.onClick.AddListener(ShowDraftPetDeck);
+                        Debug.Log("ViewPetDeckButton listener added.");
+                    }
+                }
+            }
+            else
+            {
+                Debug.LogError("Failed to find or create DeckViewerPanel!");
+            }
+            
+            if (draftOptionsPanel == null || draftTurnText == null || draftOptionButtonTemplate == null)
+            {
+                Debug.LogError("One or more Draft UI elements not found in DraftCanvas!");
+            }
+            
+            if (draftOptionButtonTemplate != null)
+            {
+                draftOptionButtonTemplate.SetActive(false); // Hide template
+            }
+        }
+        else Debug.LogError("DraftCanvas not found in the scene!");
     }
     
     public void ShowStartScreen()
@@ -136,37 +264,15 @@ public class GameStateManager
     
     public void ShowLobbyScreen()
     {
-        if (lobbyInstance == null)
+        if (lobbyInstance != null)
         {
-            if (lobbyCanvasPrefab != null)
-            {
-                lobbyInstance = Object.Instantiate(lobbyCanvasPrefab);
-                // Find Lobby elements
-                Transform panelTransform = lobbyInstance.transform.Find("PlayerListPanel");
-                playerListPanel = panelTransform?.gameObject;
-                playerEntryTemplate = panelTransform?.Find("PlayerEntryTemplate")?.gameObject;
-                readyButton = lobbyInstance.transform.Find("ReadyButton")?.GetComponent<Button>();
-                leaveButton = lobbyInstance.transform.Find("LeaveButton")?.GetComponent<Button>();
-                startGameButton = lobbyInstance.transform.Find("StartGameButton")?.GetComponent<Button>();
-                
-                // Assign listeners
-                readyButton?.onClick.AddListener(gameManager.ToggleReadyStatus);
-                leaveButton?.onClick.AddListener(gameManager.LeaveRoom);
-                startGameButton?.onClick.AddListener(gameManager.StartGame);
-                
-                if (playerListPanel == null || playerEntryTemplate == null || readyButton == null || leaveButton == null || startGameButton == null)
-                    Debug.LogError("One or more Lobby UI elements not found in LobbyCanvasPrefab!");
-                
-                playerEntryTemplate?.SetActive(false);
-            }
-            else
-            {
-                Debug.LogError("LobbyCanvasPrefab is not assigned!");
-                return;
-            }
+            lobbyInstance.SetActive(true);
+            gameManager.UpdateLobbyControls();
         }
-        lobbyInstance.SetActive(true);
-        gameManager.UpdateLobbyControls();
+        else
+        {
+            Debug.LogError("Cannot show lobby screen - LobbyCanvas not found in scene!");
+        }
     }
     
     public void HideLobbyScreen()
@@ -177,116 +283,41 @@ public class GameStateManager
     
     public void ShowCombatScreen()
     {
-        if (combatInstance == null)
+        if (combatInstance != null)
         {
-            if (combatCanvasPrefab != null)
-            {
-                combatInstance = Object.Instantiate(combatCanvasPrefab);
-                gameManager.InitializeCombatScreenReferences(combatInstance);
-                
-                // Find ScoreText
-                Transform topArea = combatInstance.transform.Find("TopArea");
-                if (topArea != null)
-                {
-                    scoreText = topArea.Find("ScoreText")?.GetComponent<TextMeshProUGUI>();
-                }
-            }
-            else
-            {
-                Debug.LogError("CombatCanvasPrefab is not assigned!");
-                return;
-            }
+            // Initialize combat screen references before showing it
+            gameManager.InitializeCombatScreenReferences(combatInstance);
+            combatInstance.SetActive(true);
         }
-        combatInstance.SetActive(true);
+        else
+        {
+            Debug.LogError("Cannot show combat screen - CombatCanvas not found in scene!");
+        }
     }
     
     public void HideCombatScreen()
     {
         Debug.Log("Hiding Combat Screen");
-        if(combatInstance != null) combatInstance.SetActive(false);
+        if (combatInstance != null) combatInstance.SetActive(false);
     }
     
     public void ShowDraftScreen()
     {
         Debug.Log("Showing Draft Screen");
-        if (draftInstance == null)
+        if (draftInstance != null)
         {
-            if (draftCanvasPrefab != null)
-            {
-                draftInstance = Object.Instantiate(draftCanvasPrefab);
-                // Find Draft UI Elements
-                draftOptionsPanel = draftInstance.transform.Find("DraftOptionsPanel")?.gameObject;
-                draftTurnText = draftInstance.transform.Find("DraftTurnText")?.GetComponent<TextMeshProUGUI>();
-                draftOptionButtonTemplate = draftOptionsPanel?.transform.Find("OptionButtonTemplate")?.gameObject;
-                
-                // --- ADDED: Find Draft Deck View Buttons & Controller ---
-                Transform deckButtonsPanel = draftInstance.transform.Find("DeckButtonsPanel");
-                viewDraftPlayerDeckButton = deckButtonsPanel?.Find("ViewPlayerDeckButton")?.GetComponent<Button>();
-                viewDraftPetDeckButton = deckButtonsPanel?.Find("ViewPetDeckButton")?.GetComponent<Button>();
-                
-                // --- ADDED: Logging for button discovery ---
-                if (viewDraftPlayerDeckButton != null)
-                {
-                    Debug.Log("Successfully found ViewPlayerDeckButton.");
-                }
-                else
-                {
-                     Debug.LogError("ViewPlayerDeckButton component NOT found on DeckButtonsPanel/ViewPlayerDeckButton object!");
-                }
-                // --- END ADDED Logging ---
-
-                // Find or instantiate DeckViewController (similar to CombatManager)
-                GameObject deckViewerPanelInstance = draftInstance.transform.Find("DeckViewerPanel")?.gameObject;
-                if (deckViewerPanelInstance == null && gameManager.GetDeckViewerPanelPrefab() != null) 
-                {
-                    Debug.Log("DeckViewerPanel not found, attempting to instantiate from prefab.");
-                    deckViewerPanelInstance = Object.Instantiate(gameManager.GetDeckViewerPanelPrefab(), draftInstance.transform);
-                    deckViewerPanelInstance.name = "DeckViewerPanel"; 
-                }
-                
-                if (deckViewerPanelInstance != null)
-                {
-                    deckViewController = deckViewerPanelInstance.GetComponent<DeckViewController>();
-                    if (deckViewController == null) 
-                    {
-                        Debug.LogError("DeckViewController component NOT found on DeckViewerPanel instance in Draft screen!");
-                    }
-                    else
-                    {
-                        Debug.Log("Successfully found or instantiated DeckViewController."); // Added Log
-                    }
-                }
-                else 
-                {
-                     Debug.LogError("DeckViewerPanel instance could NOT be found or instantiated in Draft screen!");
-                }
-                
-                // Similar check/log for pet button can be added if needed
-                 viewDraftPetDeckButton?.onClick.AddListener(ShowDraftPetDeck);
-                // --- END ADDED SECTION ---
-
-                if (draftOptionsPanel == null || draftTurnText == null || draftOptionButtonTemplate == null || viewDraftPlayerDeckButton == null || viewDraftPetDeckButton == null)
-                {
-                    Debug.LogError("One or more Draft UI elements (including deck view buttons) not found in DraftCanvasPrefab!");
-                }
-                else
-                {
-                    draftOptionButtonTemplate.SetActive(false); // Hide template
-                }
-            }
-            else
-            {
-                Debug.LogError("DraftCanvasPrefab is not assigned!");
-                return;
-            }
+            draftInstance.SetActive(true);
         }
-        draftInstance.SetActive(true);
+        else
+        {
+            Debug.LogError("Cannot show draft screen - DraftCanvas not found in scene!");
+        }
     }
     
     public void HideDraftScreen()
     {
         Debug.Log("Hiding Draft Screen");
-        if(draftInstance != null) draftInstance.SetActive(false);
+        if (draftInstance != null) draftInstance.SetActive(false);
     }
     
     public void TransitionToLobby()
