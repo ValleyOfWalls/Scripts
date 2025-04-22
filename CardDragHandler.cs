@@ -10,6 +10,7 @@ public class CardDragHandler : MonoBehaviour, IBeginDragHandler, IDragHandler, I
     public CardData cardData { get; set; } // Set by GameManager when instantiated
     public int cardHandIndex { get; set; } = -1; // Track position in hand list to differentiate identical cards
     public bool isDiscarding { get; set; } = false; // ADDED: Flag for discard animation
+    public bool isDragging { get; private set; } = false; // ADDED: Flag for dragging state
 
     // --- ADDED: Hover effect fields ---
     public Vector3 originalPosition { get; set; }
@@ -40,6 +41,8 @@ public class CardDragHandler : MonoBehaviour, IBeginDragHandler, IDragHandler, I
     private Transform originalParent;
     private Canvas rootCanvas;
     private GameManager gameManager;
+    private Vector2 dragOffset; // Offset from card pivot to mouse click point - SCREEN SPACE
+    private Vector3 worldDragOffset; // ADDED: Offset in world space
 
     void Awake()
     {
@@ -66,6 +69,9 @@ public class CardDragHandler : MonoBehaviour, IBeginDragHandler, IDragHandler, I
         targetScale = rectTransform.localScale;
         currentNeighborOffset = Vector3.zero;
         // --- END ADDED ---
+
+        isHovering = false;
+        isDiscarding = false;
     }
 
     public void OnBeginDrag(PointerEventData eventData)
@@ -74,12 +80,47 @@ public class CardDragHandler : MonoBehaviour, IBeginDragHandler, IDragHandler, I
         
         Debug.Log($"CardDragHandler.OnBeginDrag on {cardData.cardName}");
         startPosition = rectTransform.position; // Store initial screen position
-        originalParent = transform.parent; // Remember the hand panel
+        
+        // --- ADDED: Ensure originalParent is valid before starting drag ---
+        if (originalParent == null || !originalParent.gameObject.activeInHierarchy)
+        {
+            // Find the PlayerHandPanel
+            Transform handPanel = transform.parent;
+            if (handPanel && handPanel.name == "PlayerHandPanel")
+            {
+                originalParent = handPanel;
+                Debug.Log($"OnBeginDrag: Using current parent {originalParent.name} as originalParent");
+            }
+            else
+            {
+                var playerHandPanel = GameObject.Find("PlayerHandPanel");
+                if (playerHandPanel != null)
+                {
+                    originalParent = playerHandPanel.transform;
+                    Debug.Log($"OnBeginDrag: Found hand panel: {originalParent.name}");
+                }
+                else
+                {
+                    Debug.LogError($"OnBeginDrag: Could not find PlayerHandPanel! Using fallback.");
+                    // Use canvas as fallback
+                    originalParent = rootCanvas.transform;
+                }
+            }
+        }
+        else
+        {
+            Debug.Log($"OnBeginDrag: Using cached originalParent: {originalParent.name}");
+        }
+        // --- END ADDED ---
+        
         originalSiblingIndex = transform.GetSiblingIndex(); // Remember layer order
 
         // Reparent to canvas root so it renders above everything
         transform.SetParent(rootCanvas.transform, true);
         transform.SetAsLastSibling(); // Ensure it's on top while dragging
+        
+        // Set dragging flag
+        isDragging = true;
         
         // --- ADDED: Reset rotation to upright for drag ---
         rectTransform.localRotation = Quaternion.identity;
@@ -97,8 +138,30 @@ public class CardDragHandler : MonoBehaviour, IBeginDragHandler, IDragHandler, I
     public void OnDrag(PointerEventData eventData)
     {
         if (rectTransform == null) return;
-        RectTransformUtility.ScreenPointToLocalPointInRectangle(rootCanvas.transform as RectTransform, eventData.position, rootCanvas.worldCamera, out Vector2 localPoint);
+        
+        // --- MODIFIED: Use World Space Offset --- 
+        Vector3 currentWorldPoint = Vector3.zero;
+        Camera eventCamera = rootCanvas.worldCamera ?? Camera.main; // Use canvas camera or fallback
+        
+        if (eventCamera != null)
+        {
+            RectTransformUtility.ScreenPointToWorldPointInRectangle(rootCanvas.transform as RectTransform, eventData.position, eventCamera, out currentWorldPoint);
+             rectTransform.position = currentWorldPoint + worldDragOffset; // Set world position
+        }
+        // --- END MODIFIED ---
+
+        // --- OLD SCREEN SPACE OFFSET METHOD ---
+        /*
+        // Calculate the target screen position
+        Vector2 targetScreenPoint = eventData.position + dragOffset;
+        
+        // Convert target screen position to local point in the canvas
+        RectTransformUtility.ScreenPointToLocalPointInRectangle(rootCanvas.transform as RectTransform, targetScreenPoint, rootCanvas.worldCamera, out Vector2 localPoint);
+        
+        // Set the local position
         rectTransform.localPosition = localPoint;
+        */
+        // --- END OLD METHOD ---
     }
 
     public void OnEndDrag(PointerEventData eventData)
@@ -106,7 +169,58 @@ public class CardDragHandler : MonoBehaviour, IBeginDragHandler, IDragHandler, I
         //Debug.Log($"CardDragHandler.OnEndDrag fired. Pointer entered: {(eventData.pointerEnter != null ? eventData.pointerEnter.name : "null")}");
 
         canvasGroup.blocksRaycasts = true;
+        isDragging = false; // Reset dragging flag
+        
+        // --- ADDED: Ensure originalParent still exists ---
+        if (originalParent == null || !originalParent.gameObject.activeInHierarchy)
+        {
+            Debug.LogError($"Card {cardData.cardName} has invalid originalParent! Finding PlayerHandPanel again.", this.gameObject);
+            // Try to find the hand panel in the scene
+            var handPanel = GameObject.Find("PlayerHandPanel");
+            if (handPanel != null)
+            {
+                originalParent = handPanel.transform;
+                Debug.Log($"Found hand panel: {originalParent.name}");
+            }
+            else 
+            {
+                Debug.LogError("Could not find PlayerHandPanel! Card will be lost.", this.gameObject);
+                // Find the canvas as a last resort
+                var canvas = FindObjectOfType<Canvas>();
+                if (canvas != null)
+                {
+                    originalParent = canvas.transform;
+                    Debug.Log($"Fallback to canvas: {originalParent.name}");
+                }
+            }
+        }
+        // --- END ADDED ---
+        
+        // --- MODIFIED: Save current parent for reference ---
+        Transform currentParent = transform.parent;
+        // --- END MODIFIED ---
+        
         transform.SetParent(originalParent, true); // Return to hand panel first
+        
+        // --- ADDED: Debugging for parent check ---
+        if (transform.parent != originalParent)
+        {
+            Debug.LogError($"Card {cardData.cardName} failed to reparent to {originalParent?.name}. Current parent: {transform.parent?.name}", this.gameObject);
+            // --- ADDED: Try again with worldPositionStays=false ---
+            transform.SetParent(originalParent, false);
+            if (transform.parent != originalParent)
+            {
+                Debug.LogError($"Card {cardData.cardName} STILL failed to reparent with worldPositionStays=false. Emergency return to canvas.", this.gameObject);
+                // Emergency fallback - parent to canvas
+                transform.SetParent(rootCanvas.transform, true);
+            }
+            // --- END ADDED ---
+        }
+        else
+        {
+            //Debug.Log($"Card {cardData.cardName} successfully reparented to {transform.parent.name}");
+        }
+        // --- END ADDED ---
 
         bool playedSuccessfully = false;
         if (eventData.pointerEnter != null && eventData.pointerEnter.TryGetComponent<CardDropZone>(out CardDropZone dropZone))
@@ -119,11 +233,29 @@ public class CardDragHandler : MonoBehaviour, IBeginDragHandler, IDragHandler, I
 
         if (!playedSuccessfully)
         {
+            // --- MODIFIED: Additional logging and robustness checks --- 
+            Debug.Log($"Card {cardData.cardName} was not played. Snapping back to original position/rotation/scale.", this.gameObject);
+            
+            // Ensure we have valid original transform values
+            if (originalPosition == Vector3.zero && originalScale == Vector3.zero)
+            {
+                Debug.LogWarning($"Card {cardData.cardName} has invalid original transform values. Resetting to defaults.", this.gameObject);
+                originalPosition = new Vector3(0, -100, 0); // Default position in panel
+                originalRotation = Quaternion.identity;
+                originalScale = Vector3.one * 2f; // Default scale for cards in this game
+            }
+            
+            // --- END MODIFIED ---
+
             // --- MODIFIED: Snap back instantly, ensure correct sibling index ---
             StopCoroutineIfRunning(ref animationCoroutine); // Stop self-animation
             rectTransform.localPosition = originalPosition;
             rectTransform.localRotation = originalRotation;
             rectTransform.localScale = originalScale;
+
+            // --- ADDED: Debug log for snap back values ---
+            Debug.Log($"Card {cardData.cardName} snapping back. Original Pos: {originalPosition}, Rot: {originalRotation.eulerAngles}, Scale: {originalScale}. Current Pos: {rectTransform.localPosition}, Rot: {rectTransform.localRotation.eulerAngles}, Scale: {rectTransform.localScale}", this.gameObject);
+            // --- END ADDED ---
 
             // Reset target state as well
             targetPosition = originalPosition;
@@ -156,6 +288,14 @@ public class CardDragHandler : MonoBehaviour, IBeginDragHandler, IDragHandler, I
     // --- ADDED: Public Hover Methods (called by HandPanelHoverManager) ---
     public void EnterHoverState()
     {
+        // --- ADDED: Add null check for originalParent ---
+        if (transform.parent == null)
+        {
+            Debug.LogWarning($"EnterHoverState called on {name} with null parent! Skipping hover.", this.gameObject);
+            return;
+        }
+        // --- END ADDED ---
+        
         if (canvasGroup.blocksRaycasts == false || isHovering) return;
         //Debug.Log($"[{Time.frameCount}] EnterHoverState START: {name}");
         isHovering = true;
@@ -185,6 +325,14 @@ public class CardDragHandler : MonoBehaviour, IBeginDragHandler, IDragHandler, I
 
     public void ExitHoverState()
     {
+        // --- ADDED: Add null check for originalParent ---
+        if (transform.parent == null)
+        {
+            Debug.LogWarning($"ExitHoverState called on {name} with null parent! Skipping hover exit.", this.gameObject);
+            return;
+        }
+        // --- END ADDED ---
+        
         if (!isHovering || canvasGroup.blocksRaycasts == false) return;
         //Debug.Log($"[{Time.frameCount}] ExitHoverState START: {name}");
         isHovering = false;
@@ -255,6 +403,14 @@ public class CardDragHandler : MonoBehaviour, IBeginDragHandler, IDragHandler, I
     // --- MODIFIED: AffectNeighbors calls ApplyNeighborOffset ---
     private void AffectNeighbors(float horizontalOffset, bool enteringHover)
     {
+        // --- ADDED: Check parent ---
+        if (transform.parent == null)
+        {
+            Debug.LogWarning($"AffectNeighbors on {name} - Parent is null, cannot find neighbors!");
+            return;
+        }
+        // --- END ADDED ---
+        
         CardDragHandler leftNeighbor, rightNeighbor;
         FindNeighbors(out leftNeighbor, out rightNeighbor);
 
@@ -276,9 +432,19 @@ public class CardDragHandler : MonoBehaviour, IBeginDragHandler, IDragHandler, I
     // --- ADDED: Method for neighbors to apply offset ---
     public void ApplyNeighborOffset(Vector3 offset)
     {
-        // Don't apply if currently hovering/being dragged
-        if (isHovering || canvasGroup.blocksRaycasts == false) return;
-
+        // --- MODIFIED: Add check for isDragging --- 
+        // Don't apply if currently hovering/being dragged or discarding
+        if (isHovering || isDragging || isDiscarding || canvasGroup.blocksRaycasts == false) return; 
+        // --- END MODIFIED ---
+        
+        // --- ADDED: Check parent ---
+        if (transform.parent == null)
+        {
+            Debug.LogWarning($"ApplyNeighborOffset on {name} - Parent is null, cannot apply offset!");
+            return;
+        }
+        // --- END ADDED ---
+        
         currentNeighborOffset = offset;
         // Recalculate target position based on original + offset
         targetPosition = originalPosition + currentNeighborOffset;
@@ -360,6 +526,14 @@ public class CardDragHandler : MonoBehaviour, IBeginDragHandler, IDragHandler, I
     // --- MODIFIED: Method to reset card state instantly ---
     public void ResetToOriginalStateInstantly(bool affectNeighbors = true)
     {
+        // --- ADDED: Check parent for neighbor operations ---
+        bool hasValidParent = transform.parent != null;
+        if (!hasValidParent)
+        {
+            Debug.LogWarning($"ResetToOriginalStateInstantly on {name} - Parent is null, skipping neighbor operations!", this.gameObject);
+        }
+        // --- END ADDED ---
+        
         // Debug.Log($"ResetInstant: {name}");
         StopCoroutineIfRunning(ref animationCoroutine); // Stop self-animation
         isHovering = false; // Ensure hover state is off
@@ -378,7 +552,7 @@ public class CardDragHandler : MonoBehaviour, IBeginDragHandler, IDragHandler, I
         currentNeighborOffset = Vector3.zero;
 
         // Optionally tell neighbours to also reset (e.g., called from HoverManager exit)
-        if (affectNeighbors) {
+        if (affectNeighbors && hasValidParent) {  // MODIFIED: Check hasValidParent
              // Find neighbors first before potentially resetting them
              CardDragHandler leftNeighbor, rightNeighbor;
              FindNeighbors(out leftNeighbor, out rightNeighbor);
@@ -387,4 +561,44 @@ public class CardDragHandler : MonoBehaviour, IBeginDragHandler, IDragHandler, I
         }
         originalSiblingIndex = -1; // Reset stored index
     }
+    
+    // --- ADDED: OnTransformParentChanged to track parent change ---
+    private void OnTransformParentChanged()
+    {
+        // Keep track of parent changes to help debugging
+        Debug.Log($"Card {name} parent changed: {transform.parent?.name ?? "null"}", this.gameObject);
+    }
+
+    private void OnDestroy()
+    {
+        // Reset all flags for safety
+        isDragging = false;
+        isDiscarding = false;
+        isHovering = false;
+    }
+
+    // --- ADDED: Explicit state reset method ---
+    public void ResetState()
+    {
+        isHovering = false;
+        isDragging = false; // Ensure this is false
+        isDiscarding = false; // Ensure this is false
+        StopCoroutineIfRunning(ref animationCoroutine);
+        // Reset target state to match original state just set
+        if (rectTransform != null) {
+            targetPosition = rectTransform.localPosition;
+            targetRotation = rectTransform.localRotation;
+            targetScale = rectTransform.localScale;
+        } else {
+            targetPosition = originalPosition;
+            targetRotation = originalRotation;
+            targetScale = originalScale;
+        }
+        currentNeighborOffset = Vector3.zero;
+        originalSiblingIndex = -1;
+        // Make sure raycasts are enabled unless explicitly dragging/discarding
+        if (canvasGroup != null) canvasGroup.blocksRaycasts = true;
+        // Debug.Log($"[{Time.frameCount}] ResetState called for {name}");
+    }
+    // --- END ADDED ---
 } 

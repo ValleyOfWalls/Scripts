@@ -545,6 +545,8 @@ public class CombatUIManager
                 CardDragHandler handler = goForThisCard.GetComponent<CardDragHandler>();
                 if (handler != null) { handler.originalPosition = target.Item1; handler.originalRotation = target.Item2; handler.originalScale = target.Item3; handler.cardData = cardData; /*Ensure data is current*/ }
                 
+                handler.ResetState();
+
                 // Add to final list in the correct order
                  if (finalGOs.Count > i) finalGOs[i] = goForThisCard; else finalGOs.Add(goForThisCard);
                  reusedGOs.Add(goForThisCard);
@@ -1042,6 +1044,20 @@ public class CombatUIManager
         if (cardGOToDiscard != null)
         {
             Debug.Log($"[TriggerDiscardAnimation] Found GO {cardGOToDiscard.name} for {cardData.cardName}. Starting animation.");
+            
+            // --- ADDED: Set isDiscarding flag IMMEDIATELY --- 
+            CardDragHandler handlerToDiscard = cardGOToDiscard.GetComponent<CardDragHandler>();
+            if (handlerToDiscard != null) 
+            { 
+                handlerToDiscard.isDiscarding = true; 
+                Debug.Log($"[TriggerDiscardAnimation] Set isDiscarding = true for {cardGOToDiscard.name}");
+            }
+            else 
+            {
+                Debug.LogWarning($"[TriggerDiscardAnimation] Could not find CardDragHandler on {cardGOToDiscard.name} to set flag immediately.");
+            }
+            // --- END ADDED ---
+            
             // Start animation - AnimateCardDiscardAndRemove will destroy the GO
             gameManager.StartCoroutine(AnimateCardDiscardAndRemove(cardData, cardGOToDiscard));
         }
@@ -1054,20 +1070,7 @@ public class CombatUIManager
     private IEnumerator AnimateCardDiscardAndRemove(CardData cardData, GameObject cardGO)
     {
         if (cardGO == null) yield break; // GO already destroyed
-
-        // --- ADDED: Get handler and set discarding flag --- 
-        CardDragHandler handler = cardGO.GetComponent<CardDragHandler>();
-        if (handler != null) 
-        {
-            handler.isDiscarding = true;
-        }
-        else
-        {
-            Debug.LogWarning($"[AnimateCardDiscardAndRemove] Could not find CardDragHandler on {cardGO.name} to set isDiscarding flag.");
-            // Proceed with animation anyway, but UpdateHandUI might destroy it early if called mid-animation.
-        }
-        // --- END ADDED ---
-
+        
         // Ensure cardGO is still active before starting animation
         if (!cardGO.activeSelf)
         {
@@ -1194,5 +1197,19 @@ public class CombatUIManager
 
     // --- ADDED: Getter for Combat Root Instance ---
     public GameObject GetCombatRootInstance() => combatRootInstance;
+    // --- END ADDED ---
+
+    // --- ADDED: Coroutine to delay sibling resorting ---
+    private IEnumerator DelayedSiblingResort()
+    {
+        yield return null; // Wait one frame for GOs to be fully initialized?
+        if (handPanelHoverManager != null)
+        {
+            // --- MODIFIED: Call public method directly ---
+            handPanelHoverManager.ResortSiblingIndices();
+            Debug.Log("[CombatUIManager] Called ResortSiblingIndices after delay.");
+             // --- Removed reflection code ---
+        }
+    }
     // --- END ADDED ---
 } 

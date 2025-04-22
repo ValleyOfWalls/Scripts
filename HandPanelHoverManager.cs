@@ -28,7 +28,10 @@ public class HandPanelHoverManager : MonoBehaviour, IPointerMoveHandler, IPointe
                 CardDragHandler handler = cardGO.GetComponent<CardDragHandler>();
                 if (handler != null)
                 {
-                    cardsInHand.Add(handler);
+                    if (handler.transform.parent == transform && !handler.isDragging && !handler.isDiscarding)
+                    {
+                        cardsInHand.Add(handler);
+                    }
                 }
                 else
                 {
@@ -37,7 +40,7 @@ public class HandPanelHoverManager : MonoBehaviour, IPointerMoveHandler, IPointe
             }
         }
         // Reset hovered card reference if the previously hovered card is no longer in the list
-        if (currentlyHoveredCard != null && !cardsInHand.Contains(currentlyHoveredCard))
+        if (currentlyHoveredCard != null && (!cardsInHand.Contains(currentlyHoveredCard) || !currentlyHoveredCard.gameObject.activeInHierarchy))
         {
             currentlyHoveredCard = null;
         }
@@ -104,7 +107,11 @@ public class HandPanelHoverManager : MonoBehaviour, IPointerMoveHandler, IPointe
 
         foreach (CardDragHandler card in cardsInHand)
         {
+            // --- MODIFIED: Additional checks for valid cards ---
             if (card == null || !card.gameObject.activeSelf) continue;
+            if (card.transform.parent != transform) continue; // Skip cards not parented to this panel (being dragged)
+            if (card.isDragging || card.isDiscarding) continue; // Skip cards being dragged or discarded
+            // --- END MODIFIED ---
 
             // Use RectTransformUtility to convert screen point to card's local space if needed,
             // but comparing distances in screen space to the card's screen position is simpler here.
@@ -139,13 +146,51 @@ public class HandPanelHoverManager : MonoBehaviour, IPointerMoveHandler, IPointe
     }
 
     // --- ADDED: Function to resort sibling indices ---
-    private void ResortSiblingIndices()
+    public void ResortSiblingIndices()
     {
         // Use the cached cardsInHand list which is updated by UpdateCardReferences
         if (cardsInHand.Count <= 1) return; // No sorting needed for 0 or 1 card
 
         // Create a temporary list to sort, preserving the original order of cardsInHand if needed elsewhere
-        List<CardDragHandler> sortedCards = new List<CardDragHandler>(cardsInHand);
+        List<CardDragHandler> sortedCards = new List<CardDragHandler>();
+        
+        // --- MODIFIED: Only include cards that are children of this panel & add logging ---
+        Debug.Log($"[ResortSiblingIndices] Starting. Total cardsInHand: {cardsInHand.Count}");
+        foreach (CardDragHandler card in cardsInHand)
+        {
+            if (card != null && card.transform != null)
+            {
+                bool isChild = card.transform.parent == transform;
+                bool isDragging = card.isDragging;
+                bool isDiscarding = card.isDiscarding;
+                // --- Add check for card being active in hierarchy ---
+                bool isActive = card.gameObject.activeInHierarchy;
+                if (isChild && isActive && !isDragging && !isDiscarding)
+                {
+                    sortedCards.Add(card);
+                    // Debug.Log($"[ResortSiblingIndices] Including: {card.name} (Active: {isActive}, Parent: {card.transform.parent?.name}, Drag:{isDragging}, Discard:{isDiscarding})");
+                }
+                else
+                {
+                    Debug.LogWarning($"[ResortSiblingIndices] EXCLUDING: {card.name} (Active: {isActive}, Parent: {card.transform.parent?.name ?? "null"}, Drag:{isDragging}, Discard:{isDiscarding})", card.gameObject);
+                }
+            }
+             else {
+                 Debug.LogWarning($"[ResortSiblingIndices] Skipping null card/transform in cardsInHand list.");
+            }
+        }
+        
+        if (sortedCards.Count <= 1) {
+            Debug.Log($"[ResortSiblingIndices] No sorting needed after filtering. Count: {sortedCards.Count}");
+            // --- ADDED: Ensure single card is on top --- 
+            if (sortedCards.Count == 1 && sortedCards[0] != null)
+            {
+                sortedCards[0].transform.SetAsLastSibling();
+            }
+            // --- END ADDED ---
+            return; // No sorting needed if we filtered too many
+        }
+        // --- END MODIFIED ---
 
         // 2. Sort cards based on their original X position (left to right)
         sortedCards.Sort((a, b) => {
@@ -176,6 +221,7 @@ public class HandPanelHoverManager : MonoBehaviour, IPointerMoveHandler, IPointe
                 currentlyHoveredCard.transform.SetAsLastSibling();
             }
         }
+        Debug.Log($"[ResortSiblingIndices] Finished. Sorted {sortedCards.Count} cards.");
     }
     // --- END ADDED ---
 
@@ -195,7 +241,7 @@ public class HandPanelHoverManager : MonoBehaviour, IPointerMoveHandler, IPointe
         // Tell each card to exit its hover state (which animates it back)
         foreach (CardDragHandler card in cardsInHand)
         {
-            if (card != null && card.gameObject.activeSelf)
+            if (card != null && card.gameObject.activeSelf && card.transform.parent == transform && !card.isDragging && !card.isDiscarding)
             {
                 card.ExitHoverState();
             }
