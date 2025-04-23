@@ -776,6 +776,93 @@ public class GameManager : MonoBehaviourPunCallbacks
         }
     }
 
+    // --- ADDED: RPC Receiver for Drawing Cards for Local Pet ---
+    [PunRPC]
+    private void RpcDrawCardsForMyPet(int amount, PhotonMessageInfo info)
+    {
+        // This RPC is sent *to us* when an *opponent* plays a card that makes *our pet* draw cards
+        if (info.Sender != null && info.Sender != PhotonNetwork.LocalPlayer)
+        {
+            Debug.Log($"RPC: Received RpcDrawCardsForMyPet({amount}) from {info.Sender.NickName}. Drawing cards for our local pet.");
+            
+            // Get the appropriate opponent player who's fighting our pet
+            Player opponentPlayer = playerManager?.GetOpponentPlayer();
+            
+            // The opponent who sent this RPC should be the one fighting our pet
+            if (opponentPlayer != null && info.Sender == opponentPlayer)
+            {
+                // For each player fighting this player's pet, there should be a local simulation
+                // of this player's pet in their game. Draw cards for this simulation.
+                PetDeckManager petDeckManager = cardManager?.GetPetDeckManager();
+                if (petDeckManager != null)
+                {
+                    // Draw cards for our opponent pet (which is the sender's copy of our pet)
+                    for (int i = 0; i < amount; i++)
+                    {
+                        petDeckManager.DrawOpponentPetCard();
+                    }
+                    // Update UI to show the opponent pet's new hand
+                    GetCombatUIManager()?.UpdateOpponentPetHandUI();
+                    Debug.Log($"Drew {amount} cards for local pet simulation in response to RPC.");
+                }
+                else
+                {
+                    Debug.LogWarning("Could not draw cards for pet: PetDeckManager is null.");
+                }
+            }
+            else
+            {
+                Debug.LogWarning($"RPC: Received RpcDrawCardsForMyPet from player who is not our opponent. Ignoring.");
+            }
+        }
+        else
+        {
+            Debug.LogWarning($"RPC: Received RpcDrawCardsForMyPet from self or null sender. Ignoring.");
+        }
+    }
+
+    // --- ADDED: RPC Receiver for Discarding Random Cards from Local Pet ---
+    [PunRPC]
+    private void RpcDiscardRandomCardsFromMyPet(int amount, PhotonMessageInfo info)
+    {
+        // This RPC is sent *to us* when an *opponent* plays a card that makes *our pet* discard random cards
+        if (info.Sender != null && info.Sender != PhotonNetwork.LocalPlayer)
+        {
+            Debug.Log($"RPC: Received RpcDiscardRandomCardsFromMyPet({amount}) from {info.Sender.NickName}. Discarding random cards from our local pet's hand.");
+            
+            // Get the appropriate opponent player who's fighting our pet
+            Player opponentPlayer = playerManager?.GetOpponentPlayer();
+            
+            // The opponent who sent this RPC should be the one fighting our pet
+            if (opponentPlayer != null && info.Sender == opponentPlayer)
+            {
+                // For each player fighting this player's pet, there should be a local simulation
+                // of this player's pet in their game. Discard cards from this simulation.
+                PetDeckManager petDeckManager = cardManager?.GetPetDeckManager();
+                if (petDeckManager != null)
+                {
+                    // Discard random cards from our opponent pet's hand (which is the sender's copy of our pet)
+                    petDeckManager.DiscardRandomOpponentPetCards(amount);
+                    // Update UI to show the opponent pet's new hand
+                    GetCombatUIManager()?.UpdateOpponentPetHandUI();
+                    Debug.Log($"Discarded {amount} random cards from local pet simulation in response to RPC.");
+                }
+                else
+                {
+                    Debug.LogWarning("Could not discard cards from pet: PetDeckManager is null.");
+                }
+            }
+            else
+            {
+                Debug.LogWarning($"RPC: Received RpcDiscardRandomCardsFromMyPet from player who is not our opponent. Ignoring.");
+            }
+        }
+        else
+        {
+            Debug.LogWarning($"RPC: Received RpcDiscardRandomCardsFromMyPet from self or null sender. Ignoring.");
+        }
+    }
+
     public PhotonView GetPhotonView()
     {
         return photonViewComponent;

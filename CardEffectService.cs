@@ -579,11 +579,18 @@ public class CardEffectService
             {
                 // Draw cards for own pet
                 Debug.Log($"Drawing {cardData.drawAmount} cards for own pet.");
-                // TODO: Implement pet card drawing if not already implemented
-                // This would require adding methods to PetDeckManager for the local pet
                 
-                // Notify owner this is not implemented yet
-                Debug.LogWarning("Drawing cards for own pet is not fully implemented yet.");
+                // Send RPC to the opponent who's simulating our own pet
+                Player opponentPlayer = gameManager.GetPlayerManager().GetOpponentPlayer();
+                if (opponentPlayer != null)
+                {
+                    Debug.Log($"Sending RpcDrawCardsForMyPet({cardData.drawAmount}) to opponent {opponentPlayer.NickName}.");
+                    gameManager.GetPhotonView().RPC("RpcDrawCardsForMyPet", opponentPlayer, cardData.drawAmount);
+                }
+                else
+                {
+                    Debug.LogWarning("Could not send RpcDrawCardsForMyPet, opponent player is null.");
+                }
             }
             else if (targetType == CardDropZone.TargetType.EnemyPet)
             {
@@ -620,10 +627,18 @@ public class CardEffectService
             {
                 // Discard random cards from own pet's hand
                 Debug.Log($"Discarding {cardData.discardRandomAmount} random cards from own pet's hand.");
-                // TODO: Implement pet card discarding if not already implemented
                 
-                // Notify owner this is not implemented yet
-                Debug.LogWarning("Discarding cards from own pet's hand is not fully implemented yet.");
+                // Send RPC to the opponent who's simulating our own pet
+                Player opponentPlayer = gameManager.GetPlayerManager().GetOpponentPlayer();
+                if (opponentPlayer != null)
+                {
+                    Debug.Log($"Sending RpcDiscardRandomCardsFromMyPet({cardData.discardRandomAmount}) to opponent {opponentPlayer.NickName}.");
+                    gameManager.GetPhotonView().RPC("RpcDiscardRandomCardsFromMyPet", opponentPlayer, cardData.discardRandomAmount);
+                }
+                else
+                {
+                    Debug.LogWarning("Could not send RpcDiscardRandomCardsFromMyPet, opponent player is null.");
+                }
             }
             else if (targetType == CardDropZone.TargetType.EnemyPet)
             {
