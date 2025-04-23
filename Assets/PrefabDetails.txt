@@ -2,10 +2,6 @@ Prefab Details Export
 =====================
 Search Folders: Assets/Prefabs
 
---- Prefab: Assets/Prefabs/CardPrefab.prefab ---
-- CardPrefab
-    - Visual (Components: MeshFilter, BoxCollider, MeshRenderer)
-
 --- Prefab: Assets/Prefabs/Effects/Effect Test.prefab ---
 - Effect Test (Components: SpriteRenderer, Animator)
 
@@ -18,7 +14,7 @@ Search Folders: Assets/Prefabs
     - Visual (Components: MeshFilter, BoxCollider, MeshRenderer)
 
 --- Prefab: Assets/Prefabs/UI/CardTemplate.prefab ---
-- CardTemplate (Components: CanvasRenderer, CanvasGroup, CardDragHandler)
+- CardTemplate (Components: CanvasRenderer, CanvasGroup, CardDragHandler, PhotonView)
     - ArtPanel (Components: CanvasRenderer, Image)
     - BG (Components: CanvasRenderer, Image)
     - HeaderPanel (Components: CanvasRenderer, Image)

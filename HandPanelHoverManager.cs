@@ -102,27 +102,52 @@ public class HandPanelHoverManager : MonoBehaviour, IPointerMoveHandler, IPointe
         }
         // --- END ADDED ---
 
-        CardDragHandler closest = null;
-        float minDistanceSqr = float.MaxValue;
+        CardDragHandler hoveredCard = null;
+        float minDepth = float.MaxValue; // Use depth (or sibling index) for tie-breaking if needed
 
-        foreach (CardDragHandler card in cardsInHand)
+        // Iterate in reverse to prioritize cards rendered on top (higher sibling index)
+        for (int i = cardsInHand.Count - 1; i >= 0; i--)
         {
+            CardDragHandler card = cardsInHand[i];
+
             // --- MODIFIED: Additional checks for valid cards ---
             if (card == null || !card.gameObject.activeSelf) continue;
             if (card.transform.parent != transform) continue; // Skip cards not parented to this panel (being dragged)
             if (card.isDragging || card.isDiscarding) continue; // Skip cards being dragged or discarded
             // --- END MODIFIED ---
 
-            // Use RectTransformUtility to convert screen point to card's local space if needed,
-            // but comparing distances in screen space to the card's screen position is simpler here.
-            // --- MODIFIED: Use the assigned uiCamera ---
-            // Vector2 cardScreenPosition = RectTransformUtility.WorldToScreenPoint(null, card.transform.position); // Use null for camera if Canvas is ScreenSpaceOverlay
-            Vector2 cardScreenPosition = RectTransformUtility.WorldToScreenPoint(uiCamera, card.transform.position); 
-            // --- END MODIFIED ---
-            
-            // Alternative: Use card's pivot point projected to screen space
-            // Vector2 cardPivotScreenPosition = RectTransformUtility.WorldToScreenPoint(null, card.GetComponent<RectTransform>().position); 
+            RectTransform cardRect = card.GetComponent<RectTransform>();
+            if (cardRect == null) continue; // Skip if no RectTransform
 
+            // --- NEW LOGIC: Check if pointer is within the card's rectangle ---
+            if (RectTransformUtility.RectangleContainsScreenPoint(cardRect, screenPosition, uiCamera))
+            {
+                 // Simple approach: Return the first card found (topmost due to reverse iteration)
+                 // If overlap is complex, you might need additional logic (e.g., check distance only among contained cards)
+                 hoveredCard = card;
+                 break; // Found the topmost card under the pointer
+
+                // --- Alternative: If you want the absolute closest among overlapping cards (less common for UI) ---
+                /*
+                float distanceSqr = (screenPosition - (Vector2)uiCamera.WorldToScreenPoint(cardRect.position)).sqrMagnitude;
+                if (distanceSqr < minDistanceSqr) {
+                    minDistanceSqr = distanceSqr;
+                    hoveredCard = card;
+                }
+                */
+            }
+        }
+
+        // --- REMOVED: Distance check logic ---
+        /*
+        CardDragHandler closest = null;
+        float minDistanceSqr = float.MaxValue;
+
+        foreach (CardDragHandler card in cardsInHand)
+        {
+            // ... existing checks ...
+
+            Vector2 cardScreenPosition = RectTransformUtility.WorldToScreenPoint(uiCamera, card.transform.position);
             float distanceSqr = (screenPosition - cardScreenPosition).sqrMagnitude;
 
             if (distanceSqr < minDistanceSqr)
@@ -132,17 +157,18 @@ public class HandPanelHoverManager : MonoBehaviour, IPointerMoveHandler, IPointe
             }
         }
 
-        // --- MODIFIED: Add a maximum distance threshold ---
-        float maxDistanceThreshold = 150f; // Max distance in pixels to consider hovering
+        float maxDistanceThreshold = 150f;
         float maxDistanceSqr = maxDistanceThreshold * maxDistanceThreshold;
 
-        if (minDistanceSqr > maxDistanceSqr) 
+        if (minDistanceSqr > maxDistanceSqr)
         {
-            return null; // Mouse is too far from the center of the closest card
+            return null;
         }
-        // --- END MODIFIED ---
-
         return closest;
+        */
+        // --- END REMOVED ---
+
+        return hoveredCard; // Return the card found within bounds (or null if none)
     }
 
     // --- ADDED: Function to resort sibling indices ---

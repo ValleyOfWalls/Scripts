@@ -263,11 +263,11 @@ public class CardGenerator : MonoBehaviour
         
         // Critical hit chance
         CreateCard("Predatory Instinct", "Gain +15% critical hit chance for this combat.", 1, card => {
-            card.critChanceBuffTarget = CardDropZone.TargetType.PlayerSelf;
+            card.critBuffRule = CritBuffTargetRule.Player;
             card.critChanceBuffAmount = 15;
             card.critChanceBuffDuration = 0; // 0 = end of combat
         }, "Predatory Instinct+", "Gain +25% critical hit chance for this combat.", 1, card => {
-            card.critChanceBuffTarget = CardDropZone.TargetType.PlayerSelf;
+            card.critBuffRule = CritBuffTargetRule.Player;
             card.critChanceBuffAmount = 25;
             card.critChanceBuffDuration = 0;
         });

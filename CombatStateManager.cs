@@ -41,6 +41,9 @@ public class CombatStateManager
     public const string PLAYER_COMBAT_PLAYER_CRIT_PROP = "combatPlayerCrit"; // Stores total effective crit %
     // --- END ADDED ---
     
+    // Add the constant for pet health tracking
+    public const string PLAYER_COMBAT_PET_HP_PROP = "combatPetHP";
+    
     public CombatStateManager(GameManager gameManager)
     {
         this.gameManager = gameManager;

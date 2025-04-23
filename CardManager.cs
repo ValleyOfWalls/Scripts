@@ -116,13 +116,13 @@ public class CardManager
             gameManager.GetPlayerManager().RemoveCostModifierForCard(card);
             
             // Process discard trigger
-            HandleDiscardTrigger(card);
+            HandleDiscardTrigger(card, CardDropZone.TargetType.PlayerSelf);
         }
     }
     
-    public void HandleDiscardTrigger(CardData card)
+    public void HandleDiscardTrigger(CardData card, CardDropZone.TargetType targetType = CardDropZone.TargetType.PlayerSelf)
     {
-        cardEffectService.HandleDiscardTrigger(card);
+        cardEffectService.HandleDiscardTrigger(card, targetType);
     }
     
     // --- MODIFIED: Accept optional GameObject --- 

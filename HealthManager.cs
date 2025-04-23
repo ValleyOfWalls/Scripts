@@ -319,7 +319,7 @@ public class HealthManager
         }
     }
     
-    public void DamageLocalPet(int amount)
+    public void DamageLocalPet(int amount, bool updateUIImmediate = true)
     {
         if (amount <= 0) return;
         
@@ -345,7 +345,25 @@ public class HealthManager
             if (localPetHealth < 0) localPetHealth = 0;
         }
         
-        gameManager.UpdateHealthUI(); // Update both health and block display
+        if (updateUIImmediate)
+        {
+            gameManager.UpdateHealthUI(); // Update both health and block display
+        }
+        
+        // --- ADDED: Update pet health property for network sync ---
+        if (PhotonNetwork.InRoom)
+        {
+            // Create a property update for the pet's health
+            Hashtable petProps = new Hashtable();
+            
+            // We want to track our own pet's health as a separate property
+            petProps.Add(CombatStateManager.PLAYER_COMBAT_PET_HP_PROP, localPetHealth);
+            
+            // Set the custom property
+            PhotonNetwork.LocalPlayer.SetCustomProperties(petProps);
+            Debug.Log($"Updated local pet health property to {localPetHealth}");
+        }
+        // --- END ADDED ---
     }
     
     #endregion
@@ -504,10 +522,36 @@ public class HealthManager
     {
         if (amount <= 0) return;
         int effectiveMaxHP = GetEffectivePetMaxHealth();
+        int previousHealth = localPetHealth;
         localPetHealth += amount;
         if (localPetHealth > effectiveMaxHP) localPetHealth = effectiveMaxHP;
+        
         Debug.Log($"Healed Local Pet by {amount}. New health: {localPetHealth} / {effectiveMaxHP}");
         gameManager.UpdateHealthUI();
+        
+        // --- ADDED: Update pet health property for network sync ---
+        if (PhotonNetwork.InRoom)
+        {
+            // Create a property update for the pet's health
+            Hashtable petProps = new Hashtable();
+            
+            // We want to track our own pet's health as a separate property
+            petProps.Add(CombatStateManager.PLAYER_COMBAT_PET_HP_PROP, localPetHealth);
+            
+            // Set the custom property
+            PhotonNetwork.LocalPlayer.SetCustomProperties(petProps);
+            Debug.Log($"Updated local pet health property to {localPetHealth}");
+            
+            // --- ADDED: Notify opponent directly via RPC ---
+            Player opponentPlayer = gameManager.GetPlayerManager().GetOpponentPlayer();
+            if (opponentPlayer != null)
+            {
+                Debug.Log($"Sending RpcNotifyOpponentOfLocalPetHealthChange({localPetHealth}) to opponent {opponentPlayer.NickName} after local pet was healed.");
+                gameManager.GetPhotonView().RPC("RpcNotifyOpponentOfLocalPetHealthChange", opponentPlayer, localPetHealth);
+            }
+            // --- END ADDED ---
+        }
+        // --- END ADDED ---
     }
     
     public void HealOpponentPet(int amount)
@@ -518,6 +562,20 @@ public class HealthManager
         if (opponentPetHealth > effectiveMaxHP) opponentPetHealth = effectiveMaxHP;
         Debug.Log($"Healed Opponent Pet by {amount} (local sim). New health: {opponentPetHealth} / {effectiveMaxHP}");
         gameManager.UpdateHealthUI();
+        
+        // --- ADDED: Network Sync for Opponent Pet Healing ---
+        Player opponentPlayer = gameManager.GetPlayerManager().GetOpponentPlayer();
+        if (PhotonNetwork.InRoom && opponentPlayer != null)
+        {
+            // Send RPC to the specific opponent, telling them to heal *their* pet
+            gameManager.GetPhotonView().RPC("RpcHealMyPet", opponentPlayer, amount);
+            Debug.Log($"Sent RpcHealMyPet({amount}) to {opponentPlayer.NickName}.");
+        }
+        else if (opponentPlayer == null)
+        {
+            Debug.LogWarning("HealOpponentPet: Cannot send RPC, opponentPlayer is null.");
+        }
+        // --- END ADDED ---
     }
     
     #endregion
@@ -994,4 +1052,11 @@ public class HealthManager
         }
     }
     // --- END ADDED ---
+
+    // Add method to directly set opponent pet health for synchronization
+    public void SetOpponentPetHealth(int newHealth)
+    {
+        opponentPetHealth = newHealth;
+        Debug.Log($"Set opponent pet health to {newHealth} from network sync");
+    }
 }

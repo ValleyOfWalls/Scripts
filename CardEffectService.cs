@@ -148,7 +148,8 @@ public class CardEffectService
                     if (actualDamage > 0) 
                     {
                         playerManager.DamageOpponentPet(actualDamage);
-                        Debug.Log($"Dealt {actualDamage} damage to Opponent Pet. (Base: {baseDamage}, TurnB: {turnBonusDamage}, PlayB: {playBonusDamage}, CopyB: {copyBonusDamage}, StrB: {strengthBonus}, Multiplier: {damageMultiplier:F2}). New health: {playerManager.GetOpponentPetHealth()}, Est. Block: {playerManager.GetOpponentPetBlock()}");
+                        int finalPetHealth = playerManager.GetOpponentPetHealth(); // Get health AFTER damage
+                        Debug.Log($"Dealt {actualDamage} damage to Opponent Pet. (Base: {baseDamage}, TurnB: {turnBonusDamage}, PlayB: {playBonusDamage}, CopyB: {copyBonusDamage}, StrB: {strengthBonus}, Multiplier: {damageMultiplier:F2}). New health: {finalPetHealth}, Est. Block: {playerManager.GetOpponentPetBlock()}");
                     }
                 }
                 
@@ -439,20 +440,21 @@ public class CardEffectService
                     if (actualDamage > 0)
                     {
                         playerManager.DamageLocalPet(actualDamage);
-                        Debug.Log($"Dealt {actualDamage} damage to OwnPet. (Base: {baseDamage}, TurnB: {turnBonusDamage}, PlayB: {playBonusDamage}, CopyB: {copyBonusDamage}, StrB: {strengthBonus}, Multiplier: {damageMultiplier:F2}). New health: {playerManager.GetLocalPetHealth()}, Block: {playerManager.GetLocalPetBlock()}");
+                        int finalPetHealth = playerManager.GetLocalPetHealth(); // Get health AFTER damage
+                        Debug.Log($"Dealt {actualDamage} damage to OwnPet. (Base: {baseDamage}, TurnB: {turnBonusDamage}, PlayB: {playBonusDamage}, CopyB: {copyBonusDamage}, StrB: {strengthBonus}, Multiplier: {damageMultiplier:F2}). New health: {finalPetHealth}, Block: {playerManager.GetLocalPetBlock()}");
 
-                        // --- ADDED: Notify opponent about this damage ---
+                        // --- MODIFIED: Notify opponent about the NEW health total --- 
                         Photon.Realtime.Player opponentPlayer = gameManager.GetPlayerManager().GetOpponentPlayer();
                         if (opponentPlayer != null)
                         {
-                            Debug.Log($"Sending RpcOpponentPetTookDamage({actualDamage}) to opponent {opponentPlayer.NickName} because local pet took damage from card effect.");
-                            gameManager.GetPhotonView().RPC("RpcOpponentPetTookDamage", opponentPlayer, actualDamage);
+                            Debug.Log($"Sending RpcNotifyOpponentOfLocalPetHealthChange({finalPetHealth}) to opponent {opponentPlayer.NickName} after local pet took damage.");
+                            gameManager.GetPhotonView().RPC("RpcNotifyOpponentOfLocalPetHealthChange", opponentPlayer, finalPetHealth);
                         }
                         else
                         {
-                             Debug.LogWarning("CardEffectService (OwnPet): Could not find opponent player to notify about pet damage.");
+                            Debug.LogWarning("CardEffectService (OwnPet Damage): Could not find opponent player to notify about pet health change.");
                         }
-                        // --- END ADDED ---
+                        // --- END MODIFIED ---
                     }
                 }
                 
@@ -501,6 +503,8 @@ public class CardEffectService
                 if (cardData.healingAmount > 0)
                 {
                     playerManager.HealLocalPet(cardData.healingAmount);
+                    int finalPetHealth = playerManager.GetLocalPetHealth(); // Get health AFTER healing
+                    Debug.Log($"Healed OwnPet by {cardData.healingAmount}. New health: {finalPetHealth}");
                 }
                 
                 // Apply Status Effect to Own Pet
@@ -558,27 +562,79 @@ public class CardEffectService
         // Apply Draw Card
         if (cardData.drawAmount > 0)
         {
-            Debug.Log($"Drawing {cardData.drawAmount} cards.");
-            DeckManager deckManager = gameManager.GetCardManager().GetDeckManager();
-            for(int d=0; d < cardData.drawAmount; d++)
+            // --- MODIFIED: Draw cards based on target type ---
+            if (targetType == CardDropZone.TargetType.PlayerSelf) 
             {
-                deckManager.DrawCard();
+                // Draw cards for the player
+                Debug.Log($"Drawing {cardData.drawAmount} cards for player.");
+                DeckManager deckManager = gameManager.GetCardManager().GetDeckManager();
+                for(int d=0; d < cardData.drawAmount; d++)
+                {
+                    deckManager.DrawCard();
+                }
+                gameManager.UpdateHandUI();
+                gameManager.UpdateDeckCountUI();
             }
-            gameManager.UpdateHandUI();
-            gameManager.UpdateDeckCountUI();
+            else if (targetType == CardDropZone.TargetType.OwnPet)
+            {
+                // Draw cards for own pet
+                Debug.Log($"Drawing {cardData.drawAmount} cards for own pet.");
+                // TODO: Implement pet card drawing if not already implemented
+                // This would require adding methods to PetDeckManager for the local pet
+                
+                // Notify owner this is not implemented yet
+                Debug.LogWarning("Drawing cards for own pet is not fully implemented yet.");
+            }
+            else if (targetType == CardDropZone.TargetType.EnemyPet)
+            {
+                // Draw cards for enemy pet
+                Debug.Log($"Drawing {cardData.drawAmount} cards for opponent's pet.");
+                PetDeckManager petDeckManager = gameManager.GetCardManager().GetPetDeckManager();
+                for(int d=0; d < cardData.drawAmount; d++)
+                {
+                    petDeckManager.DrawOpponentPetCard();
+                }
+                // Update opponent pet hand UI
+                gameManager.GetCombatUIManager()?.UpdateOpponentPetHandUI();
+            }
+            // --- END MODIFIED ---
         }
         
         // Apply Discard Random
         if (cardData.discardRandomAmount > 0)
         {
-            Debug.Log($"Discarding {cardData.discardRandomAmount} random cards from hand.");
-            List<CardData> discarded = gameManager.GetCardManager().GetDeckManager().DiscardRandomCards(cardData.discardRandomAmount);
-            // Animation is triggered within DiscardRandomCards, but we need to update UI after.
-            if (discarded.Count > 0)
+            // --- MODIFIED: Discard cards based on target type ---
+            if (targetType == CardDropZone.TargetType.PlayerSelf)
             {
-                gameManager.UpdateHandUI(); // Update hand if any cards were actually discarded
-                gameManager.UpdateDeckCountUI();
+                // Discard random cards from player's hand
+                Debug.Log($"Discarding {cardData.discardRandomAmount} random cards from player's hand.");
+                List<CardData> discarded = gameManager.GetCardManager().GetDeckManager().DiscardRandomCards(cardData.discardRandomAmount, targetType);
+                // Animation is triggered within DiscardRandomCards, but we need to update UI after.
+                if (discarded.Count > 0)
+                {
+                    gameManager.UpdateHandUI(); // Update hand if any cards were actually discarded
+                    gameManager.UpdateDeckCountUI();
+                }
             }
+            else if (targetType == CardDropZone.TargetType.OwnPet)
+            {
+                // Discard random cards from own pet's hand
+                Debug.Log($"Discarding {cardData.discardRandomAmount} random cards from own pet's hand.");
+                // TODO: Implement pet card discarding if not already implemented
+                
+                // Notify owner this is not implemented yet
+                Debug.LogWarning("Discarding cards from own pet's hand is not fully implemented yet.");
+            }
+            else if (targetType == CardDropZone.TargetType.EnemyPet)
+            {
+                // Discard random cards from enemy pet's hand
+                Debug.Log($"Discarding {cardData.discardRandomAmount} random cards from opponent pet's hand.");
+                PetDeckManager petDeckManager = gameManager.GetCardManager().GetPetDeckManager();
+                petDeckManager.DiscardRandomOpponentPetCards(cardData.discardRandomAmount);
+                // Update opponent pet hand UI
+                gameManager.GetCombatUIManager()?.UpdateOpponentPetHandUI();
+            }
+            // --- END MODIFIED ---
         }
         
         // Combo Check
@@ -608,14 +664,38 @@ public class CardEffectService
         // Apply Crit Chance Buff Effect
         if (cardData.critChanceBuffAmount > 0)
         {
-            if (cardData.critChanceBuffTarget == CardDropZone.TargetType.PlayerSelf)
+            // --- MODIFIED: Use critBuffRule to determine the actual recipient --- 
+            CritBuffTargetRule rule = cardData.critBuffRule;
+            Debug.Log($"Applying Crit Buff: Amount={cardData.critChanceBuffAmount}, Duration={cardData.critChanceBuffDuration}, Rule={rule}, DropTarget={targetType}"); 
+            
+            if (rule == CritBuffTargetRule.Player)
             {
+                // Always apply to the player regardless of drop zone
                 playerManager.ApplyCritChanceBuffPlayer(cardData.critChanceBuffAmount, cardData.critChanceBuffDuration);
             }
-            else if (cardData.critChanceBuffTarget == CardDropZone.TargetType.OwnPet)
+            else if (rule == CritBuffTargetRule.Target)
             {
-                playerManager.ApplyCritChanceBuffPet(cardData.critChanceBuffAmount, cardData.critChanceBuffDuration);
+                // Apply based on where the card was dropped (targetType)
+                if (targetType == CardDropZone.TargetType.PlayerSelf)
+                {
+                    playerManager.ApplyCritChanceBuffPlayer(cardData.critChanceBuffAmount, cardData.critChanceBuffDuration);
+                }
+                else if (targetType == CardDropZone.TargetType.OwnPet)
+                {
+                    playerManager.ApplyCritChanceBuffPet(cardData.critChanceBuffAmount, cardData.critChanceBuffDuration);
+                }
+                else if (targetType == CardDropZone.TargetType.EnemyPet)
+                {
+                    // Note: HealthManager handles sending RPC if needed
+                    playerManager.ApplyCritChanceBuffOpponentPet(cardData.critChanceBuffAmount, cardData.critChanceBuffDuration);
+                }
+                else 
+                {
+                    // Log a warning if the drop target isn't one of the direct entities
+                    Debug.LogWarning($"CritBuffRule is Target, but drop target was {targetType}. Crit buff not applied.");
+                }
             }
+            // --- END MODIFIED ---
         }
         
         // Apply Temporary Hand Upgrade Effect
@@ -803,41 +883,92 @@ public class CardEffectService
         // No need to update opponent hand/deck UI as it's not visible
     }
     
-    public void HandleDiscardTrigger(CardData discardedCard)
+    public void HandleDiscardTrigger(CardData card, CardDropZone.TargetType targetType = CardDropZone.TargetType.PlayerSelf)
     {
-        if (discardedCard == null || discardedCard.discardEffectType == DiscardEffectType.None)
-        {
-            return; // No effect to trigger
-        }
-
-        Debug.Log($"Handling discard trigger for {discardedCard.cardName}: {discardedCard.discardEffectType}, Value: {discardedCard.discardEffectValue}");
+        // Only process if card has a discard effect
+        if (card.discardEffectType == DiscardEffectType.None) return;
 
         PlayerManager playerManager = gameManager.GetPlayerManager();
-        int value = discardedCard.discardEffectValue;
-
-        switch (discardedCard.discardEffectType)
+        int value = card.discardEffectValue;
+        
+        // --- MODIFIED: Switch logic to respect targetType ---
+        switch (card.discardEffectType)
         {
             case DiscardEffectType.DealDamageToOpponentPet:
-                if (value > 0) playerManager.DamageOpponentPet(value);
+                // This effect always targets the opponent pet regardless of drop target
+                playerManager.DamageOpponentPet(value);
                 break;
+            
             case DiscardEffectType.GainBlockPlayer:
-                if (value > 0) playerManager.AddBlockToLocalPlayer(value);
+                // Apply block based on target
+                if (targetType == CardDropZone.TargetType.PlayerSelf)
+                {
+                    playerManager.AddBlockToLocalPlayer(value);
+                    Debug.Log($"Discard Effect: Gained {value} block for player.");
+                }
+                else if (targetType == CardDropZone.TargetType.OwnPet)
+                {
+                    playerManager.AddBlockToLocalPet(value);
+                    Debug.Log($"Discard Effect: Gained {value} block for own pet.");
+                }
+                else if (targetType == CardDropZone.TargetType.EnemyPet)
+                {
+                    // This would require new methods to add block to opponent pet
+                    Debug.LogWarning($"Discard Effect: GainBlock on EnemyPet not implemented. Target was {targetType}");
+                }
                 break;
+            
             case DiscardEffectType.GainBlockPet:
-                if (value > 0) playerManager.AddBlockToLocalPet(value);
+                // This effect always targets your pet
+                playerManager.AddBlockToLocalPet(value);
                 break;
+            
             case DiscardEffectType.DrawCard:
-                if (value > 0) {
+                // Apply draw based on target
+                if (targetType == CardDropZone.TargetType.PlayerSelf)
+                {
+                    Debug.Log($"Discard Effect: Drawing {value} cards for player.");
                     DeckManager deckManager = gameManager.GetCardManager().GetDeckManager();
                     for(int i=0; i < value; i++) deckManager.DrawCard();
                     gameManager.UpdateHandUI();
                     gameManager.UpdateDeckCountUI();
                 }
+                else if (targetType == CardDropZone.TargetType.OwnPet)
+                {
+                    Debug.Log($"Discard Effect: Drawing {value} cards for own pet is not yet implemented.");
+                    // TODO: Implement drawing for own pet
+                }
+                else if (targetType == CardDropZone.TargetType.EnemyPet)
+                {
+                    Debug.Log($"Discard Effect: Drawing {value} cards for opponent's pet.");
+                    PetDeckManager petDeckManager = gameManager.GetCardManager().GetPetDeckManager();
+                    for(int i=0; i < value; i++) petDeckManager.DrawOpponentPetCard();
+                    gameManager.GetCombatUIManager()?.UpdateOpponentPetHandUI();
+                }
                 break;
+            
             case DiscardEffectType.GainEnergy:
-                if (value > 0) playerManager.GainEnergy(value);
+                // Apply energy gain based on target
+                if (targetType == CardDropZone.TargetType.PlayerSelf)
+                {
+                    playerManager.GainEnergy(value);
+                    Debug.Log($"Discard Effect: Gained {value} energy for player.");
+                }
+                else if (targetType == CardDropZone.TargetType.OwnPet)
+                {
+                    // Add energy to own pet (would need additional method)
+                    Debug.LogWarning($"Discard Effect: GainEnergy for own pet not implemented. Target was {targetType}");
+                }
+                else if (targetType == CardDropZone.TargetType.EnemyPet)
+                {
+                    // Add energy to opponent pet
+                    PetDeckManager petDeckManager = gameManager.GetCardManager().GetPetDeckManager();
+                    petDeckManager.AddEnergyToOpponentPet(value);
+                    Debug.Log($"Discard Effect: Added {value} energy to opponent's pet.");
+                }
                 break;
         }
+        // --- END MODIFIED ---
     }
     
     private void ApplyComboEffect(CardData triggeringCard)

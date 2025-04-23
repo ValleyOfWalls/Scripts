@@ -1,6 +1,7 @@
 using UnityEngine;
 using System.Collections.Generic;
 using System.Linq;
+using System.Collections;
 
 public class DeckManager
 {
@@ -71,24 +72,53 @@ public class DeckManager
         {
             if (discardPile.Count == 0)
             {
-                Debug.Log("DrawCard: Deck and discard pile are both empty. Cannot draw.");
-                return false; // Out of cards entirely
+                Debug.Log("No cards left to draw!");
+                return false; // Out of cards
             }
+            
             ReshuffleDiscardPile();
-             // After reshuffling, check if the deck is *still* empty (shouldn't happen if discard wasn't empty, but safety check)
-            if (deck.Count == 0) 
-            {
-                 Debug.LogWarning("DrawCard: Deck is still empty after reshuffling non-empty discard pile. This should not happen.");
-                 return false;
-            }
         }
         
-        CardData drawnCard = deck[0];
-        deck.RemoveAt(0);
-        hand.Add(drawnCard);
-        Debug.Log($"DrawCard SUCCESS: Drew '{drawnCard.cardName}'. New state - Deck: {deck.Count}, Hand: {hand.Count}, Discard: {discardPile.Count}");
-        return true;
+        if (deck.Count > 0) // Check again after potential reshuffle
+        {
+            CardData drawnCard = deck[0];
+            deck.RemoveAt(0);
+            hand.Add(drawnCard);
+            
+            // --- ADDED: Ensure proper layering for drawn cards ---
+            // After updating the UI with the new card, we need to ensure sibling indices are properly sorted
+            gameManager.StartCoroutine(EnsureProperCardLayering());
+            // --- END ADDED ---
+            
+            Debug.Log($"DrawCard SUCCESS: Drew '{drawnCard.cardName}'. New state - Deck: {deck.Count}, Hand: {hand.Count}, Discard: {discardPile.Count}");
+            return true;
+        }
+        return false;
     }
+    
+    // --- ADDED: Helper method to ensure card layering ---
+    private IEnumerator EnsureProperCardLayering()
+    {
+        // Wait for a brief moment to let the UI update happen first (cards are instantiated)
+        yield return new WaitForEndOfFrame();
+        
+        // Get hand panel hover manager
+        CombatUIManager combatUI = gameManager.GetCombatUIManager();
+        if (combatUI != null)
+        {
+            GameObject playerHandPanel = combatUI.GetPlayerHandPanel();
+            if (playerHandPanel != null)
+            {
+                HandPanelHoverManager hoverManager = playerHandPanel.GetComponent<HandPanelHoverManager>();
+                if (hoverManager != null)
+                {
+                    hoverManager.ResortSiblingIndices();
+                    Debug.Log("[DeckManager] Called ResortSiblingIndices after card draw.");
+                }
+            }
+        }
+    }
+    // --- END ADDED ---
     
     public void DiscardHand()
     {
@@ -148,7 +178,7 @@ public class DeckManager
         Debug.Log("Deck shuffled.");
     }
     
-    public List<CardData> DiscardRandomCards(int amount)
+    public List<CardData> DiscardRandomCards(int amount, CardDropZone.TargetType targetType = CardDropZone.TargetType.PlayerSelf)
     {
         List<CardData> discardedCards = new List<CardData>(); // List to return
         System.Random rng = new System.Random();
@@ -192,7 +222,7 @@ public class DeckManager
                     Debug.Log($"Randomly discarded player card: {cardToDiscard.cardName}");
 
                     // The discard trigger is handled by CardManager (if the card has an effect)
-                    gameManager.GetCardManager().HandleDiscardTrigger(cardToDiscard);
+                    gameManager.GetCardManager().HandleDiscardTrigger(cardToDiscard, targetType);
                 }
                 else
                 {

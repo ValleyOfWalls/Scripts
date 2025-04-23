@@ -205,6 +205,27 @@ public class GameManager : MonoBehaviourPunCallbacks
             combatManager.GetCombatUIManager().UpdateOtherFightsUI();
             combatManager.UpdateHealthUI(); // Update main Health UI as well for property changes
         }
+
+        // --- Pet Health Update ---
+        if (changedProps.ContainsKey(CombatStateManager.PLAYER_COMBAT_PET_HP_PROP))
+        {
+            try
+            {
+                int newPetHealth = (int)changedProps[CombatStateManager.PLAYER_COMBAT_PET_HP_PROP];
+                if (isOpponent)
+                {
+                    // This is the health of the opponent's pet (which could be the pet we are fighting)
+                    Debug.Log($"OnPlayerPropertiesUpdate: Opponent pet health changed to {newPetHealth}. Updating local simulation.");
+                    playerManager?.GetHealthManager()?.SetOpponentPetHealth(newPetHealth);
+                    // Update UI immediately to reflect the change
+                    UpdateHealthUI();
+                }
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogError($"Failed to cast pet health property: {e.Message}");
+            }
+        }
     }
     public override void OnRoomPropertiesUpdate(Hashtable propertiesThatChanged) => photonManager.OnRoomPropertiesUpdate(propertiesThatChanged);
     public override void OnMasterClientSwitched(Player newMasterClient) => photonManager.OnMasterClientSwitched(newMasterClient);
@@ -715,6 +736,43 @@ public class GameManager : MonoBehaviourPunCallbacks
             // Apply it to our simulation of their pet (which is our opponentPet)
             Debug.Log($"RPC: Received RpcApplyHoTToMyPet(Amt={amount}, Dur={duration}) from other player {info.Sender.NickName}. Applying HoT to OPPONENT pet (local sim).");
             playerManager?.GetHealthManager()?.ApplyHotOpponentPet(amount, duration, originatedFromRPC: true);
+        }
+    }
+
+    // --- ADDED: RPC Receiver for Pet Health Change Notification ---
+    [PunRPC]
+    private void RpcNotifyOpponentOfLocalPetHealthChange(int newPetHealth, PhotonMessageInfo info)
+    {
+        if (info.Sender == null || info.Sender.IsLocal) return;
+
+        Player opponentPlayer = playerManager?.GetOpponentPlayer();
+        if (opponentPlayer != null && info.Sender == opponentPlayer)
+        {
+            // This is a direct update from our opponent about their pet health
+            Debug.Log($"RPC: Received RpcNotifyOpponentOfLocalPetHealthChange({newPetHealth}) from current opponent {info.Sender.NickName}. Updating opponent pet health in our local simulation.");
+            playerManager?.GetHealthManager()?.SetOpponentPetHealth(newPetHealth);
+            UpdateHealthUI(); // Update UI to reflect the change
+        }
+        else
+        {
+            Debug.LogWarning($"RPC: Received RpcNotifyOpponentOfLocalPetHealthChange from unexpected sender ({info.Sender?.NickName ?? "null"}) or opponent is null. Ignoring.");
+        }
+    }
+
+    // --- ADDED: RPC Receiver for Healing Local Pet ---
+    [PunRPC]
+    private void RpcHealMyPet(int healAmount, PhotonMessageInfo info)
+    {
+        // This RPC is sent *to us* when an *opponent* plays a card that heals *our pet*
+        if (info.Sender != null && info.Sender != PhotonNetwork.LocalPlayer)
+        {
+            Debug.Log($"RPC: Received RpcHealMyPet({healAmount}) from {info.Sender.NickName}. Healing our local pet.");
+            // Directly heal our local pet
+            playerManager?.HealLocalPet(healAmount);
+        }
+        else
+        {
+            Debug.LogWarning($"RPC: Received RpcHealMyPet from self or null sender. Ignoring.");
         }
     }
 
