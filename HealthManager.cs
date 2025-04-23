@@ -52,11 +52,8 @@ public class HealthManager
     private int opponentPlayerDotDamage = 0;
     private int opponentPlayerHotTurns = 0;
     private int opponentPlayerHotAmount = 0;
-    private int opponentPlayerCritChance = BASE_CRIT_CHANCE; // Start with base
+    private int opponentPlayerCritChance = CombatCalculator.BASE_CRIT_CHANCE; // Start with base
     // --- END ADDED ---
-    
-    private const int BASE_CRIT_CHANCE = 5;
-    private const int CRIT_DAMAGE_MULTIPLIER = 2;
     
     public HealthManager(GameManager gameManager)
     {
@@ -103,7 +100,7 @@ public class HealthManager
         opponentPlayerDotDamage = 0;
         opponentPlayerHotTurns = 0;
         opponentPlayerHotAmount = 0;
-        opponentPlayerCritChance = BASE_CRIT_CHANCE;
+        opponentPlayerCritChance = CombatCalculator.BASE_CRIT_CHANCE;
         // --- END ADDED ---
 
         // --- ADDED: Set Initial Player Properties ---
@@ -140,7 +137,7 @@ public class HealthManager
         opponentPlayerDotDamage = 0;
         opponentPlayerHotTurns = 0;
         opponentPlayerHotAmount = 0;
-        opponentPlayerCritChance = BASE_CRIT_CHANCE;
+        opponentPlayerCritChance = CombatCalculator.BASE_CRIT_CHANCE;
         // --- END ADDED ---
         
         // Get opponent's base pet HP
@@ -166,26 +163,32 @@ public class HealthManager
     {
         if (amount <= 0) return; // Can't deal negative damage
         
-        int initialBlock = localPlayerBlock; // Store for property update
-        int damageAfterBlock = amount - localPlayerBlock;
-        int blockConsumed = Mathf.Min(amount, localPlayerBlock);
-        localPlayerBlock -= blockConsumed;
+        // Get required data from status effect manager
+        StatusEffectManager statusManager = gameManager.GetPlayerManager().GetStatusEffectManager();
+        bool isPlayerBroken = statusManager.IsPlayerBroken();
+        
+        // Get combat calculator
+        CombatCalculator calculator = gameManager.GetCombatCalculator();
+        
+        // Calculate damage results using calculator
+        CombatCalculator.DamageResult result = calculator.CalculateDamage(
+            amount,                 // Raw damage
+            0,                      // Attacker strength (0 for opponent pet attacking player)
+            localPlayerBlock,       // Target block
+            false,                  // Attacker is weak (opponent pet not considered here)
+            isPlayerBroken,         // Target is broken
+            0                       // Attacker crit chance (not applicable here, pet crits handled elsewhere)
+        );
+        
+        // Apply results
+        localPlayerBlock -= result.BlockConsumed;
         if (localPlayerBlock < 0) localPlayerBlock = 0;
         
-        Debug.Log($"DamageLocalPlayer: Incoming={amount}, Block={blockConsumed}, RemainingDamage={damageAfterBlock}");
+        Debug.Log($"DamageLocalPlayer: Incoming={amount}, Block={result.BlockConsumed}, RemainingDamage={result.DamageAfterBlock}");
         
-        if (damageAfterBlock > 0)
+        if (result.DamageAfterBlock > 0)
         {
-            // Check for Break
-            StatusEffectManager statusManager = gameManager.GetPlayerManager().GetStatusEffectManager();
-            if (statusManager.IsPlayerBroken()) 
-            {
-                int breakBonus = Mathf.FloorToInt(damageAfterBlock * 0.5f); 
-                Debug.Log($"Player has Break! Increasing damage by {breakBonus}");
-                damageAfterBlock += breakBonus;
-            }
-            
-            localPlayerHealth -= damageAfterBlock;
+            localPlayerHealth -= result.DamageAfterBlock;
             if (localPlayerHealth < 0) localPlayerHealth = 0;
         }
         
@@ -194,16 +197,15 @@ public class HealthManager
             gameManager.UpdateHealthUI(); // Update both health and block display
         }
         
-        // --- MODIFIED: Update player custom property for other UIs and Sync ---
-        UpdatePlayerStatProperties(); // Update all relevant properties
-        // --- END MODIFIED ---
+        // Update player custom property for other UIs and Sync
+        UpdatePlayerStatProperties();
 
         if (localPlayerHealth <= 0)
         {
             gameManager.GetPlayerManager().GetCombatStateManager().HandleCombatLoss();
         }
         
-        // --- ADDED: Apply Thorns Damage Back ---
+        // Apply Thorns Damage Back
         int playerThorns = gameManager.GetPlayerManager().GetPlayerThorns();
         if (playerThorns > 0)
         {
@@ -211,7 +213,6 @@ public class HealthManager
             // Opponent Pet attacked Player, so damage Opponent Pet
             DamageOpponentPet(playerThorns);
         }
-        // --- END ADDED ---
     }
     
     /// <summary>
@@ -223,40 +224,42 @@ public class HealthManager
     {
         if (amount <= 0) return;
 
-        int damageAfterBlock = amount - opponentPetBlock;
-        int blockConsumed = Mathf.Min(amount, opponentPetBlock);
-        opponentPetBlock -= blockConsumed;
+        PlayerManager playerManager = gameManager.GetPlayerManager();
+        StatusEffectManager statusManager = playerManager.GetStatusEffectManager();
+        CombatCalculator calculator = gameManager.GetCombatCalculator();
+        
+        // Get required statuses
+        bool isPlayerWeak = statusManager.IsPlayerWeak(); 
+        bool isOpponentPetBroken = statusManager.IsOpponentPetBroken();
+        int playerCritChance = playerManager.GetPlayerEffectiveCritChance();
+        int playerStrength = playerManager.GetPlayerStrength();
+        
+        // Calculate damage results
+        CombatCalculator.DamageResult result = calculator.CalculateDamage(
+            amount,                 // Raw damage
+            playerStrength,         // Attacker strength
+            opponentPetBlock,       // Target block
+            isPlayerWeak,           // Attacker is weak
+            isOpponentPetBroken,    // Target is broken
+            playerCritChance        // Attacker crit chance
+        );
+        
+        // Apply results
+        opponentPetBlock -= result.BlockConsumed;
         if (opponentPetBlock < 0) opponentPetBlock = 0;
 
-        // Debug.Log($"ApplyDamageToOpponentPetLocally: Incoming={amount}, Est. Block={blockConsumed}, RemainingDamage={damageAfterBlock}"); // Optional: More granular log
-
-        if (damageAfterBlock > 0)
-        {
-            // Check for Break
-            StatusEffectManager statusManager = gameManager.GetPlayerManager().GetStatusEffectManager();
-            if (statusManager.IsOpponentPetBroken()) 
-            {
-                int breakBonus = Mathf.FloorToInt(damageAfterBlock * 0.5f); 
-                Debug.Log($"Opponent Pet has Break! Increasing damage by {breakBonus} (local sim)");
-                damageAfterBlock += breakBonus;
-            }
-            
-            opponentPetHealth -= damageAfterBlock;
-            if (opponentPetHealth < 0) opponentPetHealth = 0;
-        }
+        Debug.Log($"ApplyDamageToOpponentPetLocally: Incoming={amount}, Est. Block={result.BlockConsumed}, RemainingDamage={result.DamageAfterBlock}");
         
-        // Apply Crit Damage if applicable (Player attacking Opponent Pet)
-        // Crit is applied here because the *attacker's* crit chance determines it.
-        int playerCritChance = GetPlayerEffectiveCritChance();
-        if (Random.Range(0, 100) < playerCritChance)
+        if (result.DamageAfterBlock > 0)
         {
-            Debug.LogWarning($"Player CRITICAL HIT! (Chance: {playerCritChance}%)");
-            // Crit damage applies to the damage that got through block
-            int critDamage = damageAfterBlock > 0 ? damageAfterBlock * (CRIT_DAMAGE_MULTIPLIER - 1) : amount * (CRIT_DAMAGE_MULTIPLIER - 1);
-            if (critDamage < 0) critDamage = 0; // Ensure crit damage isn't negative if base damage was 0
-            Debug.Log($"Applying additional {critDamage} critical damage to Opponent Pet.");
-            opponentPetHealth -= critDamage;
+            opponentPetHealth -= result.DamageAfterBlock;
             if (opponentPetHealth < 0) opponentPetHealth = 0;
+            
+            // Log critical hit if it happened
+            if (result.IsCritical)
+            {
+                Debug.LogWarning($"Player CRITICAL HIT! (Chance: {playerCritChance}%)");
+            }
         }
 
         gameManager.UpdateHealthUI(); // Update both health and block display
@@ -267,7 +270,7 @@ public class HealthManager
             gameManager.GetPlayerManager().GetCombatStateManager().HandleCombatWin();
         }
         
-        // --- ADDED: Apply Thorns Damage Back --- 
+        // Apply Thorns Damage Back
         int opponentPetThorns = gameManager.GetPlayerManager().GetOpponentPetThorns();
         if (opponentPetThorns > 0)
         {
@@ -275,7 +278,6 @@ public class HealthManager
             // Player attacked Opponent Pet, so damage Player
             DamageLocalPlayer(opponentPetThorns, false); // Don't update UI immediately to avoid potential loop/flicker, let main UI update handle it
         }
-        // --- END ADDED ---
     }
 
     /// <summary>
@@ -815,30 +817,30 @@ public class HealthManager
     // --- MODIFIED: GetPlayerEffectiveCritChance ---
     public int GetPlayerEffectiveCritChance()
     {
-        int bonus = localPlayerCritBuffs.Sum(buff => buff.amount);
-        return Mathf.Max(0, BASE_CRIT_CHANCE + bonus); // Ensure non-negative
+        int sumBonus = localPlayerCritBuffs.Sum(buff => buff.amount);
+        return Mathf.Max(0, CombatCalculator.BASE_CRIT_CHANCE + sumBonus); // Ensure non-negative
     }
     // --- END MODIFIED ---
 
     // --- MODIFIED: GetPetEffectiveCritChance ---
     public int GetPetEffectiveCritChance()
     {
-        int bonus = localPetCritBuffs.Sum(buff => buff.amount);
-        return Mathf.Max(0, BASE_CRIT_CHANCE + bonus); // Ensure non-negative
+        int sumBonus = localPetCritBuffs.Sum(buff => buff.amount);
+        return Mathf.Max(0, CombatCalculator.BASE_CRIT_CHANCE + sumBonus); // Ensure non-negative
     }
     // --- END MODIFIED ---
     
     // --- MODIFIED: GetOpponentPetEffectiveCritChance ---
     public int GetOpponentPetEffectiveCritChance()
     {
-        int bonus = opponentPetCritBuffs.Sum(buff => buff.amount);
-        return Mathf.Max(0, BASE_CRIT_CHANCE + bonus); // Ensure non-negative
+        int sumBonus = opponentPetCritBuffs.Sum(buff => buff.amount);
+        return Mathf.Max(0, CombatCalculator.BASE_CRIT_CHANCE + sumBonus); // Ensure non-negative
     }
     // --- END MODIFIED ---
     
     public int GetBaseCritChance()
     {
-        return BASE_CRIT_CHANCE;
+        return CombatCalculator.BASE_CRIT_CHANCE;
     }
     
     #endregion

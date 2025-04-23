@@ -15,7 +15,7 @@ public class CombatManager
     private CombatTurnManager turnManager;
     private DeckViewManager deckViewManager;
 
-    public void Initialize(GameManager gameManager, int startingPlayerHealth, int startingPetHealth, int startingPlayerEnergy, int startingPetEnergy)
+    public void Initialize(GameManager gameManager, int startingPlayerHealth, int startingPetHealth, int startingPlayerEnergy, int startingPetEnergy, CombatUIManager uiManager = null)
     {
         this.gameManager = gameManager;
         this.startingPlayerHealth = startingPlayerHealth;
@@ -23,9 +23,9 @@ public class CombatManager
         this.startingPlayerEnergy = startingPlayerEnergy;
         this.startingPetEnergy = startingPetEnergy;
         
-        // Initialize helper managers
-        uiManager = new CombatUIManager(gameManager);
-        turnManager = new CombatTurnManager(gameManager, uiManager, startingPlayerEnergy, startingPetEnergy);
+        // Use provided UIManager or create a new one if not provided
+        this.uiManager = uiManager ?? new CombatUIManager(gameManager);
+        turnManager = new CombatTurnManager(gameManager, this.uiManager, startingPlayerEnergy, startingPetEnergy);
         deckViewManager = new DeckViewManager(gameManager);
     }
 

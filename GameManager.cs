@@ -40,6 +40,8 @@ public class GameManager : MonoBehaviourPunCallbacks
     private CardManager cardManager;
     private PhotonManager photonManager;
     private CombatManager combatManager;
+    private CombatUIManager combatUIManager;
+    private CombatCalculator combatCalculator;
     private DraftManager draftManager;
 
     // PhotonView component reference
@@ -79,13 +81,16 @@ public class GameManager : MonoBehaviourPunCallbacks
             return; 
         }
 
-        // Initialize Managers (Constructors)
-        // Pass UI Prefabs to GameStateManager constructor
+        // Initialize the combat calculator first (used by other components)
+        combatCalculator = new CombatCalculator(this);
+        
+        // Initialize all manager instances in proper order
         gameStateManager = new GameStateManager(this);
         playerManager = new PlayerManager(this);
         cardManager = new CardManager(this, starterDeck, starterPetDeck, allPlayerCardPool, allPetCardPool, cardsToDraw);
         photonManager = gameObject.AddComponent<PhotonManager>(); // Add as component
         combatManager = new CombatManager(); // Default constructor
+        combatUIManager = new CombatUIManager(this); // Initialize with reference to this GameManager
         draftManager = new DraftManager(); // Default constructor
 
         // ** Initialize and sync local pet deck early **
@@ -105,7 +110,7 @@ public class GameManager : MonoBehaviourPunCallbacks
         gameStateManager.Initialize();
         playerManager.Initialize(startingPlayerHealth, startingPetHealth, startingEnergy);
         photonManager.Initialize(this); // Assuming PhotonManager needs Initialize
-        combatManager.Initialize(this, startingPlayerHealth, startingPetHealth, startingEnergy, startingPetEnergy); // Pass necessary refs/config
+        combatManager.Initialize(this, startingPlayerHealth, startingPetHealth, startingEnergy, startingPetEnergy, combatUIManager); // Pass our UIManager
         draftManager.Initialize(this, optionsPerDraft); // Pass necessary refs/config
     }
 
@@ -202,7 +207,10 @@ public class GameManager : MonoBehaviourPunCallbacks
         if (gameStateManager.GetCurrentState() == GameState.Combat || gameStateManager.GetCurrentState() == GameState.Drafting)
         {
             playerManager.GetCombatStateManager().UpdateScoreUI(); // Use CombatStateManager via PlayerManager
-            combatManager.GetCombatUIManager().UpdateOtherFightsUI();
+            if (combatUIManager != null)
+            {
+                combatUIManager.UpdateOtherFightsUI();
+            }
             combatManager.UpdateHealthUI(); // Update main Health UI as well for property changes
         }
 
@@ -768,7 +776,7 @@ public class GameManager : MonoBehaviourPunCallbacks
                         petDeckManager.DrawOpponentPetCard();
                     }
                     // Update UI to show the opponent pet's new hand
-                    GetCombatUIManager()?.UpdateOpponentPetHandUI();
+                    combatUIManager?.UpdateOpponentPetHandUI();
                     Debug.Log($"Drew {amount} cards for local pet simulation in response to RPC.");
                 }
                 else
@@ -810,7 +818,7 @@ public class GameManager : MonoBehaviourPunCallbacks
                     // Discard random cards from our opponent pet's hand (which is the sender's copy of our pet)
                     petDeckManager.DiscardRandomOpponentPetCards(amount);
                     // Update UI to show the opponent pet's new hand
-                    GetCombatUIManager()?.UpdateOpponentPetHandUI();
+                    combatUIManager?.UpdateOpponentPetHandUI();
                     Debug.Log($"Discarded {amount} random cards from local pet simulation in response to RPC.");
                 }
                 else
@@ -923,8 +931,8 @@ public class GameManager : MonoBehaviourPunCallbacks
     // --- ADDED: Getter for CombatUIManager ---
     public CombatUIManager GetCombatUIManager()
     {
-        // We access CombatUIManager via CombatManager
-        return combatManager?.GetCombatUIManager(); 
+        // Return the direct instance instead of going through CombatManager
+        return combatUIManager;
     }
     // --- END ADDED ---
 
@@ -983,6 +991,12 @@ public class GameManager : MonoBehaviourPunCallbacks
         return deckViewerPanelPrefab;
     }
     // --- END ADDED Getter ---
+
+    // Added: Getter for the CombatCalculator
+    public CombatCalculator GetCombatCalculator()
+    {
+        return combatCalculator;
+    }
 
     #endregion
 }
