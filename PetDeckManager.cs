@@ -260,6 +260,13 @@ public class PetDeckManager
         
         Debug.Log("Opponent Pet finished playing cards.");
         DiscardOpponentPetHand();
+        
+        // --- ADDED: Decrement buffs and update UI at end of turn ---
+        gameManager.GetPlayerManager()?.GetHealthManager()?.DecrementOpponentPetCritBuffDurations();
+        // Decrement other buffs here if needed (e.g., DoT, HoT turns are usually handled at turn START)
+        gameManager.UpdateHealthUI(); // Update UI after buffs are decremented
+        // --- END ADDED ---
+        
         Debug.Log("---> Ending Opponent Pet Turn <---");
         // Update UI called within DiscardOpponentPetHand
         yield break; // Ensure coroutine yields null at the end

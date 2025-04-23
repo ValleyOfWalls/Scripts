@@ -108,6 +108,11 @@ public class CombatTurnManager
         gameManager.GetPlayerManager().GetHealthManager().ResetOpponentPetBlockOnly();
         uiManager.UpdateHealthUI(); // Update UI immediately to show zero block
 
+        // --- ADDED: Decrement Player Crit Buffs at end of player turn ---
+        gameManager.GetPlayerManager()?.GetHealthManager()?.DecrementPlayerCritBuffDurations();
+        uiManager.UpdateHealthUI(); // Update UI after decrementing player buffs
+        // --- END ADDED ---
+
         // Opponent Pet Acts (with visualization)
         Debug.Log("Starting Opponent Pet Action Phase...");
         IEnumerator petTurnEnumerator = gameManager.GetCardManager().ExecuteOpponentPetTurn(startingPetEnergy);

@@ -55,7 +55,7 @@ public enum OpponentPetTargetType
 public enum CritBuffTargetRule
 {
     Target, // Apply buff to the entity the card was dropped on
-    Player  // Always apply buff to the player
+    Self    // Apply buff to the entity playing the card (Player or Opponent Pet)
 }
 // --- END ADDED ---
 
@@ -127,8 +127,8 @@ public class CardData : ScriptableObject
     [Header("Critical Chance Buff Effect")]
     // [Tooltip("Where the card needs to be dropped to trigger this effect (if applicable). Often Any/PlayerSelf.")]
     // public CardDropZone.TargetType critChanceBuffTarget = CardDropZone.TargetType.PlayerSelf; // REMOVED - Redundant with CritBuffRule
-    [Tooltip("Should the crit buff apply to the target it was dropped on, or always to the player?")]
-    public CritBuffTargetRule critBuffRule = CritBuffTargetRule.Player; // NEW: Rule for targeting.
+    [Tooltip("Should the crit buff apply to the target it was dropped on (Target), or the entity playing the card (Self)?")]
+    public CritBuffTargetRule critBuffRule = CritBuffTargetRule.Self; // NEW: Rule for targeting. Default to Self.
     public int critChanceBuffAmount = 0; // Percentage bonus (e.g., 20 for +20%)
     public int critChanceBuffDuration = 0; // Duration in turns (0 = end of combat)
 

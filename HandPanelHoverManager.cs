@@ -181,7 +181,7 @@ public class HandPanelHoverManager : MonoBehaviour, IPointerMoveHandler, IPointe
         List<CardDragHandler> sortedCards = new List<CardDragHandler>();
         
         // --- MODIFIED: Only include cards that are children of this panel & add logging ---
-        Debug.Log($"[ResortSiblingIndices] Starting. Total cardsInHand: {cardsInHand.Count}");
+        //Debug.Log($"[ResortSiblingIndices] Starting. Total cardsInHand: {cardsInHand.Count}");
         foreach (CardDragHandler card in cardsInHand)
         {
             if (card != null && card.transform != null)
@@ -207,7 +207,7 @@ public class HandPanelHoverManager : MonoBehaviour, IPointerMoveHandler, IPointe
         }
         
         if (sortedCards.Count <= 1) {
-            Debug.Log($"[ResortSiblingIndices] No sorting needed after filtering. Count: {sortedCards.Count}");
+            //Debug.Log($"[ResortSiblingIndices] No sorting needed after filtering. Count: {sortedCards.Count}");
             // --- ADDED: Ensure single card is on top --- 
             if (sortedCards.Count == 1 && sortedCards[0] != null)
             {
@@ -247,7 +247,7 @@ public class HandPanelHoverManager : MonoBehaviour, IPointerMoveHandler, IPointe
                 currentlyHoveredCard.transform.SetAsLastSibling();
             }
         }
-        Debug.Log($"[ResortSiblingIndices] Finished. Sorted {sortedCards.Count} cards.");
+        //Debug.Log($"[ResortSiblingIndices] Finished. Sorted {sortedCards.Count} cards.");
     }
     // --- END ADDED ---
 
@@ -275,7 +275,7 @@ public class HandPanelHoverManager : MonoBehaviour, IPointerMoveHandler, IPointe
         
         // Resort sibling indices to put them back in default order
         ResortSiblingIndices(); 
-        Debug.Log("[HandPanelHoverManager] ResetAllHovers called.");
+        //Debug.Log("[HandPanelHoverManager] ResetAllHovers called.");
     }
     // --- END ADDED ---
 } 

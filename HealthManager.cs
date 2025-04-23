@@ -189,20 +189,7 @@ public class HealthManager
             if (localPlayerHealth < 0) localPlayerHealth = 0;
         }
         
-        // Apply Crit Damage if applicable (Opponent Pet attacking Player)
-        // --- MODIFIED: Use opponent player crit chance ---
-        int opponentCritChance = GetOpponentPlayerCritChance(); // Now reading from synced value
-        // --- END MODIFIED ---
-        if (Random.Range(0, 100) < opponentCritChance)
-        {
-            Debug.LogWarning($"Opponent Pet CRITICAL HIT! (Chance: {opponentCritChance}%)");
-            int critDamage = damageAfterBlock * (CRIT_DAMAGE_MULTIPLIER - 1);
-            Debug.Log($"Applying additional {critDamage} critical damage.");
-            localPlayerHealth -= critDamage;
-            if (localPlayerHealth < 0) localPlayerHealth = 0;
-        }
-
-        if (updateUIImmediate) 
+        if (updateUIImmediate)
         {
             gameManager.UpdateHealthUI(); // Update both health and block display
         }
@@ -216,13 +203,13 @@ public class HealthManager
             gameManager.GetPlayerManager().GetCombatStateManager().HandleCombatLoss();
         }
         
-        // --- ADDED: Apply Thorns Damage Back --- 
+        // --- ADDED: Apply Thorns Damage Back ---
         int playerThorns = gameManager.GetPlayerManager().GetPlayerThorns();
-        if (playerThorns > 0) 
+        if (playerThorns > 0)
         {
             Debug.Log($"Player has {playerThorns} Thorns! Dealing damage back to Opponent Pet.");
             // Opponent Pet attacked Player, so damage Opponent Pet
-            DamageOpponentPet(playerThorns); 
+            DamageOpponentPet(playerThorns);
         }
         // --- END ADDED ---
     }

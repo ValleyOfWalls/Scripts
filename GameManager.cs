@@ -661,82 +661,48 @@ public class GameManager : MonoBehaviourPunCallbacks
     [PunRPC]
     private void RpcApplyDoTToMyPet(int damage, int duration, PhotonMessageInfo info)
     {
-        Player opponentPlayer = playerManager?.GetOpponentPlayer();
         if (info.Sender == null || info.Sender.IsLocal) return; // Ignore messages from self or invalid sender
 
-        if (opponentPlayer != null && info.Sender == opponentPlayer)
-        {
-            // Sender is our current opponent, apply to our local pet
-            Debug.Log($"RPC: Received RpcApplyDoTToMyPet(Dmg={damage}, Dur={duration}) from current opponent {info.Sender.NickName}. Applying DoT to LOCAL pet.");
-            playerManager?.ApplyDotLocalPet(damage, duration);
-        }
-        else
-        {
-            // Sender is NOT our current opponent (it's someone else applying DoT to their own pet)
-            // Apply it to our simulation of their pet (which is our opponentPet)
-            Debug.Log($"RPC: Received RpcApplyDoTToMyPet(Dmg={damage}, Dur={duration}) from other player {info.Sender.NickName}. Applying DoT to OPPONENT pet (local sim).");
-            playerManager?.GetHealthManager()?.ApplyDotOpponentPet(damage, duration, originatedFromRPC: true);
-        }
+        // This RPC means "The sender applied DoT to their pet"
+        // Apply it to our local simulation of their pet (our opponentPet)
+        Debug.Log($"RPC: Received RpcApplyDoTToMyPet(Dmg={damage}, Dur={duration}) from player {info.Sender.NickName}. Applying DoT to OPPONENT pet (local sim).");
+        playerManager?.GetHealthManager()?.ApplyDotOpponentPet(damage, duration, originatedFromRPC: true);
     }
 
     // --- ADDED: RPC Receiver for Applying Crit Buff to Local Pet ---
     [PunRPC]
     private void RpcApplyCritBuffToMyPet(int amount, int duration, PhotonMessageInfo info)
     {
-        Player opponentPlayer = playerManager?.GetOpponentPlayer();
         if (info.Sender == null || info.Sender.IsLocal) return;
 
-        if (opponentPlayer != null && info.Sender == opponentPlayer)
-        {
-            Debug.Log($"RPC: Received RpcApplyCritBuffToMyPet(Amt={amount}, Dur={duration}) from current opponent {info.Sender.NickName}. Applying Crit Buff to LOCAL pet.");
-            playerManager?.ApplyCritChanceBuffPet(amount, duration);
-        }
-        else
-        {
-            Debug.Log($"RPC: Received RpcApplyCritBuffToMyPet(Amt={amount}, Dur={duration}) from other player {info.Sender.NickName}. Applying Crit Buff to OPPONENT pet (local sim).");
-            playerManager?.GetHealthManager()?.ApplyCritChanceBuffOpponentPet(amount, duration, originatedFromRPC: true);
-        }
+        // This RPC means "The sender applied a crit buff to their pet"
+        // We need to apply it to our local simulation of their pet (our opponentPet)
+        Debug.Log($"RPC: Received RpcApplyCritBuffToMyPet(Amt={amount}, Dur={duration}) from player {info.Sender.NickName}. Applying Crit Buff to OPPONENT pet (local sim).");
+        playerManager?.GetHealthManager()?.ApplyCritChanceBuffOpponentPet(amount, duration, originatedFromRPC: true);
     }
 
     // --- ADDED: RPC Receiver for Applying Status Effect to Local Pet ---
     [PunRPC]
     private void RpcApplyStatusToMyPet(StatusEffectType type, int duration, PhotonMessageInfo info)
     {
-        Player opponentPlayer = playerManager?.GetOpponentPlayer();
         if (info.Sender == null || info.Sender.IsLocal) return;
 
-        if (opponentPlayer != null && info.Sender == opponentPlayer)
-        {
-            Debug.Log($"RPC: Received RpcApplyStatusToMyPet(Type={type}, Dur={duration}) from current opponent {info.Sender.NickName}. Applying Status to LOCAL pet.");
-            playerManager?.ApplyStatusEffectLocalPet(type, duration);
-        }
-        else
-        {
-            Debug.Log($"RPC: Received RpcApplyStatusToMyPet(Type={type}, Dur={duration}) from other player {info.Sender.NickName}. Applying Status to OPPONENT pet (local sim).");
-            playerManager?.GetStatusEffectManager()?.ApplyStatusEffectOpponentPet(type, duration, originatedFromRPC: true);
-        }
+        // This RPC means "The sender applied a status effect to their pet"
+        // Apply it to our local simulation of their pet (our opponentPet)
+        Debug.Log($"RPC: Received RpcApplyStatusToMyPet(Type={type}, Dur={duration}) from player {info.Sender.NickName}. Applying Status to OPPONENT pet (local sim).");
+        playerManager?.GetStatusEffectManager()?.ApplyStatusEffectOpponentPet(type, duration, originatedFromRPC: true);
     }
 
     // --- ADDED: RPC Receiver for Applying HoT to Local Pet ---
     [PunRPC]
     private void RpcApplyHoTToMyPet(int amount, int duration, PhotonMessageInfo info)
     {
-        Player opponentPlayer = playerManager?.GetOpponentPlayer();
         if (info.Sender == null || info.Sender.IsLocal) return;
 
-        if (opponentPlayer != null && info.Sender == opponentPlayer)
-        {
-            // Sender is our current opponent, apply HoT to our local pet
-            Debug.Log($"RPC: Received RpcApplyHoTToMyPet(Amt={amount}, Dur={duration}) from current opponent {info.Sender.NickName}. Applying HoT to LOCAL pet.");
-            playerManager?.ApplyHotLocalPet(amount, duration);
-        }
-        else
-        {
-            // Sender is NOT our current opponent (it's someone else applying HoT to their own pet)
-            // Apply it to our simulation of their pet (which is our opponentPet)
-            Debug.Log($"RPC: Received RpcApplyHoTToMyPet(Amt={amount}, Dur={duration}) from other player {info.Sender.NickName}. Applying HoT to OPPONENT pet (local sim).");
-            playerManager?.GetHealthManager()?.ApplyHotOpponentPet(amount, duration, originatedFromRPC: true);
-        }
+        // This RPC means "The sender applied HoT to their pet"
+        // Apply it to our local simulation of their pet (our opponentPet)
+        Debug.Log($"RPC: Received RpcApplyHoTToMyPet(Amt={amount}, Dur={duration}) from player {info.Sender.NickName}. Applying HoT to OPPONENT pet (local sim).");
+        playerManager?.GetHealthManager()?.ApplyHotOpponentPet(amount, duration, originatedFromRPC: true);
     }
 
     // --- ADDED: RPC Receiver for Pet Health Change Notification ---

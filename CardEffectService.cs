@@ -145,6 +145,16 @@ public class CardEffectService
                         Debug.Log($"Player is Weak! Reducing damage from {totalDamageBeforeWeak} to {actualDamage} (-50%)");
                     }
                     
+                    // --- ADDED: Crit Check (using Attacker's crit chance) ---
+                    int critChance = playerManager.GetPlayerEffectiveCritChance();
+                    bool isCrit = Random.Range(0, 100) < critChance;
+                    if (isCrit)
+                    {
+                        actualDamage *= 2;
+                        Debug.Log($"PLAYER CRITICAL HIT! Damage multiplied by 2 (Crit Chance: {critChance}%). Final Damage: {actualDamage}");
+                    }
+                    // --- END ADDED ---
+                    
                     if (actualDamage > 0) 
                     {
                         playerManager.DamageOpponentPet(actualDamage);
@@ -294,6 +304,16 @@ public class CardEffectService
                         Debug.Log($"Player is Weak! Reducing self-damage from {totalDamageBeforeWeak} to {actualDamage} (-50%)");
                     }
 
+                    // --- ADDED: Crit Check (using Attacker's crit chance) ---
+                    int critChance = playerManager.GetPlayerEffectiveCritChance();
+                    bool isCrit = Random.Range(0, 100) < critChance;
+                    if (isCrit)
+                    {
+                        actualDamage *= 2;
+                        Debug.Log($"PLAYER CRITICAL HIT! Damage multiplied by 2 (Crit Chance: {critChance}%). Final Damage: {actualDamage}");
+                    }
+                    // --- END ADDED ---
+
                     if (actualDamage > 0)
                     {
                         playerManager.DamageLocalPlayer(actualDamage);
@@ -436,6 +456,16 @@ public class CardEffectService
                         actualDamage = Mathf.Max(0, actualDamage - reduction);
                         Debug.Log($"Player is Weak! Reducing pet damage from {totalDamageBeforeWeak} to {actualDamage} (-50%)");
                     }
+                    
+                    // --- ADDED: Crit Check (using Attacker's crit chance) ---
+                    int critChance = playerManager.GetPlayerEffectiveCritChance();
+                    bool isCrit = Random.Range(0, 100) < critChance;
+                    if (isCrit)
+                    {
+                        actualDamage *= 2;
+                        Debug.Log($"PLAYER CRITICAL HIT! Damage multiplied by 2 (Crit Chance: {critChance}%). Final Damage: {actualDamage}");
+                    }
+                    // --- END ADDED ---
                     
                     if (actualDamage > 0)
                     {
@@ -679,13 +709,12 @@ public class CardEffectService
         // Apply Crit Chance Buff Effect
         if (cardData.critChanceBuffAmount > 0)
         {
-            // --- MODIFIED: Use critBuffRule to determine the actual recipient --- 
             CritBuffTargetRule rule = cardData.critBuffRule;
             Debug.Log($"Applying Crit Buff: Amount={cardData.critChanceBuffAmount}, Duration={cardData.critChanceBuffDuration}, Rule={rule}, DropTarget={targetType}"); 
             
-            if (rule == CritBuffTargetRule.Player)
+            if (rule == CritBuffTargetRule.Self)
             {
-                // Always apply to the player regardless of drop zone
+                // Apply to the player who played the card
                 playerManager.ApplyCritChanceBuffPlayer(cardData.critChanceBuffAmount, cardData.critChanceBuffDuration);
             }
             else if (rule == CritBuffTargetRule.Target)
@@ -710,7 +739,6 @@ public class CardEffectService
                     Debug.LogWarning($"CritBuffRule is Target, but drop target was {targetType}. Crit buff not applied.");
                 }
             }
-            // --- END MODIFIED ---
         }
         
         // Apply Temporary Hand Upgrade Effect
@@ -753,9 +781,19 @@ public class CardEffectService
                  Debug.Log($"Opponent Pet is Weak! Reducing damage from {cardToPlay.damage} to {actualDamage} (-50%)");
             }
             
+            // --- ADDED: Opponent Pet Crit Check ---
+            int oppPetCritChance = playerManager.GetOpponentPetEffectiveCritChance();
+            bool isOppPetCrit = Random.Range(0, 100) < oppPetCritChance;
+            if (isOppPetCrit)
+            {
+                actualDamage *= 2; // Assuming crit multiplier is 2x
+                Debug.Log($"OPPONENT PET CRITICAL HIT! Damage multiplied by 2 (Crit Chance: {oppPetCritChance}%). Final Damage: {actualDamage}");
+            }
+            // --- END ADDED ---
+            
             if (target == OpponentPetTargetType.Player) 
             {
-                playerManager.DamageLocalPlayer(actualDamage);
+                playerManager.DamageLocalPlayer(actualDamage); // Pass potentially doubled damage
                 Debug.Log($"Opponent Pet dealt {actualDamage} damage to Player. (Base: {cardToPlay.damage}, StrB: {strengthBonus}). Player Health: {playerManager.GetLocalPlayerHealth()}, Block: {playerManager.GetLocalPlayerBlock()}");
             }
             else if (target == OpponentPetTargetType.Self)
@@ -881,13 +919,40 @@ public class CardEffectService
         //     // ApplyOpponentPetComboEffect(cardToPlay);
         // }
         
-        // --- Other effects like Cost Modification, Crit Chance, Temp Upgrade --- 
+        // --- ADDED: Apply Crit Chance Buff Effect (Pet Playing Card) ---
+        if (cardToPlay.critChanceBuffAmount > 0)
+        {
+            CritBuffTargetRule rule = cardToPlay.critBuffRule;
+            Debug.Log($"[Opponent Pet Card] Applying Crit Buff: Amount={cardToPlay.critChanceBuffAmount}, Duration={cardToPlay.critChanceBuffDuration}, Rule={rule}");
+
+            if (rule == CritBuffTargetRule.Self)
+            {
+                // Apply buff to the opponent pet itself
+                playerManager.ApplyCritChanceBuffOpponentPet(cardToPlay.critChanceBuffAmount, cardToPlay.critChanceBuffDuration);
+            }
+            else if (rule == CritBuffTargetRule.Target)
+            {
+                // Apply based on the pet's primary target for this card
+                if (target == OpponentPetTargetType.Player)
+                {
+                    playerManager.ApplyCritChanceBuffPlayer(cardToPlay.critChanceBuffAmount, cardToPlay.critChanceBuffDuration);
+                    Debug.Log($"Opponent Pet applied Crit Buff to Player: +{cardToPlay.critChanceBuffAmount}% for {cardToPlay.critChanceBuffDuration} turns.");
+                }
+                else // Target is Self (the pet)
+                {
+                    playerManager.ApplyCritChanceBuffOpponentPet(cardToPlay.critChanceBuffAmount, cardToPlay.critChanceBuffDuration);
+                }
+            }
+        }
+        // --- END ADDED ---
+
+        // --- Other effects like Cost Modification, Temp Upgrade --- 
         // These are less common for pet decks currently and would likely target the opponent (player) or the pet itself.
         // Implement logic based on primaryTarget if these effects are added to pet cards.
         // Example:
         // if (cardToPlay.costChangeTarget != CostChangeTargetType.None)
         // {
-        //     if(target == CardDropZone.TargetType.EnemyPet) { /* Apply cost mod to Player Hand */ }
+        //     if(target == OpponentPetTargetType.Player) { /* Apply cost mod to Player Hand */ }
         // }
 
         // --- END MODIFIED LOGIC --- 
@@ -895,7 +960,7 @@ public class CardEffectService
         // After effects, update UI
         gameManager.UpdateHealthUI();
         gameManager.GetCombatUIManager().UpdateStatusEffectsUI();
-        // No need to update opponent hand/deck UI as it's not visible
+        // Opponent Pet hand UI is updated elsewhere when they draw/discard
     }
     
     public void HandleDiscardTrigger(CardData card, CardDropZone.TargetType targetType = CardDropZone.TargetType.PlayerSelf)
