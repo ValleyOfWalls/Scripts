@@ -50,6 +50,11 @@ public class GameManager : MonoBehaviourPunCallbacks
     // PhotonView component reference
     private PhotonView photonViewComponent;
 
+    // --- ADDED: Debug toggle ---
+    private bool debugCardReuseMode = false;
+    // --- ADDED: Debug toggle for enemy test mode ---
+    private bool debugEnemyTestMode = false;
+
     #region Unity Lifecycle Methods
 
     void Awake()
@@ -118,6 +123,61 @@ public class GameManager : MonoBehaviourPunCallbacks
         photonManager.Initialize(this); // Assuming PhotonManager needs Initialize
         combatManager.Initialize(this, startingPlayerHealth, startingPetHealth, startingEnergy, startingPetEnergy, combatUIManager); // Pass our UIManager
         draftManager.Initialize(this, optionsPerDraft); // Pass necessary refs/config
+    }
+
+    // --- ADDED: Update method for keyboard shortcuts ---
+    void Update()
+    {
+        // Only process debug commands in Combat state
+        if (gameStateManager != null && gameStateManager.GetCurrentState() == GameState.Combat)
+        {
+            // Check for Alt key
+            bool altKeyPressed = Input.GetKey(KeyCode.LeftAlt) || Input.GetKey(KeyCode.RightAlt);
+            
+            if (altKeyPressed)
+            {
+                // Toggle debug card reuse mode with Alt+R
+                if (Input.GetKeyDown(KeyCode.R))
+                {
+                    debugCardReuseMode = !debugCardReuseMode;
+                    Debug.Log($"Debug Card Reuse Mode: {(debugCardReuseMode ? "ENABLED" : "DISABLED")}");
+                    
+                    // Show on-screen notification
+                    if (combatUIManager != null)
+                    {
+                        combatUIManager.ShowDebugModeStatus("Card Reuse Mode", debugCardReuseMode);
+                    }
+                }
+                
+                // Reset all status effects with Alt+S
+                if (Input.GetKeyDown(KeyCode.S))
+                {
+                    ResetAllStatusEffects();
+                    
+                    // Show on-screen notification
+                    if (combatUIManager != null)
+                    {
+                        string message = PhotonNetwork.InRoom ? 
+                            "Status Effects Reset (All Players)" : 
+                            "Status Effects Reset";
+                        combatUIManager.ShowDebugModeStatus(message, true);
+                    }
+                }
+                
+                // Toggle enemy test mode with Alt+T
+                if (Input.GetKeyDown(KeyCode.T))
+                {
+                    debugEnemyTestMode = !debugEnemyTestMode;
+                    Debug.Log($"Debug Enemy Test Mode: {(debugEnemyTestMode ? "ENABLED" : "DISABLED")}");
+                    
+                    // Show on-screen notification
+                    if (combatUIManager != null)
+                    {
+                        combatUIManager.ShowDebugModeStatus("Enemy Test Mode", debugEnemyTestMode);
+                    }
+                }
+            }
+        }
     }
 
     #endregion
@@ -1011,6 +1071,78 @@ public class GameManager : MonoBehaviourPunCallbacks
         return cardPreviewCalculator;
     }
     // --- END ADDED ---
+
+    // --- ADDED: Getter for debug mode ---
+    public bool IsDebugCardReuseMode()
+    {
+        return debugCardReuseMode;
+    }
+
+    // --- ADDED: Getter for enemy test mode ---
+    public bool IsDebugEnemyTestMode()
+    {
+        return debugEnemyTestMode;
+    }
+
+    // --- ADDED: Method to reset all status effects ---
+    public void ResetAllStatusEffects(bool fromRPC = false)
+    {
+        if (playerManager == null) return;
+
+        Debug.Log("Resetting all status effects for all entities");
+        
+        // Reset player status effects
+        StatusEffectManager statusEffectManager = playerManager.GetStatusEffectManager();
+        HealthManager healthManager = playerManager.GetHealthManager();
+        
+        if (statusEffectManager != null)
+        {
+            // Reset combo count
+            statusEffectManager.ResetComboCount();
+            
+            // Reset player status effects
+            statusEffectManager.ResetAllPlayerStatusEffects();
+            statusEffectManager.ResetAllLocalPetStatusEffects();
+            statusEffectManager.ResetAllOpponentPetStatusEffects();
+        }
+        
+        if (healthManager != null)
+        {
+            // Reset DoT/HoT effects
+            healthManager.ResetAllDoTEffects();
+            healthManager.ResetAllHoTEffects();
+            
+            // Reset block
+            healthManager.ResetAllBlock();
+            
+            // Reset crit buffs
+            healthManager.ResetAllCritBuffs();
+        }
+        
+        // Update UI
+        UpdateHealthUI();
+        
+        // Synchronize across network if not already triggered by an RPC
+        if (PhotonNetwork.InRoom && !fromRPC)
+        {
+            Debug.Log("Broadcasting status reset to all other players");
+            photonViewComponent.RPC("RpcResetAllStatusEffects", RpcTarget.Others);
+        }
+    }
+    
+    // --- ADDED: RPC handler for status reset ---
+    [PunRPC]
+    private void RpcResetAllStatusEffects()
+    {
+        Debug.Log("Received RPC to reset all status effects");
+        ResetAllStatusEffects(true); // Pass true to avoid infinite RPC loop
+        
+        // Show on-screen notification
+        if (combatUIManager != null)
+        {
+            combatUIManager.ShowDebugModeStatus("Status Effects Reset (Network)", true);
+        }
+    }
 
     #endregion
 }

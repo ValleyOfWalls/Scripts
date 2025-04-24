@@ -71,6 +71,11 @@ public class CombatUIManager
     private float offsetYPerCard = 10f;
     private float curveFactor = 0.5f;
 
+    // --- ADDED: Debug UI elements ---
+    private TextMeshProUGUI debugStatusText;
+    private Coroutine currentDebugTextCoroutine;
+    // --- END ADDED ---
+
     public CombatUIManager(GameManager gameManager)
     {
         this.gameManager = gameManager;
@@ -243,6 +248,10 @@ public class CombatUIManager
             
             int playerStrength = playerManager.GetPlayerStrength();
             if (playerStrength != 0) playerStatus.Append($" | Strength: {playerStrength:+0;-#}");
+
+            // --- ADDED: Thorns status for Player ---
+            int playerThorns = playerManager.GetPlayerThorns();
+            if (playerThorns > 0) playerStatus.Append($" | Thorns: {playerThorns}");
             // --- END ADDED ---
 
             // Crit Chance
@@ -288,14 +297,13 @@ public class CombatUIManager
             System.Text.StringBuilder petStatus = new System.Text.StringBuilder();
             petStatus.Append($"Block: {petBlock} | Energy: {petEnergy}");
 
-            // --- ADDED: Append Weak/Break to Own Pet status ---
-            int petWeakTurns = playerManager.GetLocalPetWeakTurns(); // Assuming this method exists in PlayerManager
+            // Append active status effects
+            int petWeakTurns = playerManager.GetLocalPetWeakTurns();
             if (petWeakTurns > 0) petStatus.Append($" | Weak: {petWeakTurns}t");
 
-            int petBreakTurns = playerManager.GetLocalPetBreakTurns(); // Assuming this method exists in PlayerManager
+            int petBreakTurns = playerManager.GetLocalPetBreakTurns();
             if (petBreakTurns > 0) petStatus.Append($" | Break: {petBreakTurns}t");
-            // --- END ADDED ---
-
+            
             // --- ADDED: Append DoT, HoT, Strength to Own Pet status ---
             int petDotTurns = playerManager.GetLocalPetDotTurns();
             if (petDotTurns > 0) petStatus.Append($" | DoT: {playerManager.GetLocalPetDotDamage()} ({petDotTurns}t)");
@@ -305,6 +313,10 @@ public class CombatUIManager
 
             int petStrength = playerManager.GetLocalPetStrength();
             if (petStrength != 0) petStatus.Append($" | Strength: {petStrength:+0;-#}");
+            
+            // --- ADDED: Thorns status for Own Pet ---
+            int petThorns = playerManager.GetLocalPetThorns();
+            if (petThorns > 0) petStatus.Append($" | Thorns: {petThorns}");
             // --- END ADDED ---
             
             // Crit Chance
@@ -352,6 +364,10 @@ public class CombatUIManager
 
             int oppPetStrength = playerManager.GetOpponentPetStrength();
             if (oppPetStrength != 0) oppPetStatus.Append($" | Strength: {oppPetStrength:+0;-#}");
+            
+            // --- ADDED: Thorns status for Opponent Pet ---
+            int oppPetThorns = playerManager.GetOpponentPetThorns();
+            if (oppPetThorns > 0) oppPetStatus.Append($" | Thorns: {oppPetThorns}");
             // --- END ADDED ---
             
             // Crit Chance
@@ -1287,6 +1303,105 @@ public class CombatUIManager
             Debug.Log("[CombatUIManager] Called ResortSiblingIndices after delay.");
              // --- Removed reflection code ---
         }
+    }
+    // --- END ADDED ---
+
+    // --- ADDED: Method to show debug mode status ---
+    public void ShowDebugModeStatus(string debugModeName, bool isEnabled)
+    {
+        if (combatRootInstance == null) return;
+        
+        // Create debug status text if it doesn't exist
+        if (debugStatusText == null)
+        {
+            GameObject debugTextGO = new GameObject("DebugStatusText");
+            debugTextGO.transform.SetParent(combatRootInstance.transform, false);
+            
+            // Add components
+            RectTransform rectTransform = debugTextGO.AddComponent<RectTransform>();
+            rectTransform.anchorMin = new Vector2(0, 1);
+            rectTransform.anchorMax = new Vector2(0, 1);
+            rectTransform.pivot = new Vector2(0, 1);
+            rectTransform.anchoredPosition = new Vector2(10, -10);
+            rectTransform.sizeDelta = new Vector2(300, 50);
+            
+            // Add Text
+            debugStatusText = debugTextGO.AddComponent<TextMeshProUGUI>();
+            
+            // Try to load the font from Resources
+            TMP_FontAsset fontAsset = Resources.Load<TMP_FontAsset>("Fonts & Materials/LiberationSans SDF");
+            
+            // If font not found, try to find any font in the project
+            if (fontAsset == null)
+            {
+                Debug.LogWarning("Could not load LiberationSans SDF font, using a fallback");
+                fontAsset = Resources.FindObjectsOfTypeAll<TMP_FontAsset>().Length > 0 
+                    ? Resources.FindObjectsOfTypeAll<TMP_FontAsset>()[0] 
+                    : null;
+            }
+            
+            // Apply font if found
+            if (fontAsset != null)
+            {
+                debugStatusText.font = fontAsset;
+            }
+            
+            debugStatusText.fontSize = 18;
+            debugStatusText.color = Color.yellow;
+            debugStatusText.alignment = TextAlignmentOptions.TopLeft;
+            
+            // Add background
+            Image background = debugTextGO.AddComponent<Image>();
+            background.color = new Color(0, 0, 0, 0.7f);
+            
+            // Make sure it's displayed on top
+            Canvas canvas = debugTextGO.AddComponent<Canvas>();
+            canvas.overrideSorting = true;
+            canvas.sortingOrder = 1000; // High value to ensure it's on top
+            
+            debugTextGO.AddComponent<CanvasRenderer>();
+        }
+        
+        // Update the text
+        debugStatusText.text = $"{debugModeName}: {(isEnabled ? "ENABLED" : "DISABLED")}";
+        debugStatusText.gameObject.SetActive(true);
+        
+        // Cancel previous fade coroutine if it's running
+        if (currentDebugTextCoroutine != null)
+        {
+            gameManager.StopCoroutine(currentDebugTextCoroutine);
+        }
+        
+        // Start new fade coroutine
+        currentDebugTextCoroutine = gameManager.StartCoroutine(FadeOutDebugText(5f));
+    }
+    
+    private IEnumerator FadeOutDebugText(float delay)
+    {
+        // Wait for the specified delay
+        yield return new WaitForSeconds(delay);
+        
+        // Fade out the text
+        if (debugStatusText != null)
+        {
+            float duration = 1.0f;
+            float startTime = Time.time;
+            Color startColor = debugStatusText.color;
+            Color endColor = new Color(startColor.r, startColor.g, startColor.b, 0);
+            
+            while (Time.time < startTime + duration)
+            {
+                float t = (Time.time - startTime) / duration;
+                debugStatusText.color = Color.Lerp(startColor, endColor, t);
+                yield return null;
+            }
+            
+            debugStatusText.color = endColor;
+            debugStatusText.gameObject.SetActive(false);
+            debugStatusText.color = new Color(startColor.r, startColor.g, startColor.b, 1);
+        }
+        
+        currentDebugTextCoroutine = null;
     }
     // --- END ADDED ---
 } 

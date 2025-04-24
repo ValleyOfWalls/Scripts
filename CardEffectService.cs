@@ -99,7 +99,7 @@ public class CardEffectService
                         previousPlaysThisCombat, 
                         totalCopies, 
                         isBelowHealthThreshold, 
-                        playerStrength
+                        0  // Don't include strength here - it will be applied in CalculateDamage
                     );
                     
                     if (totalDamage > 0)
@@ -185,12 +185,12 @@ public class CardEffectService
                         previousPlaysThisCombat, 
                         totalCopies, 
                         isBelowHealthThreshold, 
-                        playerStrength
+                        0 // Don't include strength here - it will be applied in DamageLocalPlayer
                     );
                     
                     if (totalDamage > 0)
                     {
-                        playerManager.DamageLocalPlayer(totalDamage);
+                        playerManager.DamageLocalPlayer(totalDamage, true, HealthManager.DamageSource.PlayerSelfAttack);
                         Debug.Log($"Applied {totalDamage} damage to PlayerSelf. Base: {cardData.damage}, Strength: {playerStrength}");
                     }
                 }
@@ -269,7 +269,7 @@ public class CardEffectService
                         previousPlaysThisCombat, 
                         totalCopies, 
                         isBelowHealthThreshold, 
-                        playerStrength
+                        playerStrength // Include strength for own pet damage
                     );
                     
                     if (totalDamage > 0)
@@ -555,7 +555,7 @@ public class CardEffectService
                 0, // Previous plays not tracked for opponent pet
                 0, // Copies not tracked for opponent pet
                 false, // Low health threshold not used for opponent pet
-                strengthBonus
+                0 // Don't include strength here - it will be applied in damage calculations
             );
             
             if (actualDamage > 0)

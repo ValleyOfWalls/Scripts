@@ -353,4 +353,59 @@ public class StatusEffectManager
         }
     }
     // --- END ADDED ---
+
+    // --- ADDED: Methods to reset all status effects ---
+    public void ResetAllPlayerStatusEffects()
+    {
+        localPlayerWeakTurns = 0;
+        localPlayerBreakTurns = 0;
+        localPlayerThorns = 0;
+        localPlayerStrength = 0;
+        
+        // Update all player status properties
+        UpdatePlayerStatusProperties(null);
+        
+        Debug.Log("Reset all player status effects to 0");
+    }
+    
+    public void ResetAllLocalPetStatusEffects()
+    {
+        localPetWeakTurns = 0;
+        localPetBreakTurns = 0;
+        localPetThorns = 0;
+        localPetStrength = 0;
+        
+        // Update pet status properties
+        UpdatePetStatusProperties();
+        
+        Debug.Log("Reset all local pet status effects to 0");
+    }
+    
+    public void ResetAllOpponentPetStatusEffects()
+    {
+        opponentPetWeakTurns = 0;
+        opponentPetBreakTurns = 0;
+        opponentPetThorns = 0;
+        opponentPetStrength = 0;
+        
+        Debug.Log("Reset all opponent pet status effects to 0");
+    }
+    
+    // Helper method to update all pet status properties
+    private void UpdatePetStatusProperties()
+    {
+        List<string> petProps = new List<string>
+        {
+            CombatStateManager.PLAYER_COMBAT_PET_WEAK_PROP,
+            CombatStateManager.PLAYER_COMBAT_PET_BREAK_PROP,
+            CombatStateManager.PLAYER_COMBAT_PET_THORNS_PROP,
+            CombatStateManager.PLAYER_COMBAT_PET_STRENGTH_PROP
+        };
+        
+        foreach (string prop in petProps)
+        {
+            gameManager.GetPlayerManager()?.GetHealthManager()?.UpdatePlayerStatProperties(prop);
+        }
+    }
+    // --- END ADDED ---
 }

@@ -91,7 +91,7 @@ public class PlayerManager
     
     #region Health & Damage Proxies
     
-    public void DamageLocalPlayer(int amount, bool updateUIImmediate = true) => healthManager.DamageLocalPlayer(amount, updateUIImmediate);
+    public void DamageLocalPlayer(int amount, bool updateUIImmediate = true, HealthManager.DamageSource source = HealthManager.DamageSource.OpponentPetAttack) => healthManager.DamageLocalPlayer(amount, updateUIImmediate, source);
     public void DamageLocalPet(int amount) => healthManager.DamageLocalPet(amount);
     public void DamageOpponentPet(int amount) => healthManager.DamageOpponentPet(amount);
     

@@ -55,6 +55,15 @@ public class HealthManager
     private int opponentPlayerCritChance = CombatCalculator.BASE_CRIT_CHANCE; // Start with base
     // --- END ADDED ---
     
+    public enum DamageSource
+    {
+        OpponentPetAttack, // Normal attack from opponent pet
+        OpponentPetThorns, // Damage coming FROM opponent pet's thorns
+        PlayerSelfAttack,  // Player hitting themselves with a card/effect
+        PlayerSelfThorns,  // Player hitting themselves with their own thorns (recursive prevention)
+        Other // e.g., DoT effects, environment?
+    }
+    
     public HealthManager(GameManager gameManager)
     {
         this.gameManager = gameManager;
@@ -159,35 +168,48 @@ public class HealthManager
     
     #region Damage Methods
     
-    public void DamageLocalPlayer(int amount, bool updateUIImmediate = true)
+    public void DamageLocalPlayer(int amount, bool updateUIImmediate = true, DamageSource source = DamageSource.OpponentPetAttack)
     {
-        if (amount <= 0) return; // Can't deal negative damage
+        if (amount <= 0) return;
         
-        // Get required data from status effect manager
-        StatusEffectManager statusManager = gameManager.GetPlayerManager().GetStatusEffectManager();
+        PlayerManager playerManager = gameManager.GetPlayerManager();
+        StatusEffectManager statusManager = playerManager.GetStatusEffectManager();
+        
+        bool isPlayerWeak = statusManager.IsPlayerWeak();
         bool isPlayerBroken = statusManager.IsPlayerBroken();
-        bool isPlayerWeak = statusManager.IsPlayerWeak(); // Added: Get player weak status
         
-        Debug.Log($"DEBUG DamageLocalPlayer: Initial amount={amount}, isPlayerBroken={isPlayerBroken}, isPlayerWeak={isPlayerWeak}");
+        Debug.Log($"DEBUG DamageLocalPlayer: Initial amount={amount}, Source={source}, isBroken={isPlayerBroken}, isWeak={isPlayerWeak}");
         
-        // Get combat calculator
         CombatCalculator calculator = gameManager.GetCombatCalculator();
         
-        // Calculate damage results using calculator
+        // Determine attacker stats based on source
+        int attackerStrength = 0;
+        int attackerCritChance = 0;
+        bool attackerIsWeak = false; 
+
+        if (source == DamageSource.PlayerSelfAttack)
+        {
+            // Player is attacking themselves, use their strength and crit chance
+            attackerStrength = playerManager.GetPlayerStrength();
+            attackerCritChance = playerManager.GetPlayerEffectiveCritChance();
+            attackerIsWeak = isPlayerWeak; // Use player's weak status
+        }
+        // OpponentPetAttack strength/crit is handled within their attack logic before calling this.
+        // Thorns damage (OpponentPetThorns, PlayerSelfThorns) doesn't use strength/crit.
+        
         CombatCalculator.DamageResult result = calculator.CalculateDamage(
-            amount,                 // Raw damage
-            0,                      // Attacker strength (0 for opponent pet attacking player)
-            localPlayerBlock,       // Target block
-            isPlayerWeak,           // FIXED: Properly consider player weakness for self-damage
-            isPlayerBroken,         // Target is broken
-            0                       // Attacker crit chance (not applicable here, pet crits handled elsewhere)
+            amount,
+            attackerStrength, 
+            localPlayerBlock,
+            attackerIsWeak, 
+            isPlayerBroken,
+            attackerCritChance
         );
         
-        // Apply results
         localPlayerBlock -= result.BlockConsumed;
         if (localPlayerBlock < 0) localPlayerBlock = 0;
         
-        Debug.Log($"DamageLocalPlayer: Incoming={amount}, Block={result.BlockConsumed}, RemainingDamage={result.DamageAfterBlock}");
+        Debug.Log($"DamageLocalPlayer: Incoming={amount}, Source={source}, BlockConsumed={result.BlockConsumed}, DamageAfterBlock={result.DamageAfterBlock}");
         
         if (result.DamageAfterBlock > 0)
         {
@@ -197,10 +219,9 @@ public class HealthManager
         
         if (updateUIImmediate)
         {
-            gameManager.UpdateHealthUI(); // Update both health and block display
+            gameManager.UpdateHealthUI();
         }
         
-        // Update player custom property for other UIs and Sync
         UpdatePlayerStatProperties();
 
         if (localPlayerHealth <= 0)
@@ -208,14 +229,24 @@ public class HealthManager
             gameManager.GetPlayerManager().GetCombatStateManager().HandleCombatLoss();
         }
         
-        // Apply Thorns Damage Back
-        int playerThorns = gameManager.GetPlayerManager().GetPlayerThorns();
-        if (playerThorns > 0)
+        // --- Thorns Logic --- 
+        int playerThornsValue = gameManager.GetPlayerManager().GetPlayerThorns();
+
+        // 1. Should Player reflect thorns back to the attacker?
+        if (playerThornsValue > 0 && source == DamageSource.OpponentPetAttack)
         {
-            Debug.Log($"Player has {playerThorns} Thorns! Dealing damage back to Opponent Pet.");
-            // Opponent Pet attacked Player, so damage Opponent Pet
-            DamageOpponentPet(playerThorns);
+            Debug.Log($"Player has {playerThornsValue} Thorns! Reflecting damage back to Opponent Pet.");
+            DamageOpponentPet(playerThornsValue);
         }
+
+        // 2. Should Player take damage from their own thorns (due to self-attack)?
+        if (playerThornsValue > 0 && source == DamageSource.PlayerSelfAttack)
+        {
+            Debug.Log($"Player attacked themselves while having Thorns {playerThornsValue}! Applying self-thorns damage.");
+            DamageLocalPlayer(playerThornsValue, false, DamageSource.PlayerSelfThorns); // Recurse safely
+        }
+        
+        // If source is OpponentPetThorns or PlayerSelfThorns, no further thorns action
     }
     
     /// <summary>
@@ -284,7 +315,7 @@ public class HealthManager
         {
             Debug.Log($"Opponent Pet has {opponentPetThorns} Thorns! Dealing damage back to Player.");
             // Player attacked Opponent Pet, so damage Player
-            DamageLocalPlayer(opponentPetThorns, false); // Don't update UI immediately to avoid potential loop/flicker, let main UI update handle it
+            DamageLocalPlayer(opponentPetThorns, false, DamageSource.OpponentPetThorns); // Mark this as thorns damage to prevent infinite loops
         }
 
         return result;
@@ -377,9 +408,14 @@ public class HealthManager
         // Update pet health property for network sync (since local pet health changed)
         UpdatePlayerStatProperties(CombatStateManager.PLAYER_COMBAT_PET_HP_PROP);
 
-        // NOTE: Thorns are not applied here, as the player damaging their own pet is usually a specific effect,
-        // and applying thorns back to the player might be undesirable/unintended in most cases.
-        // If thorns *should* apply in this scenario, add logic similar to ApplyDamageToOpponentPetLocally.
+        // Apply thorns for self-damage if pet has thorns
+        int localPetThorns = playerManager.GetLocalPetThorns();
+        if (localPetThorns > 0)
+        {
+            Debug.Log($"Local Pet has {localPetThorns} Thorns! Dealing damage back to Player.");
+            // Player attacked their own Pet, so reflect thorns damage
+            DamageLocalPlayer(localPetThorns, false, DamageSource.PlayerSelfThorns);
+        }
 
         return result;
     }
@@ -389,31 +425,13 @@ public class HealthManager
     {
         if (finalDamageAmount <= 0) return;
         
-        Debug.Log($"DamageLocalPet: Received final damage amount = {finalDamageAmount}");
-
-        // --- ADDED: Apply final damage directly and update block ---
-        // Need to figure out how much block was consumed. Sender doesn't know receiver's block.
-        // For simplicity, let's assume the damage RPC implies block was overcome.
-        // A more robust solution might need a separate RPC for block reduction or send more complex damage info.
-        // Current approach: Apply damage directly, assume block was handled conceptually by sender.
-        
-        // We still need to know how much block was *intended* to be consumed to update the local value.
-        // Let's send BlockConsumed via RPC as well.
-        // --> REVISION: Sending BlockConsumed is complex. Let's stick to the simpler approach first:
-        // The receiver *only* applies health damage. Block is purely visual/transient for the opponent.
-        // OR the attacker calculates damage *without* considering opponent block, sends that, receiver applies block.
-        // --> Let's revert to the previous approach (send DamageBeforeBlock) but FIX the status application order.
-        // --> BACK TO PLAN B: Send FINAL damage. Assume Break was factored in. Receiver ignores their block/break.
-        
-        localPetHealth -= finalDamageAmount;
-        if (localPetHealth < 0) localPetHealth = 0;
-        Debug.Log($"DamageLocalPet: Applying final damage {finalDamageAmount}. New Health = {localPetHealth}");
-        // Note: Local Pet Block is NOT modified here, as the damage received is post-block.
-        // --- END ADDED ---
+        // For player attacking their own pet, use the full ApplyDamageToLocalPetLocally method 
+        // which will apply thorns properly
+        CombatCalculator.DamageResult result = ApplyDamageToLocalPetLocally(finalDamageAmount);
         
         if (updateUIImmediate)
         {
-            gameManager.UpdateHealthUI(); // Update both health and block display
+            gameManager.UpdateHealthUI(); 
         }
         
         // --- ADDED: Update pet health property for network sync ---
@@ -1168,4 +1186,72 @@ public class HealthManager
         opponentPetHealth = newHealth;
         Debug.Log($"Set opponent pet health to {newHealth} from network sync");
     }
+
+    // --- ADDED: Methods to reset all effects ---
+    public void ResetAllDoTEffects()
+    {
+        // Reset player DoT
+        localPlayerDotTurns = 0;
+        localPlayerDotDamage = 0;
+        
+        // Reset local pet DoT
+        localPetDotTurns = 0;
+        localPetDotDamage = 0;
+        
+        // Reset opponent pet DoT
+        opponentPetDotTurns = 0;
+        opponentPetDotDamage = 0;
+        
+        // Update player and pet DoT properties
+        UpdatePlayerStatProperties(
+            CombatStateManager.PLAYER_COMBAT_PLAYER_DOT_TURNS_PROP,
+            CombatStateManager.PLAYER_COMBAT_PLAYER_DOT_DMG_PROP,
+            CombatStateManager.PLAYER_COMBAT_PET_DOT_TURNS_PROP,
+            CombatStateManager.PLAYER_COMBAT_PET_DOT_DMG_PROP
+        );
+        
+        Debug.Log("Reset all DoT effects to 0");
+    }
+    
+    public void ResetAllHoTEffects()
+    {
+        // Reset player HoT
+        localPlayerHotTurns = 0;
+        localPlayerHotAmount = 0;
+        
+        // Reset local pet HoT
+        localPetHotTurns = 0;
+        localPetHotAmount = 0;
+        
+        // Reset opponent pet HoT
+        opponentPetHotTurns = 0;
+        opponentPetHotAmount = 0;
+        
+        // Update player and pet HoT properties
+        UpdatePlayerStatProperties(
+            CombatStateManager.PLAYER_COMBAT_PLAYER_HOT_TURNS_PROP,
+            CombatStateManager.PLAYER_COMBAT_PLAYER_HOT_AMT_PROP,
+            CombatStateManager.PLAYER_COMBAT_PET_HOT_TURNS_PROP,
+            CombatStateManager.PLAYER_COMBAT_PET_HOT_AMT_PROP
+        );
+        
+        Debug.Log("Reset all HoT effects to 0");
+    }
+    
+    public void ResetAllCritBuffs()
+    {
+        // Clear all crit buffs
+        localPlayerCritBuffs.Clear();
+        localPetCritBuffs.Clear();
+        opponentPetCritBuffs.Clear();
+        
+        // Update crit properties
+        UpdatePlayerStatProperties(
+            CombatStateManager.PLAYER_COMBAT_PLAYER_CRIT_PROP,
+            CombatStateManager.PLAYER_COMBAT_PET_CRIT_PROP
+        );
+        
+        Debug.Log("Reset all crit buffs");
+    }
+    // --- END ADDED ---
 }

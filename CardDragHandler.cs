@@ -5,7 +5,7 @@ using System.Collections; // Added for Coroutines
 using System.Collections.Generic;
 using System.Linq;
 
-public class CardDragHandler : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDragHandler
+public class CardDragHandler : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDragHandler, IPointerClickHandler
 {
     public CardData cardData { get; set; } // Set by GameManager when instantiated
     public int cardHandIndex { get; set; } = -1; // Track position in hand list to differentiate identical cards
@@ -170,6 +170,38 @@ public class CardDragHandler : MonoBehaviour, IBeginDragHandler, IDragHandler, I
 
         canvasGroup.blocksRaycasts = true;
         isDragging = false; // Reset dragging flag
+        
+        // --- ADDED: Check for enemy test mode ---
+        if (gameManager != null && gameManager.IsDebugEnemyTestMode())
+        {
+            // In enemy test mode, this card will be played by the opponent pet
+            Debug.Log($"[ENEMY TEST MODE] Opponent pet will play card: {cardData.cardName}");
+            gameManager.GetCardManager().ProcessOpponentPetCardEffect(cardData);
+            
+            // Snap card back to original position after triggering effect
+            transform.SetParent(originalParent, true);
+            StopCoroutineIfRunning(ref animationCoroutine);
+            rectTransform.localPosition = originalPosition;
+            rectTransform.localRotation = originalRotation;
+            rectTransform.localScale = originalScale;
+            targetPosition = originalPosition;
+            targetRotation = originalRotation;
+            targetScale = originalScale;
+            currentNeighborOffset = Vector3.zero;
+            
+            // Force reset of hover states for all cards
+            HandPanelHoverManager hoverManager = originalParent?.GetComponent<HandPanelHoverManager>();
+            hoverManager?.ResetAllHovers();
+            
+            // Restore original card description
+            if (gameManager.GetCardPreviewCalculator() != null)
+            {
+                gameManager.GetCardPreviewCalculator().RestoreOriginalDescription(gameObject);
+            }
+            
+            return; // Exit early since we've handled the card in enemy test mode
+        }
+        // --- END ADDED ---
         
         // --- ADDED: Ensure originalParent still exists ---
         if (originalParent == null || !originalParent.gameObject.activeInHierarchy)
@@ -600,6 +632,18 @@ public class CardDragHandler : MonoBehaviour, IBeginDragHandler, IDragHandler, I
         // Make sure raycasts are enabled unless explicitly dragging/discarding
         if (canvasGroup != null) canvasGroup.blocksRaycasts = true;
         // Debug.Log($"[{Time.frameCount}] ResetState called for {name}");
+    }
+    // --- END ADDED ---
+
+    // --- ADDED: Implement OnPointerClick for enemy test mode ---
+    public void OnPointerClick(PointerEventData eventData)
+    {
+        // Only process click if we're in enemy test mode and not dragging/discarding
+        if (gameManager != null && gameManager.IsDebugEnemyTestMode() && !isDragging && !isDiscarding)
+        {
+            Debug.Log($"[ENEMY TEST MODE] Card clicked: {cardData.cardName}");
+            gameManager.GetCardManager().ProcessOpponentPetCardEffect(cardData);
+        }
     }
     // --- END ADDED ---
 } 

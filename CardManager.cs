@@ -148,22 +148,50 @@ public class CardManager
             return false; // Not enough energy
         }
         
-        // Attempt to remove the card from the hand list
-        // --- MODIFIED: Pass cardGO to DiscardCard ---
-        bool removed = deckManager.DiscardCard(cardData, cardGO); 
-        Debug.Log($"Attempting to remove card '{cardData.cardName}' from hand. Result: {removed}");
+        // --- ADDED: Check for debug card reuse mode ---
+        bool debugCardReuseMode = gameManager.IsDebugCardReuseMode();
+        bool removed = false;
+        
+        if (!debugCardReuseMode)
+        {
+            // Normal behavior - Attempt to remove the card from the hand list
+            // --- MODIFIED: Pass cardGO to DiscardCard ---
+            removed = deckManager.DiscardCard(cardData, cardGO); 
+            Debug.Log($"Attempting to remove card '{cardData.cardName}' from hand. Result: {removed}");
+        }
+        else
+        {
+            // Debug mode - Skip removing card from hand
+            Debug.Log($"Debug Card Reuse Mode: Card '{cardData.cardName}' will NOT be discarded when played");
+            removed = true; // Pretend the card was successfully removed
+        }
+        // --- END ADDED ---
         
         if (removed)
         {
             // Remove cost modifier tracking for played card
             playerManager.RemoveCostModifierForCard(cardData);
             
-            gameManager.UpdateHandUI();
-            gameManager.UpdateDeckCountUI();
+            // --- ADDED: Only update UI if not in debug reuse mode ---
+            if (!debugCardReuseMode)
+            {
+                gameManager.UpdateHandUI();
+                gameManager.UpdateDeckCountUI();
+            }
+            // --- END ADDED ---
             
             // Consume energy (using effective cost)
-            playerManager.ConsumeEnergy(effectiveCost);
-            Debug.Log($"Played card '{cardData.cardName}'. Energy remaining: {playerManager.GetCurrentEnergy()}");
+            // --- MODIFIED: Skip energy consumption in debug mode ---
+            if (!debugCardReuseMode)
+            {
+                playerManager.ConsumeEnergy(effectiveCost);
+                Debug.Log($"Played card '{cardData.cardName}'. Energy remaining: {playerManager.GetCurrentEnergy()}");
+            }
+            else
+            {
+                Debug.Log($"Debug Card Reuse Mode: Energy NOT consumed for '{cardData.cardName}'");
+            }
+            // --- END MODIFIED ---
             
             // --- MODIFIED: Get play count BEFORE processing effects --- 
             int previousPlays = GetCardPlayCountThisCombat(cardData);
