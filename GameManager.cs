@@ -461,12 +461,13 @@ public class GameManager : MonoBehaviourPunCallbacks
     #region RPCs and Network Functions
 
     [PunRPC]
-    private void RpcTakePetDamage(int damageAmount)
+    private void RpcTakePetDamage(int finalDamageAmount)
     {
-        if (damageAmount <= 0) return;
+        if (finalDamageAmount <= 0) return;
 
-        Debug.Log($"RPC Received: My Pet taking {damageAmount} damage.");
-        playerManager.DamageLocalPet(damageAmount);
+        Debug.Log($"RPC Received: My Pet taking {finalDamageAmount} final damage.");
+        // Pass the final damage amount calculated by the sender
+        playerManager.DamageLocalPet(finalDamageAmount); 
     }
 
     // --- ADDED: RPC for Hand Cost Modifier ---

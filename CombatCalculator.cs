@@ -31,7 +31,6 @@ public class CombatCalculator
     /// <param name="isAttackerWeak">Whether the attacker has Weak status</param>
     /// <param name="isTargetBroken">Whether the target has Break status</param>
     /// <param name="attackerCritChance">Critical hit chance of the attacker</param>
-    /// <param name="isCritRoll">Output parameter indicating if a crit occurred</param>
     /// <returns>Tuple containing final damage, block consumed, and whether a crit occurred</returns>
     public DamageResult CalculateDamage(
         int rawDamage, 
@@ -57,6 +56,9 @@ public class CombatCalculator
         result.IsCritical = Random.Range(0, 100) < attackerCritChance;
         float critMultiplier = result.IsCritical ? CRIT_DAMAGE_MULTIPLIER : 1f;
         int damageAfterCrit = Mathf.FloorToInt(damageAfterWeak * critMultiplier);
+        
+        // Store damage before block/break
+        result.DamageBeforeBlock = damageAfterCrit;
         
         // Calculate block interaction
         result.BlockConsumed = Mathf.Min(damageAfterCrit, targetBlock);
@@ -219,5 +221,6 @@ public class CombatCalculator
         public int DamageAfterBlock;
         public int BlockConsumed;
         public bool IsCritical;
+        public int DamageBeforeBlock;
     }
 } 

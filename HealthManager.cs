@@ -220,9 +220,14 @@ public class HealthManager
     /// This method performs the actual health/block modification and UI update.
     /// It does NOT send any network notifications.
     /// </summary>
-    public void ApplyDamageToOpponentPetLocally(int amount)
+    public CombatCalculator.DamageResult ApplyDamageToOpponentPetLocally(int amount)
     {
-        if (amount <= 0) return;
+        if (amount <= 0) 
+        {
+            Debug.LogWarning("ApplyDamageToOpponentPetLocally called with amount <= 0.");
+            // Return a default/zero result if no damage is processed
+            return new CombatCalculator.DamageResult { DamageAfterBlock = 0, BlockConsumed = 0, IsCritical = false, DamageBeforeBlock = 0 };
+        }
 
         PlayerManager playerManager = gameManager.GetPlayerManager();
         StatusEffectManager statusManager = playerManager.GetStatusEffectManager();
@@ -278,6 +283,8 @@ public class HealthManager
             // Player attacked Opponent Pet, so damage Player
             DamageLocalPlayer(opponentPetThorns, false); // Don't update UI immediately to avoid potential loop/flicker, let main UI update handle it
         }
+
+        return result;
     }
 
     /// <summary>
@@ -291,16 +298,18 @@ public class HealthManager
         Debug.Log($"DamageOpponentPet: Processing {amount} damage dealt by local player.");
 
         // Apply the damage locally first (handles block, break, crit, health update, UI, win check)
-        ApplyDamageToOpponentPetLocally(amount);
+        CombatCalculator.DamageResult localDamageResult = ApplyDamageToOpponentPetLocally(amount);
 
         // Only notify the opponent if the opponent pet is still alive (prevent redundant RPCs after win)
         // And ensure we have an opponent to notify
         Player opponentPlayer = gameManager.GetPlayerManager().GetOpponentPlayer();
         if (opponentPetHealth > 0 && opponentPlayer != null)
         {
-            // Notify the opponent that their pet took damage (send ORIGINAL amount, they calculate block/reductions locally)
-            Debug.Log($"Sending RpcTakePetDamage({amount}) to {opponentPlayer.NickName}");
-            gameManager.GetPhotonView().RPC("RpcTakePetDamage", opponentPlayer, amount);
+            // --- REVISED: Send FINAL damage after all local calculations (including Block/Break) ---
+            int damageToSend = localDamageResult.DamageAfterBlock;
+            Debug.Log($"Sending RpcTakePetDamage({damageToSend}) to {opponentPlayer.NickName} (Final Damage: {damageToSend}, Original: {amount}, Pre-Block/Break: {localDamageResult.DamageBeforeBlock})");
+            gameManager.GetPhotonView().RPC("RpcTakePetDamage", opponentPlayer, damageToSend);
+            // --- END REVISED ---
         }
         else if (opponentPlayer == null)
         {
@@ -308,31 +317,96 @@ public class HealthManager
         }
     }
     
-    public void DamageLocalPet(int amount, bool updateUIImmediate = true)
+    // --- ADDED: Method to calculate and apply damage to the LOCAL pet ---
+    /// <summary>
+    /// Applies damage to the local pet based on the local simulation state.
+    /// This handles block, status effects (Weak, Break), Strength, and Crit.
+    /// It updates health/block locally and syncs the pet's health property.
+    /// </summary>
+    public CombatCalculator.DamageResult ApplyDamageToLocalPetLocally(int amount)
     {
-        if (amount <= 0) return;
-        
-        int damageAfterBlock = amount - localPetBlock;
-        int blockConsumed = Mathf.Min(amount, localPetBlock);
-        localPetBlock -= blockConsumed;
-        if (localPetBlock < 0) localPetBlock = 0;
-        
-        Debug.Log($"DamageLocalPet: Incoming={amount}, Block={blockConsumed}, RemainingDamage={damageAfterBlock}");
-        
-        if (damageAfterBlock > 0)
+        if (amount <= 0)
         {
-            // Check for Break
-            StatusEffectManager statusManager = gameManager.GetPlayerManager().GetStatusEffectManager();
-            if (statusManager.IsLocalPetBroken()) 
-            {
-                int breakBonus = Mathf.FloorToInt(damageAfterBlock * 0.5f); 
-                Debug.Log($"Local Pet has Break! Increasing damage by {breakBonus}");
-                damageAfterBlock += breakBonus;
-            }
-            
-            localPetHealth -= damageAfterBlock;
-            if (localPetHealth < 0) localPetHealth = 0;
+            Debug.LogWarning("ApplyDamageToLocalPetLocally called with amount <= 0.");
+            return new CombatCalculator.DamageResult { DamageAfterBlock = 0, BlockConsumed = 0, IsCritical = false, DamageBeforeBlock = 0 };
         }
+
+        PlayerManager playerManager = gameManager.GetPlayerManager();
+        StatusEffectManager statusManager = playerManager.GetStatusEffectManager();
+        CombatCalculator calculator = gameManager.GetCombatCalculator();
+
+        // Get required statuses for the interaction (Player attacking Local Pet)
+        bool isPlayerWeak = statusManager.IsPlayerWeak();           // Attacker (Player) status
+        bool isLocalPetBroken = statusManager.IsLocalPetBroken();     // Target (Local Pet) status
+        int playerCritChance = playerManager.GetPlayerEffectiveCritChance(); // Attacker (Player) crit
+        int playerStrength = playerManager.GetPlayerStrength();      // Attacker (Player) strength
+
+        // Calculate damage results
+        CombatCalculator.DamageResult result = calculator.CalculateDamage(
+            amount,                 // Raw damage
+            playerStrength,         // Attacker strength
+            localPetBlock,          // Target block
+            isPlayerWeak,           // Attacker is weak
+            isLocalPetBroken,       // Target is broken
+            playerCritChance        // Attacker crit chance
+        );
+
+        // Apply results
+        localPetBlock -= result.BlockConsumed;
+        if (localPetBlock < 0) localPetBlock = 0;
+
+        Debug.Log($"ApplyDamageToLocalPetLocally: Incoming={amount}, IsBroken={isLocalPetBroken}, BlockConsumed={result.BlockConsumed}, RemainingDamage={result.DamageAfterBlock}, IsCrit={result.IsCritical}");
+
+        if (result.DamageAfterBlock > 0)
+        {
+            localPetHealth -= result.DamageAfterBlock;
+            if (localPetHealth < 0) localPetHealth = 0;
+
+            // Log critical hit if it happened
+            if (result.IsCritical)
+            {
+                Debug.LogWarning($"Player CRITICAL HIT against own Pet! (Chance: {playerCritChance}%)");
+            }
+        }
+
+        gameManager.UpdateHealthUI(); // Update both health and block display
+
+        // Update pet health property for network sync (since local pet health changed)
+        UpdatePlayerStatProperties(CombatStateManager.PLAYER_COMBAT_PET_HP_PROP);
+
+        // NOTE: Thorns are not applied here, as the player damaging their own pet is usually a specific effect,
+        // and applying thorns back to the player might be undesirable/unintended in most cases.
+        // If thorns *should* apply in this scenario, add logic similar to ApplyDamageToOpponentPetLocally.
+
+        return result;
+    }
+    // --- END ADDED ---
+
+    public void DamageLocalPet(int finalDamageAmount, bool updateUIImmediate = true)
+    {
+        if (finalDamageAmount <= 0) return;
+        
+        Debug.Log($"DamageLocalPet: Received final damage amount = {finalDamageAmount}");
+
+        // --- ADDED: Apply final damage directly and update block ---
+        // Need to figure out how much block was consumed. Sender doesn't know receiver's block.
+        // For simplicity, let's assume the damage RPC implies block was overcome.
+        // A more robust solution might need a separate RPC for block reduction or send more complex damage info.
+        // Current approach: Apply damage directly, assume block was handled conceptually by sender.
+        
+        // We still need to know how much block was *intended* to be consumed to update the local value.
+        // Let's send BlockConsumed via RPC as well.
+        // --> REVISION: Sending BlockConsumed is complex. Let's stick to the simpler approach first:
+        // The receiver *only* applies health damage. Block is purely visual/transient for the opponent.
+        // OR the attacker calculates damage *without* considering opponent block, sends that, receiver applies block.
+        // --> Let's revert to the previous approach (send DamageBeforeBlock) but FIX the status application order.
+        // --> BACK TO PLAN B: Send FINAL damage. Assume Break was factored in. Receiver ignores their block/break.
+        
+        localPetHealth -= finalDamageAmount;
+        if (localPetHealth < 0) localPetHealth = 0;
+        Debug.Log($"DamageLocalPet: Applying final damage {finalDamageAmount}. New Health = {localPetHealth}");
+        // Note: Local Pet Block is NOT modified here, as the damage received is post-block.
+        // --- END ADDED ---
         
         if (updateUIImmediate)
         {
@@ -592,6 +666,13 @@ public class HealthManager
         localPetDotTurns += duration;
         localPetDotDamage = damage; 
         Debug.Log($"Applied DoT to Local Pet: {damage} damage for {duration} turns. Total Turns: {localPetDotTurns}");
+        
+        // --- ADDED: Sync Properties ---
+        UpdatePlayerStatProperties(
+            CombatStateManager.PLAYER_COMBAT_PET_DOT_TURNS_PROP,
+            CombatStateManager.PLAYER_COMBAT_PET_DOT_DMG_PROP
+        );
+        // --- END ADDED ---
 
         // Notify others
         if (PhotonNetwork.InRoom)
@@ -712,14 +793,15 @@ public class HealthManager
         localPetCritBuffs.Add(new CritBuff { amount = amount, turns = duration });
         Debug.Log($"Applied Crit Chance Buff to Pet: +{amount}% for {duration} turns.");
 
+        // --- ADDED: Sync Property ---
+        UpdatePlayerStatProperties(CombatStateManager.PLAYER_COMBAT_PET_CRIT_PROP);
+        // --- END ADDED ---
+
         // Notify others
         if (PhotonNetwork.InRoom)
         {
-            // Send amount and duration
             gameManager.GetPhotonView()?.RPC("RpcApplyCritBuffToMyPet", RpcTarget.Others, amount, duration);
         }
-        // Optionally update UI
-        // gameManager.UpdateHealthUI(); 
     }
     // --- END MODIFIED ---
 
@@ -918,6 +1000,13 @@ public class HealthManager
         Debug.Log($"Applied HoT to Local Pet: {amount} healing for {duration} turns. Total Turns: {localPetHotTurns}");
         gameManager.UpdateHealthUI();
 
+        // --- ADDED: Sync Properties ---
+        UpdatePlayerStatProperties(
+            CombatStateManager.PLAYER_COMBAT_PET_HOT_TURNS_PROP,
+            CombatStateManager.PLAYER_COMBAT_PET_HOT_AMT_PROP
+        );
+        // --- END ADDED ---
+
         // Notify others (Send amount and duration)
         if (PhotonNetwork.InRoom)
         {
@@ -973,6 +1062,14 @@ public class HealthManager
             HealLocalPet(localPetHotAmount);
             localPetHotTurns--; 
             if (localPetHotTurns == 0) localPetHotAmount = 0; 
+            
+            // --- ADDED: Update HoT Properties explicitly after decrement for pet ---
+            UpdatePlayerStatProperties(
+                CombatStateManager.PLAYER_COMBAT_PET_HOT_TURNS_PROP, // Assuming this exists
+                CombatStateManager.PLAYER_COMBAT_PET_HOT_AMT_PROP  // Assuming this exists
+            );
+            // --- END ADDED ---
+            
              gameManager.UpdateHealthUI();
         }
     }
@@ -1005,34 +1102,54 @@ public class HealthManager
         Hashtable propsToSet = new Hashtable();
         List<string> keys = propertyKeysToUpdate.ToList();
         bool updateAll = keys.Count == 0; // If no specific keys, update all
+        
+        // Get Status Effect Manager for pet status
+        StatusEffectManager statusManager = gameManager.GetPlayerManager()?.GetStatusEffectManager();
 
-        // Determine which properties to include based on keys or 'updateAll'
+        // --- Player Properties ---
         if (updateAll || keys.Contains(CombatStateManager.PLAYER_COMBAT_PLAYER_HP_PROP))
             propsToSet[CombatStateManager.PLAYER_COMBAT_PLAYER_HP_PROP] = localPlayerHealth;
-            
         if (updateAll || keys.Contains(CombatStateManager.PLAYER_COMBAT_PLAYER_BLOCK_PROP))
             propsToSet[CombatStateManager.PLAYER_COMBAT_PLAYER_BLOCK_PROP] = localPlayerBlock;
-            
-        // Energy is handled separately by CombatTurnManager
-        // if (updateAll || keys.Contains(CombatStateManager.PLAYER_COMBAT_ENERGY_PROP)) 
-        //     propsToSet[CombatStateManager.PLAYER_COMBAT_ENERGY_PROP] = gameManager.GetPlayerManager().GetCurrentEnergy();
-
         if (updateAll || keys.Contains(CombatStateManager.PLAYER_COMBAT_PLAYER_DOT_TURNS_PROP))
             propsToSet[CombatStateManager.PLAYER_COMBAT_PLAYER_DOT_TURNS_PROP] = localPlayerDotTurns;
-            
         if (updateAll || keys.Contains(CombatStateManager.PLAYER_COMBAT_PLAYER_DOT_DMG_PROP))
             propsToSet[CombatStateManager.PLAYER_COMBAT_PLAYER_DOT_DMG_PROP] = localPlayerDotDamage;
-            
         if (updateAll || keys.Contains(CombatStateManager.PLAYER_COMBAT_PLAYER_HOT_TURNS_PROP))
             propsToSet[CombatStateManager.PLAYER_COMBAT_PLAYER_HOT_TURNS_PROP] = localPlayerHotTurns;
-            
         if (updateAll || keys.Contains(CombatStateManager.PLAYER_COMBAT_PLAYER_HOT_AMT_PROP))
             propsToSet[CombatStateManager.PLAYER_COMBAT_PLAYER_HOT_AMT_PROP] = localPlayerHotAmount;
-            
         if (updateAll || keys.Contains(CombatStateManager.PLAYER_COMBAT_PLAYER_CRIT_PROP))
             propsToSet[CombatStateManager.PLAYER_COMBAT_PLAYER_CRIT_PROP] = GetPlayerEffectiveCritChance();
+        // Player Energy is handled separately by EnergyManager
+        // Player Weak/Break/Thorns/Strength are handled by StatusEffectManager
 
-        // Status Effects are handled by StatusEffectManager
+        // --- Local Pet Properties ---
+        if (updateAll || keys.Contains(CombatStateManager.PLAYER_COMBAT_PET_HP_PROP))
+            propsToSet[CombatStateManager.PLAYER_COMBAT_PET_HP_PROP] = localPetHealth;
+        if (updateAll || keys.Contains(CombatStateManager.PLAYER_COMBAT_PET_DOT_TURNS_PROP))
+            propsToSet[CombatStateManager.PLAYER_COMBAT_PET_DOT_TURNS_PROP] = localPetDotTurns;
+        if (updateAll || keys.Contains(CombatStateManager.PLAYER_COMBAT_PET_DOT_DMG_PROP))
+            propsToSet[CombatStateManager.PLAYER_COMBAT_PET_DOT_DMG_PROP] = localPetDotDamage;
+        if (updateAll || keys.Contains(CombatStateManager.PLAYER_COMBAT_PET_HOT_TURNS_PROP))
+            propsToSet[CombatStateManager.PLAYER_COMBAT_PET_HOT_TURNS_PROP] = localPetHotTurns;
+        if (updateAll || keys.Contains(CombatStateManager.PLAYER_COMBAT_PET_HOT_AMT_PROP))
+            propsToSet[CombatStateManager.PLAYER_COMBAT_PET_HOT_AMT_PROP] = localPetHotAmount;
+        if (updateAll || keys.Contains(CombatStateManager.PLAYER_COMBAT_PET_CRIT_PROP))
+            propsToSet[CombatStateManager.PLAYER_COMBAT_PET_CRIT_PROP] = GetPetEffectiveCritChance();
+            
+        // Fetch Pet status effects from StatusEffectManager
+        if (statusManager != null) 
+        { 
+            if (updateAll || keys.Contains(CombatStateManager.PLAYER_COMBAT_PET_WEAK_PROP))
+                propsToSet[CombatStateManager.PLAYER_COMBAT_PET_WEAK_PROP] = statusManager.GetLocalPetWeakTurns();
+            if (updateAll || keys.Contains(CombatStateManager.PLAYER_COMBAT_PET_BREAK_PROP))
+                propsToSet[CombatStateManager.PLAYER_COMBAT_PET_BREAK_PROP] = statusManager.GetLocalPetBreakTurns();
+            if (updateAll || keys.Contains(CombatStateManager.PLAYER_COMBAT_PET_THORNS_PROP))
+                propsToSet[CombatStateManager.PLAYER_COMBAT_PET_THORNS_PROP] = statusManager.GetLocalPetThorns();
+            if (updateAll || keys.Contains(CombatStateManager.PLAYER_COMBAT_PET_STRENGTH_PROP))
+                propsToSet[CombatStateManager.PLAYER_COMBAT_PET_STRENGTH_PROP] = statusManager.GetLocalPetStrength();
+        }
 
         if (propsToSet.Count > 0)
         {

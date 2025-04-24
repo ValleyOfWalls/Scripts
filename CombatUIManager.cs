@@ -98,17 +98,13 @@ public class CombatUIManager
         opponentPetHealthText = opponentArea?.Find("OpponentPetHealthText")?.GetComponent<TextMeshProUGUI>();
         opponentPetBlockText = opponentArea?.Find("OpponentPetBlockText")?.GetComponent<TextMeshProUGUI>();
         opponentPetIntentText = opponentArea?.Find("OpponentPetIntentText")?.GetComponent<TextMeshProUGUI>();
-        opponentPetDotText = opponentArea?.Find("OpponentPetDotText")?.GetComponent<TextMeshProUGUI>();
-        opponentPetHotText = opponentArea?.Find("OpponentPetHotText")?.GetComponent<TextMeshProUGUI>();
-        opponentPetStrengthText = opponentArea?.Find("OpponentPetStrengthText")?.GetComponent<TextMeshProUGUI>();
         
-        // --- ADDED: Find Opponent Pet Hand Panel ---
+        // Find Opponent Pet Hand Panel
         opponentPetHandPanel = topArea.Find("OpponentPetAreaContainer/OpponentPetHandPanel")?.gameObject;
         if (opponentPetHandPanel == null) 
         {
             Debug.LogWarning("OpponentPetHandPanel GameObject not found under TopArea/OpponentPetAreaContainer.");
         }
-        // --- END ADDED ---
         
         // Hide the opponent intent text as it's currently unused
         if (opponentPetIntentText != null)
@@ -123,9 +119,6 @@ public class CombatUIManager
         ownPetHealthSlider = ownPetArea?.Find("OwnPetHealthSlider")?.GetComponent<Slider>();
         ownPetHealthText = ownPetArea?.Find("OwnPetHealthText")?.GetComponent<TextMeshProUGUI>();
         ownPetBlockText = ownPetArea?.Find("OwnPetBlockText")?.GetComponent<TextMeshProUGUI>();
-        ownPetDotText = ownPetArea?.Find("OwnPetDotText")?.GetComponent<TextMeshProUGUI>();
-        ownPetHotText = ownPetArea?.Find("OwnPetHotText")?.GetComponent<TextMeshProUGUI>();
-        ownPetStrengthText = ownPetArea?.Find("OwnPetStrengthText")?.GetComponent<TextMeshProUGUI>();
         
         // Find Other Fights UI Elements
         Transform othersStatusAreaTransform = topArea.Find("OthersStatusArea");
@@ -162,10 +155,7 @@ public class CombatUIManager
         playerHealthText = statsRow?.Find("PlayerHealthText")?.GetComponent<TextMeshProUGUI>();
         playerBlockText = statsRow?.Find("PlayerBlockText")?.GetComponent<TextMeshProUGUI>();
         energyText = statsRow?.Find("EnergyText")?.GetComponent<TextMeshProUGUI>();
-        playerDotText = statsRow?.Find("PlayerDotText")?.GetComponent<TextMeshProUGUI>();
-        comboCountText = statsRow?.Find("ComboCountText")?.GetComponent<TextMeshProUGUI>();
-        playerHotText = statsRow?.Find("PlayerHotText")?.GetComponent<TextMeshProUGUI>();
-        playerStrengthText = statsRow?.Find("PlayerStrengthText")?.GetComponent<TextMeshProUGUI>();
+        comboCountText = statsRow?.Find("ComboCountText")?.GetComponent<TextMeshProUGUI>(); // Keep Combo Count separate for now
         
         Transform handPanelTransform = playerArea.Find("PlayerHandPanel");
         playerHandPanel = handPanelTransform?.gameObject;
@@ -244,10 +234,20 @@ public class CombatUIManager
             int breakTurns = playerManager.GetPlayerBreakTurns();
             if (breakTurns > 0) playerStatus.Append($" | Break: {breakTurns}t");
             
-            // --- MODIFIED: Always show Crit Chance ---
+            // --- ADDED: Append DoT, HoT, Strength to Player status ---
+            int playerDotTurns = playerManager.GetPlayerDotTurns();
+            if (playerDotTurns > 0) playerStatus.Append($" | DoT: {playerManager.GetPlayerDotDamage()} ({playerDotTurns}t)");
+            
+            int playerHotTurns = playerManager.GetPlayerHotTurns();
+            if (playerHotTurns > 0) playerStatus.Append($" | Regen: {playerManager.GetPlayerHotAmount()} ({playerHotTurns}t)");
+            
+            int playerStrength = playerManager.GetPlayerStrength();
+            if (playerStrength != 0) playerStatus.Append($" | Strength: {playerStrength:+0;-#}");
+            // --- END ADDED ---
+
+            // Crit Chance
             int critChancePlayer = playerManager.GetPlayerEffectiveCritChance();
             playerStatus.Append($" | Crit: {critChancePlayer}%"); 
-            // --- END MODIFIED ---
 
             playerBlockText.text = playerStatus.ToString();
         }
@@ -282,23 +282,35 @@ public class CombatUIManager
             
             if (petEnergy < 0) // If property doesn't exist yet, use default
             {
-                PetDeckManager petDeckManager = gameManager.GetCardManager().GetPetDeckManager();
-                if (petDeckManager != null) {
-                    petEnergy = gameManager.GetStartingPetEnergy();
-                }
-                else
-                {
-                    petEnergy = 0;
-                }
+                petEnergy = gameManager.GetStartingPetEnergy(); // Directly use starting energy if prop missing
             }
             
-            // --- MODIFIED: Always show Crit Chance for Own Pet ---
             System.Text.StringBuilder petStatus = new System.Text.StringBuilder();
             petStatus.Append($"Block: {petBlock} | Energy: {petEnergy}");
+
+            // --- ADDED: Append Weak/Break to Own Pet status ---
+            int petWeakTurns = playerManager.GetLocalPetWeakTurns(); // Assuming this method exists in PlayerManager
+            if (petWeakTurns > 0) petStatus.Append($" | Weak: {petWeakTurns}t");
+
+            int petBreakTurns = playerManager.GetLocalPetBreakTurns(); // Assuming this method exists in PlayerManager
+            if (petBreakTurns > 0) petStatus.Append($" | Break: {petBreakTurns}t");
+            // --- END ADDED ---
+
+            // --- ADDED: Append DoT, HoT, Strength to Own Pet status ---
+            int petDotTurns = playerManager.GetLocalPetDotTurns();
+            if (petDotTurns > 0) petStatus.Append($" | DoT: {playerManager.GetLocalPetDotDamage()} ({petDotTurns}t)");
+
+            int petHotTurns = playerManager.GetLocalPetHotTurns();
+            if (petHotTurns > 0) petStatus.Append($" | Regen: {playerManager.GetLocalPetHotAmount()} ({petHotTurns}t)");
+
+            int petStrength = playerManager.GetLocalPetStrength();
+            if (petStrength != 0) petStatus.Append($" | Strength: {petStrength:+0;-#}");
+            // --- END ADDED ---
+            
+            // Crit Chance
             int critChancePet = playerManager.GetPetEffectiveCritChance(); // Get Own Pet Crit
             petStatus.Append($" | Crit: {critChancePet}%"); 
             ownPetBlockText.text = petStatus.ToString();
-            // --- END MODIFIED ---
         }
 
         // Opponent Pet Health & Block
@@ -321,7 +333,6 @@ public class CombatUIManager
                 oppPetEnergy = petDeckManager.GetOpponentPetEnergy();
             }
             
-            // Start building the status string
             System.Text.StringBuilder oppPetStatus = new System.Text.StringBuilder();
             oppPetStatus.Append($"Block: {oppPetBlock} | Energy: {oppPetEnergy}");
             
@@ -332,15 +343,23 @@ public class CombatUIManager
             int breakTurns = playerManager.GetOpponentPetBreakTurns();
             if (breakTurns > 0) oppPetStatus.Append($" | Break: {breakTurns}t");
             
-            // --- MODIFIED: Always show Crit Chance for Opponent Pet ---
+            // --- ADDED: Append DoT, HoT, Strength to Opponent Pet status ---
+            int oppPetDotTurns = playerManager.GetOpponentPetDotTurns();
+            if (oppPetDotTurns > 0) oppPetStatus.Append($" | DoT: {playerManager.GetOpponentPetDotDamage()} ({oppPetDotTurns}t)");
+
+            int oppPetHotTurns = playerManager.GetOpponentPetHotTurns();
+            if (oppPetHotTurns > 0) oppPetStatus.Append($" | Regen: {playerManager.GetOpponentPetHotAmount()} ({oppPetHotTurns}t)");
+
+            int oppPetStrength = playerManager.GetOpponentPetStrength();
+            if (oppPetStrength != 0) oppPetStatus.Append($" | Strength: {oppPetStrength:+0;-#}");
+            // --- END ADDED ---
+            
+            // Crit Chance
             int critChanceOppPet = playerManager.GetOpponentPetEffectiveCritChance(); 
             oppPetStatus.Append($" | Crit: {critChanceOppPet}%"); 
-            // --- END MODIFIED ---
 
             opponentPetBlockText.text = oppPetStatus.ToString();
         }
-
-        UpdateStatusEffectsUI();
     }
     
     public void UpdateEnergyUI()
@@ -364,6 +383,11 @@ public class CombatUIManager
     
     public void UpdateStatusEffectsUI()
     {
+        // This method is now redundant as status effects are displayed
+        // within UpdateHealthUI. Keep the method signature for now 
+        // in case other parts of the code call it, but clear its body.
+
+        /* // Original Content - Now Handled in UpdateHealthUI
         PlayerManager playerManager = gameManager.GetPlayerManager();
         if (playerManager == null) return;
 
@@ -381,8 +405,16 @@ public class CombatUIManager
         {
             int hotTurns = playerManager.GetPlayerHotTurns();
             int hotHeal = playerManager.GetPlayerHotAmount();
-            playerHotText.text = (hotTurns > 0) ? $"Regen: {hotHeal} ({hotTurns}t)" : "";
-            playerHotText.gameObject.SetActive(hotTurns > 0);
+            bool shouldBeActive = hotTurns > 0;
+            Debug.Log($"[UpdateStatusEffectsUI] Player HoT: Turns={hotTurns}, Heal={hotHeal}, ShouldBeActive={shouldBeActive}");
+            playerHotText.text = shouldBeActive ? $"Regen: {hotHeal} ({hotTurns}t)" : "";
+            
+            Debug.Log($"[UpdateStatusEffectsUI] Setting playerHotText GameObject Active: {shouldBeActive}"); 
+            playerHotText.gameObject.SetActive(shouldBeActive);
+        }
+        else
+        {
+             Debug.LogWarning("[UpdateStatusEffectsUI] playerHotText is null!");
         }
 
         // Player Strength
@@ -452,6 +484,7 @@ public class CombatUIManager
             opponentPetStrengthText.text = (strength != 0) ? $"Strength: {strength:+0;-#}" : "";
             opponentPetStrengthText.gameObject.SetActive(strength != 0);
         }
+        */
     }
     
     public void UpdateHandUI()

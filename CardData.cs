@@ -1,7 +1,6 @@
 using UnityEngine;
 using System.Collections.Generic;
 
-// --- ADDED: Enum for Discard Effects --- 
 public enum DiscardEffectType
 {
     None,
@@ -11,9 +10,7 @@ public enum DiscardEffectType
     DrawCard,
     GainEnergy
 }
-// --- END ADDED ---
 
-// --- ADDED: Enum for Combo Effects --- 
 public enum ComboEffectType
 {
     None,
@@ -23,41 +20,32 @@ public enum ComboEffectType
     GainEnergy         // Target is implicitly Player
     // Add more complex combo effects later
 }
-// --- END ADDED ---
 
-// --- ADDED: Enum for Cost Change Target ---
 public enum CostChangeTargetType
 {
     None,
     PlayerHand,
     OpponentHand
 }
-// --- END ADDED ---
 
-// --- ADDED: Enum for Upgrade Target Rule ---
 public enum UpgradeTargetRule
 {
     Random,
     Cheapest,
     MostExpensive
 }
-// --- END ADDED ---
 
-// --- ADDED: Enum for Opponent Pet Primary Target --- 
 public enum OpponentPetTargetType
 {
     Player, // The player the pet is fighting
     Self    // The pet itself
 }
-// --- END ADDED ---
 
-// --- ADDED: Enum for Crit Buff Target Rule ---
 public enum CritBuffTargetRule
 {
     Target, // Apply buff to the entity the card was dropped on
     Self    // Apply buff to the entity playing the card (Player or Opponent Pet)
 }
-// --- END ADDED ---
 
 [CreateAssetMenu(fileName = "New Card", menuName = "Cards/Card Data")]
 public class CardData : ScriptableObject
@@ -125,10 +113,8 @@ public class CardData : ScriptableObject
     public int costChangeCardCount = 0; // How many cards targeted (0 = all, >0 = random count)
 
     [Header("Critical Chance Buff Effect")]
-    // [Tooltip("Where the card needs to be dropped to trigger this effect (if applicable). Often Any/PlayerSelf.")]
-    // public CardDropZone.TargetType critChanceBuffTarget = CardDropZone.TargetType.PlayerSelf; // REMOVED - Redundant with CritBuffRule
     [Tooltip("Should the crit buff apply to the target it was dropped on (Target), or the entity playing the card (Self)?")]
-    public CritBuffTargetRule critBuffRule = CritBuffTargetRule.Self; // NEW: Rule for targeting. Default to Self.
+    public CritBuffTargetRule critBuffRule = CritBuffTargetRule.Self; // Default to Self.
     public int critChanceBuffAmount = 0; // Percentage bonus (e.g., 20 for +20%)
     public int critChanceBuffDuration = 0; // Duration in turns (0 = end of combat)
 
@@ -144,14 +130,6 @@ public class CardData : ScriptableObject
     [Header("Upgrade Info")]
     public CardData upgradedVersion = null; // Link to the ScriptableObject representing the upgraded version of this card
 
-    // --- MODIFIED Art & Effect Fields ---
     public Sprite cardArt;          // Image displayed on the card itself
     public GameObject targetEffectPrefab; // Prefab with animation to play on target
-    // --- END MODIFIED ---
-
-    // --- REMOVED Undefined List ---
-    // public List<CardEffect> effects = new List<CardEffect>();
-    // --- END REMOVED ---
-
-    // Add more properties later (e.g., damage, block, effects)
 } 

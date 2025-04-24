@@ -114,36 +114,44 @@ public class StatusEffectManager
     public void ApplyStatusEffectLocalPet(StatusEffectType type, int duration)
     {
         if (duration <= 0) return;
+        string propKeyToUpdate = null;
+        
         switch(type)
         {
             case StatusEffectType.Weak:
                 localPetWeakTurns += duration;
+                propKeyToUpdate = CombatStateManager.PLAYER_COMBAT_PET_WEAK_PROP;
                 Debug.Log($"Applied Weak to Local Pet for {duration} turns. Total: {localPetWeakTurns}");
                 break;
             case StatusEffectType.Break:
                 localPetBreakTurns += duration;
+                propKeyToUpdate = CombatStateManager.PLAYER_COMBAT_PET_BREAK_PROP;
                 Debug.Log($"Applied Break to Local Pet for {duration} turns. Total: {localPetBreakTurns}");
                 break;
-            // --- ADDED: Handle Thorns --- 
             case StatusEffectType.Thorns:
                 localPetThorns += duration; // Duration parameter used as amount for Thorns
+                propKeyToUpdate = CombatStateManager.PLAYER_COMBAT_PET_THORNS_PROP;
                 Debug.Log($"Applied {duration} Thorns to Local Pet. Total: {localPetThorns}");
                 break;
-            // --- ADDED: Handle Strength --- 
             case StatusEffectType.Strength:
                 localPetStrength += duration; // Duration param used as amount
+                propKeyToUpdate = CombatStateManager.PLAYER_COMBAT_PET_STRENGTH_PROP;
                 Debug.Log($"Applied {duration} Strength to Local Pet. Total: {localPetStrength}");
                 break;
-            // --- END ADDED ---
         }
-
-        // --- ADDED: Notify others --- 
-        if (PhotonNetwork.InRoom)
+        
+        // --- ADDED: Sync Property --- 
+        if (!string.IsNullOrEmpty(propKeyToUpdate))
         {
-            // Send the type and the value (which is in the duration parameter for Thorns/Strength)
-            gameManager.GetPhotonView()?.RPC("RpcApplyStatusToMyPet", RpcTarget.Others, type, duration);
+            gameManager.GetPlayerManager()?.GetHealthManager()?.UpdatePlayerStatProperties(propKeyToUpdate);
         }
         // --- END ADDED ---
+
+        // Notify others
+        if (PhotonNetwork.InRoom)
+        {
+            gameManager.GetPhotonView()?.RPC("RpcApplyStatusToMyPet", RpcTarget.Others, type, duration);
+        }
     }
     
     public void ApplyStatusEffectOpponentPet(StatusEffectType type, int duration, bool originatedFromRPC = false)

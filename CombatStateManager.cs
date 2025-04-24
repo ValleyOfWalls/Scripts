@@ -44,6 +44,19 @@ public class CombatStateManager
     // Add the constant for pet health tracking
     public const string PLAYER_COMBAT_PET_HP_PROP = "combatPetHP";
     
+    // --- ADDED: Pet Stat Sync Properties ---
+    public const string PLAYER_COMBAT_PET_HOT_TURNS_PROP = "combatPetHotTurns";
+    public const string PLAYER_COMBAT_PET_HOT_AMT_PROP = "combatPetHotAmt";
+    // Add more pet-specific props here if needed (e.g., Block, Weak, Break, Strength, Crit)
+    public const string PLAYER_COMBAT_PET_WEAK_PROP = "combatPetWeakTurns";
+    public const string PLAYER_COMBAT_PET_BREAK_PROP = "combatPetBreakTurns";
+    public const string PLAYER_COMBAT_PET_THORNS_PROP = "combatPetThornsAmt";
+    public const string PLAYER_COMBAT_PET_STRENGTH_PROP = "combatPetStrengthAmt";
+    public const string PLAYER_COMBAT_PET_DOT_TURNS_PROP = "combatPetDotTurns";
+    public const string PLAYER_COMBAT_PET_DOT_DMG_PROP = "combatPetDotDmg";
+    public const string PLAYER_COMBAT_PET_CRIT_PROP = "combatPetCrit"; // Stores total effective crit %
+    // --- END ADDED ---
+    
     public CombatStateManager(GameManager gameManager)
     {
         this.gameManager = gameManager;
