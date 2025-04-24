@@ -43,6 +43,9 @@ public class GameManager : MonoBehaviourPunCallbacks
     private CombatUIManager combatUIManager;
     private CombatCalculator combatCalculator;
     private DraftManager draftManager;
+    // --- ADDED: Card Preview Calculator ---
+    private CardPreviewCalculator cardPreviewCalculator;
+    // --- END ADDED ---
 
     // PhotonView component reference
     private PhotonView photonViewComponent;
@@ -92,6 +95,9 @@ public class GameManager : MonoBehaviourPunCallbacks
         combatManager = new CombatManager(); // Default constructor
         combatUIManager = new CombatUIManager(this); // Initialize with reference to this GameManager
         draftManager = new DraftManager(); // Default constructor
+        // --- ADDED: Initialize Card Preview Calculator ---
+        cardPreviewCalculator = new CardPreviewCalculator(this);
+        // --- END ADDED ---
 
         // ** Initialize and sync local pet deck early **
         if (cardManager != null)
@@ -998,6 +1004,13 @@ public class GameManager : MonoBehaviourPunCallbacks
     {
         return combatCalculator;
     }
+
+    // --- ADDED: Getter for Card Preview Calculator ---
+    public CardPreviewCalculator GetCardPreviewCalculator()
+    {
+        return cardPreviewCalculator;
+    }
+    // --- END ADDED ---
 
     #endregion
 }

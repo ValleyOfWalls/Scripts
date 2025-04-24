@@ -121,7 +121,7 @@ public class CardEffectService
                         isBelowHealthThreshold
                     );
                     
-                    if (totalBlock > 0)
+                    if (totalBlock > 0) 
                     {
                         playerManager.AddBlockToOpponentPet(totalBlock);
                         Debug.Log($"Applied {totalBlock} block to Enemy Pet. Base: {cardData.block}");
@@ -560,15 +560,15 @@ public class CardEffectService
             
             if (actualDamage > 0)
             {
-                if (target == OpponentPetTargetType.Player)
-                {
-                    playerManager.DamageLocalPlayer(actualDamage); // Pass potentially doubled damage
-                    Debug.Log($"Opponent Pet dealt {actualDamage} damage to Player. (Base: {cardToPlay.damage}, StrB: {strengthBonus}). Player Health: {playerManager.GetLocalPlayerHealth()}, Block: {playerManager.GetLocalPlayerBlock()}");
-                }
-                else if (target == OpponentPetTargetType.Self)
-                {
-                    playerManager.DamageOpponentPet(actualDamage); // Call the standard method
-                    Debug.Log($"Opponent Pet dealt {actualDamage} damage to ITSELF. (Base: {cardToPlay.damage}, StrB: {strengthBonus}). Pet Health: {playerManager.GetOpponentPetHealth()}, Block: {playerManager.GetOpponentPetBlock()}");
+            if (target == OpponentPetTargetType.Player) 
+            {
+                playerManager.DamageLocalPlayer(actualDamage); // Pass potentially doubled damage
+                Debug.Log($"Opponent Pet dealt {actualDamage} damage to Player. (Base: {cardToPlay.damage}, StrB: {strengthBonus}). Player Health: {playerManager.GetLocalPlayerHealth()}, Block: {playerManager.GetLocalPlayerBlock()}");
+            }
+            else if (target == OpponentPetTargetType.Self)
+            {
+                playerManager.DamageOpponentPet(actualDamage); // Call the standard method
+                Debug.Log($"Opponent Pet dealt {actualDamage} damage to ITSELF. (Base: {cardToPlay.damage}, StrB: {strengthBonus}). Pet Health: {playerManager.GetOpponentPetHealth()}, Block: {playerManager.GetOpponentPetBlock()}");
                 }
             }
         }
@@ -599,22 +599,22 @@ public class CardEffectService
         // --- Apply Healing ---
         if (cardToPlay.healingAmount > 0)
         {
-            if (target == OpponentPetTargetType.Self)
-            {
+             if (target == OpponentPetTargetType.Self)
+             {
                 playerManager.HealOpponentPet(cardToPlay.healingAmount);
                 Debug.Log($"Opponent Pet healed itself for {cardToPlay.healingAmount}. New health: {playerManager.GetOpponentPetHealth()}");
-            }
-            else if (target == OpponentPetTargetType.Player)
-            {
+             }
+             else if (target == OpponentPetTargetType.Player)
+             {
                 // Unusual case but handle it for completeness
-                playerManager.HealLocalPlayer(cardToPlay.healingAmount);
+                playerManager.HealLocalPlayer(cardToPlay.healingAmount); 
                 Debug.LogWarning($"Opponent Pet card {cardToPlay.cardName} healed Player for {cardToPlay.healingAmount}. New health: {playerManager.GetLocalPlayerHealth()}");
-            }
+             }
         }
         
         // --- Apply Status Effects ---
         if (cardToPlay.statusToApply != StatusEffectType.None)
-        {
+        { 
             int valueToApply = 0;
             switch (cardToPlay.statusToApply) {
                 case StatusEffectType.Thorns: valueToApply = cardToPlay.thornsAmount; break;
@@ -625,7 +625,7 @@ public class CardEffectService
             if (valueToApply > 0) {
                 if (target == OpponentPetTargetType.Self)
                 {
-                    playerManager.ApplyStatusEffectOpponentPet(cardToPlay.statusToApply, valueToApply);
+                     playerManager.ApplyStatusEffectOpponentPet(cardToPlay.statusToApply, valueToApply);
                     Debug.Log($"Opponent Pet applied {cardToPlay.statusToApply} to itself for {valueToApply}.");
                 }
                 else if (target == OpponentPetTargetType.Player)
@@ -640,7 +640,7 @@ public class CardEffectService
         
         // --- Apply DoT ---
         if (cardToPlay.dotDamageAmount > 0 && cardToPlay.dotDuration > 0)
-        {
+        { 
             if (target == OpponentPetTargetType.Player)
             {
                 playerManager.ApplyDotLocalPlayer(cardToPlay.dotDamageAmount, cardToPlay.dotDuration);
@@ -655,7 +655,7 @@ public class CardEffectService
         
         // --- Apply HoT ---
         if (cardToPlay.hotAmount > 0 && cardToPlay.hotDuration > 0)
-        {
+        { 
             if (target == OpponentPetTargetType.Self)
             {
                 playerManager.ApplyHotOpponentPet(cardToPlay.hotAmount, cardToPlay.hotDuration);
@@ -690,10 +690,10 @@ public class CardEffectService
         // --- Apply Discard Random (Opponent Pet discards - simulated locally) ---
         if (cardToPlay.discardRandomAmount > 0)
         {
-            Debug.Log($"Opponent Pet discards {cardToPlay.discardRandomAmount} random cards (simulated).");
-            gameManager.GetCardManager().GetPetDeckManager().DiscardRandomOpponentPetCards(cardToPlay.discardRandomAmount);
+             Debug.Log($"Opponent Pet discards {cardToPlay.discardRandomAmount} random cards (simulated).");
+             gameManager.GetCardManager().GetPetDeckManager().DiscardRandomOpponentPetCards(cardToPlay.discardRandomAmount);
         }
-        
+
         // --- Apply Crit Chance Buff Effect (Pet Playing Card) ---
         if (cardToPlay.critChanceBuffAmount > 0)
         {

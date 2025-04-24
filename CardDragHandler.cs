@@ -277,6 +277,13 @@ public class CardDragHandler : MonoBehaviour, IBeginDragHandler, IDragHandler, I
             Debug.Log($"Card {cardData.cardName} played successfully. Discard animation should handle this GameObject.", this.gameObject);
         }
         // If played successfully, GameManager's UpdateHandUI will handle removal/re-layout
+
+        // --- ADDED: Restore original card description ---
+        if (gameManager != null && gameManager.GetCardPreviewCalculator() != null)
+        {
+            gameManager.GetCardPreviewCalculator().RestoreOriginalDescription(gameObject);
+        }
+        // --- END ADDED ---
     }
 
     // --- ADDED: Public Hover Methods (called by HandPanelHoverManager) ---

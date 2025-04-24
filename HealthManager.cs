@@ -166,6 +166,9 @@ public class HealthManager
         // Get required data from status effect manager
         StatusEffectManager statusManager = gameManager.GetPlayerManager().GetStatusEffectManager();
         bool isPlayerBroken = statusManager.IsPlayerBroken();
+        bool isPlayerWeak = statusManager.IsPlayerWeak(); // Added: Get player weak status
+        
+        Debug.Log($"DEBUG DamageLocalPlayer: Initial amount={amount}, isPlayerBroken={isPlayerBroken}, isPlayerWeak={isPlayerWeak}");
         
         // Get combat calculator
         CombatCalculator calculator = gameManager.GetCombatCalculator();
@@ -175,7 +178,7 @@ public class HealthManager
             amount,                 // Raw damage
             0,                      // Attacker strength (0 for opponent pet attacking player)
             localPlayerBlock,       // Target block
-            false,                  // Attacker is weak (opponent pet not considered here)
+            isPlayerWeak,           // FIXED: Properly consider player weakness for self-damage
             isPlayerBroken,         // Target is broken
             0                       // Attacker crit chance (not applicable here, pet crits handled elsewhere)
         );

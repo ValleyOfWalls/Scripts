@@ -9,7 +9,7 @@ public class CardDropZone : MonoBehaviour, IDropHandler, IPointerEnterHandler, I
     {
         OwnPet,
         EnemyPet,
-        PlayerSelf // If cards can target the player directly
+        PlayerSelf, // If cards can target the player directly
         // Add other target types as needed
     }
 
@@ -53,7 +53,9 @@ public class CardDropZone : MonoBehaviour, IDropHandler, IPointerEnterHandler, I
     public void OnPointerEnter(PointerEventData eventData)
     {
         // Check if the object being dragged is a card
-        if (eventData.pointerDrag != null && eventData.pointerDrag.GetComponent<CardDragHandler>() != null)
+        GameObject hoveringCard = eventData.pointerDrag;
+        
+        if (hoveringCard != null && hoveringCard.GetComponent<CardDragHandler>() != null)
         {
             Debug.Log($"Card entered drop zone: {gameObject.name}");
             // Show highlight (optional)
@@ -65,6 +67,23 @@ public class CardDropZone : MonoBehaviour, IDropHandler, IPointerEnterHandler, I
             {
                 Debug.LogWarning($"HighlightGraphic is null on {gameObject.name}");
             }
+            
+            // --- ADDED: Preview damage calculation when hovering over a target ---
+            CardDragHandler cardHandler = hoveringCard.GetComponent<CardDragHandler>();
+            if (cardHandler != null && cardHandler.cardData != null)
+            {
+                GameManager gameManager = GameManager.Instance;
+                if (gameManager != null && gameManager.GetCardPreviewCalculator() != null)
+                {
+                    // Update the card's text with preview damage
+                    gameManager.GetCardPreviewCalculator().UpdateCardPreviewForTarget(
+                        hoveringCard, 
+                        cardHandler.cardData, 
+                        targetType
+                    );
+                }
+            }
+            // --- END ADDED ---
         }
     }
 
@@ -73,7 +92,9 @@ public class CardDropZone : MonoBehaviour, IDropHandler, IPointerEnterHandler, I
     {
          // Check if the object that *was* being dragged is a card 
          // (eventData.pointerDrag might be null if drop happened elsewhere)
-        if (eventData.pointerDrag != null && eventData.pointerDrag.GetComponent<CardDragHandler>() != null)
+        GameObject exitingCard = eventData.pointerDrag;
+        
+        if (exitingCard != null && exitingCard.GetComponent<CardDragHandler>() != null)
         {
             Debug.Log($"Card exited drop zone: {gameObject.name}");
             // Hide highlight (optional)
@@ -85,6 +106,14 @@ public class CardDropZone : MonoBehaviour, IDropHandler, IPointerEnterHandler, I
             {
                 Debug.LogWarning($"HighlightGraphic is null on {gameObject.name}");
             }
+            
+            // --- ADDED: Restore original card description ---
+            GameManager gameManager = GameManager.Instance;
+            if (gameManager != null && gameManager.GetCardPreviewCalculator() != null)
+            {
+                gameManager.GetCardPreviewCalculator().RestoreOriginalDescription(exitingCard);
+            }
+            // --- END ADDED ---
         }
          // Also hide if the pointer exits for any reason while highlight is on
          else if (highlightGraphic != null && highlightGraphic.enabled)

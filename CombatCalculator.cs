@@ -64,11 +64,19 @@ public class CombatCalculator
         result.BlockConsumed = Mathf.Min(damageAfterCrit, targetBlock);
         result.DamageAfterBlock = damageAfterCrit - result.BlockConsumed;
         
+        // DEBUG: Log pre-break damage values
+        Debug.Log($"DEBUG PRE-BREAK: Raw={rawDamage}, Strength={attackerStrength}, isWeak={isAttackerWeak}, isBroken={isTargetBroken}, Block={targetBlock}, DamageAfterBlock={result.DamageAfterBlock}");
+        
         // Apply break status if target is broken and damage got through block
         if (isTargetBroken && result.DamageAfterBlock > 0)
         {
-            int breakBonus = Mathf.FloorToInt(result.DamageAfterBlock * BREAK_DAMAGE_INCREASE);
-            result.DamageAfterBlock += breakBonus;
+            // COMPLETELY REDONE: Explicitly calculate 1.5x damage instead of using the constant
+            // to ensure we don't accidentally get 2x or any unexpected multiplier
+            int originalDamage = result.DamageAfterBlock;
+            int breakBonus = Mathf.FloorToInt(originalDamage * 0.5f); // Exactly 50% more
+            result.DamageAfterBlock = originalDamage + breakBonus;
+            
+            Debug.Log($"DEBUG BREAK APPLIED: Original damage={originalDamage}, Break bonus={breakBonus}, Final damage={result.DamageAfterBlock}");
         }
         
         // Ensure damage is not negative
