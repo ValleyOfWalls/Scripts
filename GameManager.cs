@@ -55,6 +55,11 @@ public class GameManager : MonoBehaviourPunCallbacks
     // --- ADDED: Debug toggle for enemy test mode ---
     private bool debugEnemyTestMode = false;
 
+    private StatusEffectManager statusEffectManager;
+    private CardModificationService cardModificationService;
+    private HandPanelHoverManager handPanelHoverManager;
+    private DamageNumberManager damageNumberManager;
+
     #region Unity Lifecycle Methods
 
     void Awake()
@@ -534,6 +539,14 @@ public class GameManager : MonoBehaviourPunCallbacks
         Debug.Log($"RPC Received: My Pet taking {finalDamageAmount} final damage.");
         // Pass the final damage amount calculated by the sender
         playerManager.DamageLocalPet(finalDamageAmount); 
+        
+        // Show damage number on this client even though the damage was initiated by the opponent
+        DamageNumberManager damageManager = GetDamageNumberManager();
+        if (damageManager != null)
+        {
+            GameObject ownPetObject = GetCombatUIManager().GetOwnPetUIArea();
+            damageManager.ShowDamageNumber(finalDamageAmount, ownPetObject, false);
+        }
     }
 
     // --- ADDED: RPC for Hand Cost Modifier ---
@@ -789,10 +802,34 @@ public class GameManager : MonoBehaviourPunCallbacks
         Player opponentPlayer = playerManager?.GetOpponentPlayer();
         if (opponentPlayer != null && info.Sender == opponentPlayer)
         {
+            // Store the previous health value to calculate the change
+            int oldHealth = playerManager?.GetHealthManager()?.GetOpponentPetHealth() ?? 0;
+            
             // This is a direct update from our opponent about their pet health
             Debug.Log($"RPC: Received RpcNotifyOpponentOfLocalPetHealthChange({newPetHealth}) from current opponent {info.Sender.NickName}. Updating opponent pet health in our local simulation.");
             playerManager?.GetHealthManager()?.SetOpponentPetHealth(newPetHealth);
             UpdateHealthUI(); // Update UI to reflect the change
+            
+            // Calculate the health change and show appropriate number
+            int healthChange = newPetHealth - oldHealth;
+            if (healthChange != 0)
+            {
+                DamageNumberManager damageManager = GetDamageNumberManager();
+                if (damageManager != null)
+                {
+                    GameObject opponentPetObject = GetCombatUIManager().GetOpponentPetUIArea();
+                    if (healthChange > 0)
+                    {
+                        // Health increased - show healing
+                        damageManager.ShowHealNumber(healthChange, opponentPetObject);
+                    }
+                    else
+                    {
+                        // Health decreased - show damage
+                        damageManager.ShowDamageNumber(-healthChange, opponentPetObject, false);
+                    }
+                }
+            }
         }
         else
         {
@@ -810,6 +847,14 @@ public class GameManager : MonoBehaviourPunCallbacks
             Debug.Log($"RPC: Received RpcHealMyPet({healAmount}) from {info.Sender.NickName}. Healing our local pet.");
             // Directly heal our local pet
             playerManager?.HealLocalPet(healAmount);
+            
+            // Show healing number on this client
+            DamageNumberManager damageManager = GetDamageNumberManager();
+            if (damageManager != null)
+            {
+                GameObject ownPetObject = GetCombatUIManager().GetOwnPetUIArea();
+                damageManager.ShowHealNumber(healAmount, ownPetObject);
+            }
         }
         else
         {
@@ -1142,6 +1187,19 @@ public class GameManager : MonoBehaviourPunCallbacks
         {
             combatUIManager.ShowDebugModeStatus("Status Effects Reset (Network)", true);
         }
+    }
+
+    // Method to register DamageNumberManager with GameManager
+    public void RegisterDamageNumberManager(DamageNumberManager manager)
+    {
+        this.damageNumberManager = manager;
+        Debug.Log("DamageNumberManager registered with GameManager");
+    }
+    
+    // Getter for DamageNumberManager
+    public DamageNumberManager GetDamageNumberManager()
+    {
+        return damageNumberManager;
     }
 
     #endregion

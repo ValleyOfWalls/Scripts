@@ -247,6 +247,17 @@ public class HealthManager
         }
         
         // If source is OpponentPetThorns or PlayerSelfThorns, no further thorns action
+
+        // Add damage numbers if damage was dealt
+        if (result.DamageAfterBlock > 0)
+        {
+            DamageNumberManager damageManager = gameManager.GetDamageNumberManager();
+            if (damageManager != null)
+            {
+                GameObject playerObject = gameManager.GetCombatUIManager().GetPlayerUIArea();
+                damageManager.ShowDamageNumber(result.DamageAfterBlock, playerObject, result.IsCritical);
+            }
+        }
     }
     
     /// <summary>
@@ -318,6 +329,17 @@ public class HealthManager
             DamageLocalPlayer(opponentPetThorns, false, DamageSource.OpponentPetThorns); // Mark this as thorns damage to prevent infinite loops
         }
 
+        // Trigger damage number popup if damage was dealt
+        if (result.DamageAfterBlock > 0)
+        {
+            DamageNumberManager damageManager = gameManager.GetDamageNumberManager();
+            if (damageManager != null)
+            {
+                GameObject opponentPetObject = gameManager.GetCombatUIManager().GetOpponentPetUIArea();
+                damageManager.ShowDamageNumber(result.DamageAfterBlock, opponentPetObject, result.IsCritical);
+            }
+        }
+
         return result;
     }
 
@@ -329,25 +351,35 @@ public class HealthManager
     {
         if (amount <= 0) return;
         
-        Debug.Log($"DamageOpponentPet: Processing {amount} damage dealt by local player.");
-
-        // Apply the damage locally first (handles block, break, crit, health update, UI, win check)
-        CombatCalculator.DamageResult localDamageResult = ApplyDamageToOpponentPetLocally(amount);
-
-        // Only notify the opponent if the opponent pet is still alive (prevent redundant RPCs after win)
-        // And ensure we have an opponent to notify
-        Player opponentPlayer = gameManager.GetPlayerManager().GetOpponentPlayer();
-        if (opponentPetHealth > 0 && opponentPlayer != null)
+        PlayerManager playerManager = gameManager.GetPlayerManager();
+        Player opponentPlayer = playerManager.GetOpponentPlayer();
+        
+        // Deal damage locally first
+        CombatCalculator.DamageResult result = ApplyDamageToOpponentPetLocally(amount);
+        
+        if (opponentPlayer != null)
         {
-            // --- REVISED: Send FINAL damage after all local calculations (including Block/Break) ---
-            int damageToSend = localDamageResult.DamageAfterBlock;
-            Debug.Log($"Sending RpcTakePetDamage({damageToSend}) to {opponentPlayer.NickName} (Final Damage: {damageToSend}, Original: {amount}, Pre-Block/Break: {localDamageResult.DamageBeforeBlock})");
-            gameManager.GetPhotonView().RPC("RpcTakePetDamage", opponentPlayer, damageToSend);
-            // --- END REVISED ---
+            // Send RPC to opponent that their pet took damage
+            Debug.Log($"Sending RPC: RpcTakePetDamage({result.DamageAfterBlock}) to {opponentPlayer.NickName}");
+            
+            // We send only the FINAL damage amount after local calculations,
+            // since the opponent cannot apply further defense calculations
+            gameManager.GetPhotonView().RPC("RpcTakePetDamage", opponentPlayer, result.DamageAfterBlock);
         }
-        else if (opponentPlayer == null)
+        else
         {
-             Debug.LogWarning("DamageOpponentPet: Cannot send RPC, opponentPlayer is null.");
+            Debug.LogWarning("DamageOpponentPet: Cannot send RPC, opponentPlayer is null. Only local simulation updated.");
+        }
+        
+        // Add damage numbers if damage was dealt
+        if (result.DamageAfterBlock > 0)
+        {
+            DamageNumberManager damageManager = gameManager.GetDamageNumberManager();
+            if (damageManager != null)
+            {
+                GameObject opponentPetObject = gameManager.GetCombatUIManager().GetOpponentPetUIArea();
+                damageManager.ShowDamageNumber(result.DamageAfterBlock, opponentPetObject, result.IsCritical);
+            }
         }
     }
     
@@ -417,6 +449,17 @@ public class HealthManager
             DamageLocalPlayer(localPetThorns, false, DamageSource.PlayerSelfThorns);
         }
 
+        // Trigger damage number popup if damage was dealt
+        if (result.DamageAfterBlock > 0)
+        {
+            DamageNumberManager damageManager = gameManager.GetDamageNumberManager();
+            if (damageManager != null)
+            {
+                GameObject ownPetObject = gameManager.GetCombatUIManager().GetOwnPetUIArea();
+                damageManager.ShowDamageNumber(result.DamageAfterBlock, ownPetObject, result.IsCritical);
+            }
+        }
+
         return result;
     }
     // --- END ADDED ---
@@ -424,30 +467,31 @@ public class HealthManager
     public void DamageLocalPet(int finalDamageAmount, bool updateUIImmediate = true)
     {
         if (finalDamageAmount <= 0) return;
+        Debug.Log($"Damaging local pet for {finalDamageAmount}");
         
-        // For player attacking their own pet, use the full ApplyDamageToLocalPetLocally method 
-        // which will apply thorns properly
-        CombatCalculator.DamageResult result = ApplyDamageToLocalPetLocally(finalDamageAmount);
+        // Directly apply the final calculated damage amount
+        localPetHealth = Mathf.Max(0, localPetHealth - finalDamageAmount);
+        
+        // Notify our opponent who's fighting our pet that our pet took damage
+        // so they can update their UI representing our pet
+        Player opponentPlayer = gameManager.GetPlayerManager().GetOpponentPlayer();
+        if (opponentPlayer != null)
+        {
+            gameManager.GetPhotonView().RPC("RpcNotifyOpponentOfLocalPetHealthChange", opponentPlayer, localPetHealth);
+        }
         
         if (updateUIImmediate)
         {
-            gameManager.UpdateHealthUI(); 
+            gameManager.UpdateHealthUI();
         }
         
-        // --- ADDED: Update pet health property for network sync ---
-        if (PhotonNetwork.InRoom)
+        // Add damage numbers if damage was dealt
+        DamageNumberManager damageManager = gameManager.GetDamageNumberManager();
+        if (damageManager != null)
         {
-            // Create a property update for the pet's health
-            Hashtable petProps = new Hashtable();
-            
-            // We want to track our own pet's health as a separate property
-            petProps.Add(CombatStateManager.PLAYER_COMBAT_PET_HP_PROP, localPetHealth);
-            
-            // Set the custom property
-            PhotonNetwork.LocalPlayer.SetCustomProperties(petProps);
-            Debug.Log($"Updated local pet health property to {localPetHealth}");
+            GameObject ownPetObject = gameManager.GetCombatUIManager().GetOwnPetUIArea();
+            damageManager.ShowDamageNumber(finalDamageAmount, ownPetObject, false);
         }
-        // --- END ADDED ---
     }
     
     #endregion
@@ -600,6 +644,26 @@ public class HealthManager
              UpdatePlayerStatProperties(CombatStateManager.PLAYER_COMBAT_PLAYER_HP_PROP);
              // --- END ADDED ---
         }
+
+        // Calculate how much healing to apply
+        int actualHealing = Mathf.Min(amount, GetEffectivePlayerMaxHealth() - localPlayerHealth);
+        
+        // Apply healing
+        localPlayerHealth += actualHealing;
+        
+        // Update UI
+        gameManager.UpdateHealthUI();
+        
+        // Show healing number popup
+        if (actualHealing > 0)
+        {
+            DamageNumberManager damageManager = gameManager.GetDamageNumberManager();
+            if (damageManager != null)
+            {
+                GameObject playerObject = gameManager.GetCombatUIManager().GetPlayerUIArea();
+                damageManager.ShowHealNumber(actualHealing, playerObject);
+            }
+        }
     }
 
     public void HealLocalPet(int amount)
@@ -636,30 +700,64 @@ public class HealthManager
             // --- END ADDED ---
         }
         // --- END ADDED ---
+
+        // Calculate how much healing to apply
+        int actualHealing = Mathf.Min(amount, GetEffectivePetMaxHealth() - localPetHealth);
+        
+        // Apply healing
+        localPetHealth += actualHealing;
+        
+        // Update UI
+        gameManager.UpdateHealthUI();
+        
+        // Show healing number popup
+        if (actualHealing > 0)
+        {
+            DamageNumberManager damageManager = gameManager.GetDamageNumberManager();
+            if (damageManager != null)
+            {
+                GameObject ownPetObject = gameManager.GetCombatUIManager().GetOwnPetUIArea();
+                damageManager.ShowHealNumber(actualHealing, ownPetObject);
+            }
+        }
     }
     
     public void HealOpponentPet(int amount)
     {
         if (amount <= 0) return;
-        int effectiveMaxHP = GetEffectiveOpponentPetMaxHealth();
-        opponentPetHealth += amount;
-        if (opponentPetHealth > effectiveMaxHP) opponentPetHealth = effectiveMaxHP;
-        Debug.Log($"Healed Opponent Pet by {amount} (local sim). New health: {opponentPetHealth} / {effectiveMaxHP}");
-        gameManager.UpdateHealthUI();
         
-        // --- ADDED: Network Sync for Opponent Pet Healing ---
+        // Calculate how much healing to apply (cap to max health)
+        int effectiveMaxHealth = GetEffectiveOpponentPetMaxHealth();
+        int actualHealingAmount = Mathf.Min(amount, effectiveMaxHealth - opponentPetHealth);
+        
+        // Apply healing
+        opponentPetHealth = Mathf.Min(effectiveMaxHealth, opponentPetHealth + actualHealingAmount);
+        
+        // Notify the opponent that their pet was healed
         Player opponentPlayer = gameManager.GetPlayerManager().GetOpponentPlayer();
-        if (PhotonNetwork.InRoom && opponentPlayer != null)
+        if (opponentPlayer != null)
         {
-            // Send RPC to the specific opponent, telling them to heal *their* pet
-            gameManager.GetPhotonView().RPC("RpcHealMyPet", opponentPlayer, amount);
-            Debug.Log($"Sent RpcHealMyPet({amount}) to {opponentPlayer.NickName}.");
+            Debug.Log($"Sending RPC: RpcHealMyPet({actualHealingAmount}) to {opponentPlayer.NickName}");
+            gameManager.GetPhotonView().RPC("RpcHealMyPet", opponentPlayer, actualHealingAmount);
         }
-        else if (opponentPlayer == null)
+        else
         {
             Debug.LogWarning("HealOpponentPet: Cannot send RPC, opponentPlayer is null.");
         }
-        // --- END ADDED ---
+        
+        // Update UI
+        gameManager.UpdateHealthUI();
+        
+        // Show healing number on this client
+        if (actualHealingAmount > 0)
+        {
+            DamageNumberManager damageManager = gameManager.GetDamageNumberManager();
+            if (damageManager != null)
+            {
+                GameObject opponentPetObject = gameManager.GetCombatUIManager().GetOpponentPetUIArea();
+                damageManager.ShowHealNumber(actualHealingAmount, opponentPetObject);
+            }
+        }
     }
     
     #endregion
