@@ -95,6 +95,8 @@ public class PlayerManager
     public void DamageLocalPet(int amount) => healthManager.DamageLocalPet(amount);
     public void DamageOpponentPet(int amount) => healthManager.DamageOpponentPet(amount);
     
+    public CombatCalculator.DamageResult ApplyDamageToLocalPetLocally(int amount) => healthManager.ApplyDamageToLocalPetLocally(amount);
+    
     public void AddBlockToLocalPlayer(int amount) => healthManager.AddBlockToLocalPlayer(amount);
     public void AddBlockToLocalPet(int amount) => healthManager.AddBlockToLocalPet(amount);
     public void AddBlockToOpponentPet(int amount, bool updateUIImmediate = true) => healthManager.AddBlockToOpponentPet(amount, updateUIImmediate);

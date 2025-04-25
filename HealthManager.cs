@@ -1,4 +1,5 @@
 using UnityEngine;
+using System;
 using System.Collections.Generic;
 using System.Linq; // Added for Sum()
 using Photon.Pun;
@@ -314,6 +315,17 @@ public class HealthManager
 
         gameManager.UpdateHealthUI(); // Update both health and block display
         
+        // Sync the opponent pet block reduction to the opponent
+        if (result.BlockConsumed > 0 && PhotonNetwork.InRoom)
+        {
+            Player opponentPlayer = playerManager.GetOpponentPlayer();
+            if (opponentPlayer != null)
+            {
+                // Notify opponent their pet's block was reduced
+                gameManager.GetPhotonView().RPC("RpcUpdateOpponentPetBlock", opponentPlayer, opponentPetBlock);
+            }
+        }
+        
         // Check for win condition after applying damage
         if (opponentPetHealth <= 0)
         {
@@ -369,17 +381,6 @@ public class HealthManager
         else
         {
             Debug.LogWarning("DamageOpponentPet: Cannot send RPC, opponentPlayer is null. Only local simulation updated.");
-        }
-        
-        // Add damage numbers if damage was dealt
-        if (result.DamageAfterBlock > 0)
-        {
-            DamageNumberManager damageManager = gameManager.GetDamageNumberManager();
-            if (damageManager != null)
-            {
-                GameObject opponentPetObject = gameManager.GetCombatUIManager().GetOpponentPetUIArea();
-                damageManager.ShowDamageNumber(result.DamageAfterBlock, opponentPetObject, result.IsCritical);
-            }
         }
     }
     
@@ -439,6 +440,12 @@ public class HealthManager
 
         // Update pet health property for network sync (since local pet health changed)
         UpdatePlayerStatProperties(CombatStateManager.PLAYER_COMBAT_PET_HP_PROP);
+        
+        // Also sync the pet block since we reduced it
+        if (PhotonNetwork.InRoom)
+        {
+            gameManager.GetPhotonView().RPC("RpcUpdateLocalPetBlock", RpcTarget.Others, localPetBlock);
+        }
 
         // Apply thorns for self-damage if pet has thorns
         int localPetThorns = playerManager.GetLocalPetThorns();
@@ -558,6 +565,15 @@ public class HealthManager
     {
         opponentPetBlock = Mathf.Max(0, amount); // Ensure block doesn't go below 0
         Debug.Log($"Set Opponent Pet block (from network update) to {opponentPetBlock}");
+        gameManager.UpdateHealthUI(); // Update block display
+    }
+    // --- END ADDED ---
+
+    // --- ADDED: Direct Setter for Local Pet Block ---
+    public void SetLocalPetBlock(int amount)
+    {
+        localPetBlock = Mathf.Max(0, amount); // Ensure block doesn't go below 0
+        Debug.Log($"Set Local Pet block (from network update) to {localPetBlock}");
         gameManager.UpdateHealthUI(); // Update block display
     }
     // --- END ADDED ---
@@ -764,34 +780,45 @@ public class HealthManager
     
     #region DoT Methods
     
-    public void ApplyDotLocalPlayer(int damage, int duration)
+    // --- New generic DoT application method ---
+    private void ApplyDoTEffect(ref int targetTurns, ref int targetDamage, int damage, int duration, string targetName, params string[] propertiesToUpdate)
     {
         if (damage <= 0 || duration <= 0) return;
-        localPlayerDotTurns += duration;
-        localPlayerDotDamage = damage; 
-        Debug.Log($"Applied DoT to Player: {damage} damage for {duration} turns. Total Turns: {localPlayerDotTurns}");
         
-        // --- ADDED: Update Properties ---
-        UpdatePlayerStatProperties(
+        targetTurns += duration;
+        targetDamage = damage;
+        Debug.Log($"Applied DoT to {targetName}: {damage} damage for {duration} turns. Total Turns: {targetTurns}");
+        
+        if (propertiesToUpdate.Length > 0)
+        {
+            UpdatePlayerStatProperties(propertiesToUpdate);
+        }
+    }
+    
+    public void ApplyDotLocalPlayer(int damage, int duration)
+    {
+        ApplyDoTEffect(
+            ref localPlayerDotTurns, 
+            ref localPlayerDotDamage, 
+            damage, 
+            duration, 
+            "Player",
             CombatStateManager.PLAYER_COMBAT_PLAYER_DOT_TURNS_PROP,
             CombatStateManager.PLAYER_COMBAT_PLAYER_DOT_DMG_PROP
         );
-        // --- END ADDED ---
     }
     
     public void ApplyDotLocalPet(int damage, int duration)
     {
-        if (damage <= 0 || duration <= 0) return;
-        localPetDotTurns += duration;
-        localPetDotDamage = damage; 
-        Debug.Log($"Applied DoT to Local Pet: {damage} damage for {duration} turns. Total Turns: {localPetDotTurns}");
-        
-        // --- ADDED: Sync Properties ---
-        UpdatePlayerStatProperties(
+        ApplyDoTEffect(
+            ref localPetDotTurns, 
+            ref localPetDotDamage, 
+            damage, 
+            duration, 
+            "Local Pet",
             CombatStateManager.PLAYER_COMBAT_PET_DOT_TURNS_PROP,
             CombatStateManager.PLAYER_COMBAT_PET_DOT_DMG_PROP
         );
-        // --- END ADDED ---
 
         // Notify others
         if (PhotonNetwork.InRoom)
@@ -802,14 +829,17 @@ public class HealthManager
     
     public void ApplyDotOpponentPet(int damage, int duration, bool originatedFromRPC = false)
     {
-        if (damage <= 0 || duration <= 0) return;
-        opponentPetDotTurns += duration;
-        opponentPetDotDamage = damage; 
-        Debug.Log($"Applied DoT to Opponent Pet: {damage} damage for {duration} turns (local sim). Total Turns: {opponentPetDotTurns}");
+        ApplyDoTEffect(
+            ref opponentPetDotTurns, 
+            ref opponentPetDotDamage, 
+            damage, 
+            duration, 
+            "Opponent Pet (local sim)"
+        );
 
         // Notify the actual owner
         Player opponentPlayer = gameManager.GetPlayerManager()?.GetOpponentPlayer();
-        if (PhotonNetwork.InRoom && opponentPlayer != null && !originatedFromRPC) // Check originatedFromRPC here
+        if (PhotonNetwork.InRoom && opponentPlayer != null && !originatedFromRPC)
         {
             gameManager.GetPhotonView()?.RPC("RpcApplyDoTToMyPet", opponentPlayer, damage, duration);
         }
@@ -819,34 +849,43 @@ public class HealthManager
         }
     }
     
+    // --- Process DoT Effects ---
+    private void ProcessDoTEffect(ref int turns, ref int damage, Action<int> damageAction, string targetName, params string[] propertiesToUpdate)
+    {
+        if (turns <= 0 || damage <= 0) return;
+        
+        Debug.Log($"{targetName} DoT ticking for {damage} damage.");
+        damageAction(damage);
+        
+        turns--; // Decrement AFTER applying damage
+        if (turns == 0) damage = 0; // Clear damage if duration ends
+        
+        if (propertiesToUpdate.Length > 0)
+        {
+            UpdatePlayerStatProperties(propertiesToUpdate);
+        }
+    }
+    
     public void ProcessPlayerDotEffect()
     {
-        if (localPlayerDotTurns > 0 && localPlayerDotDamage > 0)
-        {
-            Debug.Log($"Player DoT ticking for {localPlayerDotDamage} damage.");
-            DamageLocalPlayer(localPlayerDotDamage); // This already calls UpdatePlayerStatProperties
-            
-            localPlayerDotTurns--; // Decrement AFTER applying damage
-            if (localPlayerDotTurns == 0) localPlayerDotDamage = 0; // Clear damage if duration ends
-            
-            // --- ADDED: Update DoT Properties explicitly after decrement ---
-            UpdatePlayerStatProperties(
-                CombatStateManager.PLAYER_COMBAT_PLAYER_DOT_TURNS_PROP,
-                CombatStateManager.PLAYER_COMBAT_PLAYER_DOT_DMG_PROP
-            );
-            // --- END ADDED ---
-        }
+        ProcessDoTEffect(
+            ref localPlayerDotTurns,
+            ref localPlayerDotDamage,
+            (damage) => DamageLocalPlayer(damage),
+            "Player",
+            CombatStateManager.PLAYER_COMBAT_PLAYER_DOT_TURNS_PROP,
+            CombatStateManager.PLAYER_COMBAT_PLAYER_DOT_DMG_PROP
+        );
     }
     
     public void ProcessLocalPetDotEffect()
     {
-        if (localPetDotTurns > 0 && localPetDotDamage > 0)
-        {
-            Debug.Log($"Local Pet DoT ticking for {localPetDotDamage} damage.");
-            DamageLocalPet(localPetDotDamage);
-            localPetDotTurns--; 
-            if (localPetDotTurns == 0) localPetDotDamage = 0; 
-        }
+        ProcessDoTEffect(
+            ref localPetDotTurns,
+            ref localPetDotDamage,
+            (damage) => DamageLocalPet(damage),
+            "Local Pet"
+        );
     }
     
     public void ProcessOpponentPetDotEffect()
@@ -889,155 +928,152 @@ public class HealthManager
     
     #region Crit Methods
     
-    // --- MODIFIED: ApplyCritChanceBuffPlayer ---
+    // Generic method to apply crit chance buff
+    private void ApplyCritBuff(List<CritBuff> buffList, int amount, int duration, string targetName, 
+                              Player targetPlayer = null, bool originatedFromRPC = false, params string[] propertiesToUpdate)
+    {
+        if (amount <= 0 || duration <= 0) return;
+        
+        buffList.Add(new CritBuff { amount = amount, turns = duration });
+        Debug.Log($"Applied Crit Chance Buff to {targetName}: +{amount}% for {duration} turns.");
+        
+        // Update property if specified
+        if (propertiesToUpdate.Length > 0)
+        {
+            UpdatePlayerStatProperties(propertiesToUpdate);
+        }
+        
+        // Send RPC to target player if specified and not from RPC
+        if (targetPlayer != null && !originatedFromRPC && PhotonNetwork.InRoom)
+        {
+            gameManager.GetPhotonView()?.RPC("RpcApplyCritBuffToMyPet", targetPlayer, amount, duration);
+        }
+    }
+    
     public void ApplyCritChanceBuffPlayer(int amount, int duration)
     {
-        if (amount <= 0 || duration <= 0) return;
-        localPlayerCritBuffs.Add(new CritBuff { amount = amount, turns = duration });
-        Debug.Log($"Applied Crit Chance Buff to Player: +{amount}% for {duration} turns.");
-        
-        // --- ADDED: Update Property ---
-        UpdatePlayerStatProperties(CombatStateManager.PLAYER_COMBAT_PLAYER_CRIT_PROP);
-        // --- END ADDED ---
-        
-        // Optionally update UI immediately if needed, though turn start/end updates might be sufficient
-        // gameManager.UpdateHealthUI(); 
+        ApplyCritBuff(
+            localPlayerCritBuffs, 
+            amount, 
+            duration, 
+            "Player", 
+            null, 
+            false,
+            CombatStateManager.PLAYER_COMBAT_PLAYER_CRIT_PROP
+        );
     }
-    // --- END MODIFIED ---
-
-    // --- MODIFIED: ApplyCritChanceBuffPet ---
+    
     public void ApplyCritChanceBuffPet(int amount, int duration)
     {
-        if (amount <= 0 || duration <= 0) return;
-        localPetCritBuffs.Add(new CritBuff { amount = amount, turns = duration });
-        Debug.Log($"Applied Crit Chance Buff to Pet: +{amount}% for {duration} turns.");
-
-        // --- ADDED: Sync Property ---
-        UpdatePlayerStatProperties(CombatStateManager.PLAYER_COMBAT_PET_CRIT_PROP);
-        // --- END ADDED ---
-
+        ApplyCritBuff(
+            localPetCritBuffs, 
+            amount, 
+            duration, 
+            "Pet", 
+            null, 
+            false,
+            CombatStateManager.PLAYER_COMBAT_PET_CRIT_PROP
+        );
+        
         // Notify others
         if (PhotonNetwork.InRoom)
         {
             gameManager.GetPhotonView()?.RPC("RpcApplyCritBuffToMyPet", RpcTarget.Others, amount, duration);
         }
     }
-    // --- END MODIFIED ---
-
-    // --- MODIFIED: ApplyCritChanceBuffOpponentPet ---
+    
     public void ApplyCritChanceBuffOpponentPet(int amount, int duration, bool originatedFromRPC = false)
     {
-        if (amount <= 0 || duration <= 0) return;
-        opponentPetCritBuffs.Add(new CritBuff { amount = amount, turns = duration });
-        Debug.Log($"Applied Crit Chance Buff to Opponent Pet: +{amount}% for {duration} turns (local sim).");
-
-        // Notify the actual owner IF this didn't come from an RPC itself
-        if (!originatedFromRPC)
-        {
-            Player opponentPlayer = gameManager.GetPlayerManager()?.GetOpponentPlayer();
-            if (PhotonNetwork.InRoom && opponentPlayer != null)
-            {
-                // Send amount and duration
-                gameManager.GetPhotonView()?.RPC("RpcApplyCritBuffToMyPet", opponentPlayer, amount, duration);
-            }
-        }
-        // Optionally update UI
-        // gameManager.UpdateHealthUI(); 
+        Player opponentPlayer = gameManager.GetPlayerManager()?.GetOpponentPlayer();
+        
+        ApplyCritBuff(
+            opponentPetCritBuffs, 
+            amount, 
+            duration, 
+            "Opponent Pet (local sim)", 
+            opponentPlayer, 
+            originatedFromRPC
+        );
     }
-    // --- END MODIFIED ---
-
-    // --- ADDED: Decrement Player Crit Buffs ---
-    public void DecrementPlayerCritBuffDurations()
+    
+    // Generic method to decrement crit buff durations
+    private bool DecrementCritBuffs(List<CritBuff> buffList, string targetName, params string[] propertiesToUpdate)
     {
         bool changed = false;
-        for (int i = localPlayerCritBuffs.Count - 1; i >= 0; i--)
+        
+        for (int i = buffList.Count - 1; i >= 0; i--)
         {
-            CritBuff buff = localPlayerCritBuffs[i];
+            CritBuff buff = buffList[i];
             buff.turns--;
+            
             if (buff.turns <= 0)
             {
-                localPlayerCritBuffs.RemoveAt(i);
-                Debug.Log($"Player Crit Buff ({buff.amount}%) expired.");
+                buffList.RemoveAt(i);
+                Debug.Log($"{targetName} Crit Buff ({buff.amount}%) expired.");
                 changed = true;
             }
             else
             {
-                localPlayerCritBuffs[i] = buff; // Update turns
+                buffList[i] = buff; // Update turns
             }
         }
         
-        // --- ADDED: Update Property if changed ---
-        if (changed)
+        // Update properties if changed and properties specified
+        if (changed && propertiesToUpdate.Length > 0)
         {
-            UpdatePlayerStatProperties(CombatStateManager.PLAYER_COMBAT_PLAYER_CRIT_PROP);
+            UpdatePlayerStatProperties(propertiesToUpdate);
         }
-        // --- END ADDED ---
+        
+        return changed;
     }
-    // --- END ADDED ---
-
-    // --- ADDED: Decrement Pet Crit Buffs ---
+    
+    public void DecrementPlayerCritBuffDurations()
+    {
+        DecrementCritBuffs(
+            localPlayerCritBuffs, 
+            "Player", 
+            CombatStateManager.PLAYER_COMBAT_PLAYER_CRIT_PROP
+        );
+    }
+    
     public void DecrementLocalPetCritBuffDurations()
     {
-        for (int i = localPetCritBuffs.Count - 1; i >= 0; i--)
-        {
-            CritBuff buff = localPetCritBuffs[i];
-            buff.turns--;
-            if (buff.turns <= 0)
-            {
-                localPetCritBuffs.RemoveAt(i);
-                Debug.Log($"Local Pet Crit Buff ({buff.amount}%) expired.");
-            }
-            else
-            {
-                localPetCritBuffs[i] = buff; // Update turns
-            }
-        }
+        DecrementCritBuffs(
+            localPetCritBuffs, 
+            "Local Pet", 
+            CombatStateManager.PLAYER_COMBAT_PET_CRIT_PROP
+        );
     }
-    // --- END ADDED ---
     
-    // --- ADDED: Decrement Opponent Pet Crit Buffs ---
     public void DecrementOpponentPetCritBuffDurations()
     {
-        for (int i = opponentPetCritBuffs.Count - 1; i >= 0; i--)
-        {
-            CritBuff buff = opponentPetCritBuffs[i];
-            buff.turns--;
-            if (buff.turns <= 0)
-            {
-                opponentPetCritBuffs.RemoveAt(i);
-                 Debug.Log($"Opponent Pet Crit Buff ({buff.amount}%) expired (local sim).");
-            }
-            else
-            {
-                opponentPetCritBuffs[i] = buff; // Update turns
-            }
-        }
+        DecrementCritBuffs(
+            opponentPetCritBuffs, 
+            "Opponent Pet"
+        );
     }
-    // --- END ADDED ---
-
-    // --- MODIFIED: GetPlayerEffectiveCritChance ---
+    
+    // Generic method to calculate effective crit chance
+    private int GetEffectiveCritChance(List<CritBuff> buffList)
+    {
+        int sumBonus = buffList.Sum(buff => buff.amount);
+        return Mathf.Max(0, CombatCalculator.BASE_CRIT_CHANCE + sumBonus); // Ensure non-negative
+    }
+    
     public int GetPlayerEffectiveCritChance()
     {
-        int sumBonus = localPlayerCritBuffs.Sum(buff => buff.amount);
-        return Mathf.Max(0, CombatCalculator.BASE_CRIT_CHANCE + sumBonus); // Ensure non-negative
+        return GetEffectiveCritChance(localPlayerCritBuffs);
     }
-    // --- END MODIFIED ---
-
-    // --- MODIFIED: GetPetEffectiveCritChance ---
+    
     public int GetPetEffectiveCritChance()
     {
-        int sumBonus = localPetCritBuffs.Sum(buff => buff.amount);
-        return Mathf.Max(0, CombatCalculator.BASE_CRIT_CHANCE + sumBonus); // Ensure non-negative
+        return GetEffectiveCritChance(localPetCritBuffs);
     }
-    // --- END MODIFIED ---
     
-    // --- MODIFIED: GetOpponentPetEffectiveCritChance ---
     public int GetOpponentPetEffectiveCritChance()
     {
-        int sumBonus = opponentPetCritBuffs.Sum(buff => buff.amount);
-        return Mathf.Max(0, CombatCalculator.BASE_CRIT_CHANCE + sumBonus); // Ensure non-negative
+        return GetEffectiveCritChance(opponentPetCritBuffs);
     }
-    // --- END MODIFIED ---
     
     public int GetBaseCritChance()
     {
@@ -1095,38 +1131,48 @@ public class HealthManager
     // --- RE-ADDED: HoT Methods --- 
     #region HoT Methods
     
-    public void ApplyHotLocalPlayer(int amount, int duration)
+    // --- New generic HoT application method ---
+    private void ApplyHoTEffect(ref int targetTurns, ref int targetAmount, int amount, int duration, string targetName, params string[] propertiesToUpdate)
     {
         if (amount <= 0 || duration <= 0) return;
-        localPlayerHotTurns += duration;
-        localPlayerHotAmount = amount; // Overwrite amount with latest application
-        Debug.Log($"Applied HoT to Player: {amount} healing for {duration} turns. Total Turns: {localPlayerHotTurns}");
+        
+        targetTurns += duration;
+        targetAmount = amount; // Overwrite amount with latest application
+        Debug.Log($"Applied HoT to {targetName}: {amount} healing for {duration} turns. Total Turns: {targetTurns}");
         gameManager.UpdateHealthUI(); // Update UI to show status
         
-        // --- ADDED: Update Properties ---
-        UpdatePlayerStatProperties(
+        if (propertiesToUpdate.Length > 0)
+        {
+            UpdatePlayerStatProperties(propertiesToUpdate);
+        }
+    }
+    
+    public void ApplyHotLocalPlayer(int amount, int duration)
+    {
+        ApplyHoTEffect(
+            ref localPlayerHotTurns, 
+            ref localPlayerHotAmount, 
+            amount, 
+            duration, 
+            "Player",
             CombatStateManager.PLAYER_COMBAT_PLAYER_HOT_TURNS_PROP,
             CombatStateManager.PLAYER_COMBAT_PLAYER_HOT_AMT_PROP
         );
-        // --- END ADDED ---
     }
     
     public void ApplyHotLocalPet(int amount, int duration)
     {
-        if (amount <= 0 || duration <= 0) return;
-        localPetHotTurns += duration;
-        localPetHotAmount = amount; 
-        Debug.Log($"Applied HoT to Local Pet: {amount} healing for {duration} turns. Total Turns: {localPetHotTurns}");
-        gameManager.UpdateHealthUI();
-
-        // --- ADDED: Sync Properties ---
-        UpdatePlayerStatProperties(
+        ApplyHoTEffect(
+            ref localPetHotTurns, 
+            ref localPetHotAmount, 
+            amount, 
+            duration, 
+            "Local Pet",
             CombatStateManager.PLAYER_COMBAT_PET_HOT_TURNS_PROP,
             CombatStateManager.PLAYER_COMBAT_PET_HOT_AMT_PROP
         );
-        // --- END ADDED ---
 
-        // Notify others (Send amount and duration)
+        // Notify others
         if (PhotonNetwork.InRoom)
         {
             gameManager.GetPhotonView()?.RPC("RpcApplyHoTToMyPet", RpcTarget.Others, amount, duration);
@@ -1135,11 +1181,13 @@ public class HealthManager
     
     public void ApplyHotOpponentPet(int amount, int duration, bool originatedFromRPC = false)
     {
-        if (amount <= 0 || duration <= 0) return;
-        opponentPetHotTurns += duration;
-        opponentPetHotAmount = amount; 
-        Debug.Log($"Applied HoT to Opponent Pet: {amount} healing for {duration} turns (local sim). Total Turns: {opponentPetHotTurns}");
-        gameManager.UpdateHealthUI();
+        ApplyHoTEffect(
+            ref opponentPetHotTurns, 
+            ref opponentPetHotAmount, 
+            amount, 
+            duration, 
+            "Opponent Pet (local sim)"
+        );
 
         // Notify the actual owner
         if (!originatedFromRPC)
@@ -1152,57 +1200,60 @@ public class HealthManager
         }
     }
     
+    // --- Process HoT Effects ---
+    private void ProcessHoTEffect(ref int turns, ref int amount, Action<int> healAction, string targetName, params string[] propertiesToUpdate)
+    {
+        if (turns <= 0 || amount <= 0) return;
+        
+        Debug.Log($"{targetName} HoT ticking for {amount} healing.");
+        healAction(amount);
+        
+        turns--; // Decrement AFTER applying heal
+        if (turns == 0) amount = 0; // Clear amount if duration ends
+        
+        if (propertiesToUpdate.Length > 0)
+        {
+            UpdatePlayerStatProperties(propertiesToUpdate);
+        }
+        
+        gameManager.UpdateHealthUI(); // Update UI after heal and decrement
+    }
+    
     public void ProcessPlayerHotEffect()
     {
-        if (localPlayerHotTurns > 0 && localPlayerHotAmount > 0)
-        {
-            Debug.Log($"Player HoT ticking for {localPlayerHotAmount} healing.");
-            HealLocalPlayer(localPlayerHotAmount); // This already calls UpdatePlayerStatProperties for HP
-            
-            localPlayerHotTurns--; // Decrement AFTER applying heal
-            if (localPlayerHotTurns == 0) localPlayerHotAmount = 0; // Clear amount if duration ends
-            
-            // --- ADDED: Update HoT Properties explicitly after decrement ---
-            UpdatePlayerStatProperties(
-                CombatStateManager.PLAYER_COMBAT_PLAYER_HOT_TURNS_PROP,
-                CombatStateManager.PLAYER_COMBAT_PLAYER_HOT_AMT_PROP
-            );
-            // --- END ADDED ---
-             
-            gameManager.UpdateHealthUI(); // Update UI after heal and decrement
-        }
+        ProcessHoTEffect(
+            ref localPlayerHotTurns,
+            ref localPlayerHotAmount,
+            (amount) => HealLocalPlayer(amount),
+            "Player",
+            CombatStateManager.PLAYER_COMBAT_PLAYER_HOT_TURNS_PROP,
+            CombatStateManager.PLAYER_COMBAT_PLAYER_HOT_AMT_PROP
+        );
     }
     
     public void ProcessLocalPetHotEffect()
     {
-        if (localPetHotTurns > 0 && localPetHotAmount > 0)
-        {
-            Debug.Log($"Local Pet HoT ticking for {localPetHotAmount} healing.");
-            HealLocalPet(localPetHotAmount);
-            localPetHotTurns--; 
-            if (localPetHotTurns == 0) localPetHotAmount = 0; 
-            
-            // --- ADDED: Update HoT Properties explicitly after decrement for pet ---
-            UpdatePlayerStatProperties(
-                CombatStateManager.PLAYER_COMBAT_PET_HOT_TURNS_PROP, // Assuming this exists
-                CombatStateManager.PLAYER_COMBAT_PET_HOT_AMT_PROP  // Assuming this exists
-            );
-            // --- END ADDED ---
-            
-             gameManager.UpdateHealthUI();
-        }
+        ProcessHoTEffect(
+            ref localPetHotTurns,
+            ref localPetHotAmount,
+            (amount) => HealLocalPet(amount),
+            "Local Pet",
+            CombatStateManager.PLAYER_COMBAT_PET_HOT_TURNS_PROP,
+            CombatStateManager.PLAYER_COMBAT_PET_HOT_AMT_PROP
+        );
     }
     
     public void ProcessOpponentPetHotEffect()
     {
-        if (opponentPetHotTurns > 0 && opponentPetHotAmount > 0)
-        {
-             Debug.Log($"Opponent Pet HoT duration ticking (local sim). Turns remaining: {opponentPetHotTurns - 1}");
-            // Actual healing is handled by the owner's client. We only decrement turns locally.
-            opponentPetHotTurns--; 
-            if (opponentPetHotTurns == 0) opponentPetHotAmount = 0; 
-            gameManager.UpdateHealthUI(); // Update UI to reflect turn change
-        }
+        if (opponentPetHotTurns <= 0 || opponentPetHotAmount <= 0) return;
+        
+        Debug.Log($"Opponent Pet HoT ticking for {opponentPetHotAmount} healing.");
+        HealOpponentPet(opponentPetHotAmount);
+        
+        opponentPetHotTurns--; // Decrement AFTER applying heal
+        if (opponentPetHotTurns == 0) opponentPetHotAmount = 0; // Clear amount if duration ends
+        
+        gameManager.UpdateHealthUI(); // Update UI after heal and decrement
     }
     
     #endregion
@@ -1300,15 +1351,13 @@ public class HealthManager
         opponentPetDotTurns = 0;
         opponentPetDotDamage = 0;
         
-        // Update player and pet DoT properties
-        UpdatePlayerStatProperties(
-            CombatStateManager.PLAYER_COMBAT_PLAYER_DOT_TURNS_PROP,
-            CombatStateManager.PLAYER_COMBAT_PLAYER_DOT_DMG_PROP,
-            CombatStateManager.PLAYER_COMBAT_PET_DOT_TURNS_PROP,
-            CombatStateManager.PLAYER_COMBAT_PET_DOT_DMG_PROP
-        );
+        // Reset opponent player DoT
+        opponentPlayerDotTurns = 0;
+        opponentPlayerDotDamage = 0;
         
-        Debug.Log("Reset all DoT effects to 0");
+        // Update UI & properties
+        UpdatePlayerStatProperties();
+        gameManager.UpdateHealthUI();
     }
     
     public void ResetAllHoTEffects()
@@ -1317,7 +1366,7 @@ public class HealthManager
         localPlayerHotTurns = 0;
         localPlayerHotAmount = 0;
         
-        // Reset local pet HoT
+        // Reset local pet HoT 
         localPetHotTurns = 0;
         localPetHotAmount = 0;
         
@@ -1325,15 +1374,13 @@ public class HealthManager
         opponentPetHotTurns = 0;
         opponentPetHotAmount = 0;
         
-        // Update player and pet HoT properties
-        UpdatePlayerStatProperties(
-            CombatStateManager.PLAYER_COMBAT_PLAYER_HOT_TURNS_PROP,
-            CombatStateManager.PLAYER_COMBAT_PLAYER_HOT_AMT_PROP,
-            CombatStateManager.PLAYER_COMBAT_PET_HOT_TURNS_PROP,
-            CombatStateManager.PLAYER_COMBAT_PET_HOT_AMT_PROP
-        );
+        // Reset opponent player HoT
+        opponentPlayerHotTurns = 0;
+        opponentPlayerHotAmount = 0;
         
-        Debug.Log("Reset all HoT effects to 0");
+        // Update UI & properties
+        UpdatePlayerStatProperties();
+        gameManager.UpdateHealthUI();
     }
     
     public void ResetAllCritBuffs()
