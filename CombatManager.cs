@@ -44,23 +44,8 @@ public class CombatManager
 
     public void InitializeCombatState(int opponentPetOwnerActorNum)
     {
-        gameManager.GetPlayerManager().InitializeCombatState(opponentPetOwnerActorNum, startingPlayerHealth, startingPetHealth);
-        gameManager.GetCardManager().InitializeDecks();
-        
-        // Set opponent pet energy for local simulation
-        gameManager.GetCardManager().GetPetDeckManager().SetOpponentPetEnergy(startingPetEnergy);
-        
-        // Setup Initial UI
-        uiManager.InitializeUIState();
-        uiManager.UpdateHealthUI();
-        uiManager.UpdateDeckCountUI();
-        
-        // Start the first turn
-        StartTurn();
-        
-        // Update other UI elements
-        uiManager.UpdateOtherFightsUI();
-        uiManager.UpdateHealthUI();
+        // Now just delegating to GameManager's implementation which handles the new entity system
+        gameManager.InitializeCombatState(opponentPetOwnerActorNum);
     }
 
     public void StartTurn()
@@ -70,7 +55,8 @@ public class CombatManager
 
     public IEnumerator EndTurn()
     {
-        return turnManager.EndTurn();
+        CombatFlowController flowController = gameManager.GetCombatFlowController();
+        return flowController.EndPlayerTurn();
     }
 
     public void UpdateHealthUI()
@@ -95,7 +81,8 @@ public class CombatManager
 
     public bool IsPlayerTurn()
     {
-        return turnManager.IsPlayerTurn();
+        CombatFlowController flowController = gameManager.GetCombatFlowController();
+        return flowController.IsPlayerTurn();
     }
 
     public bool AttemptPlayCard(CardData cardData, CardDropZone.TargetType targetType, GameObject cardGO = null)

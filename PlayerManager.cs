@@ -49,41 +49,22 @@ public class PlayerManager
     
     public void ProcessPlayerTurnStartEffects()
     {
-        // Apply DoT Damage FIRST
-        healthManager.ProcessPlayerDotEffect();
-        healthManager.ProcessPlayerHotEffect();
-        
-        // Then Decrement Status Effects & Cost Modifiers
-        statusEffectManager.DecrementPlayerStatusEffects();
-        energyManager.DecrementCostModifiers();
-        healthManager.DecrementPlayerCritBuffDurations();
-        
+        // Always use entity system
+        gameManager.GetLocalPlayerEntity().ProcessTurnStartEffects();
         Debug.Log("Processed Player Turn Start effects");
     }
     
     public void ProcessLocalPetTurnStartEffects()
     {
-        // Apply DoT Damage FIRST
-        healthManager.ProcessLocalPetDotEffect();
-        healthManager.ProcessLocalPetHotEffect();
-        
-        // Then Decrement Status Effects
-        statusEffectManager.DecrementLocalPetStatusEffects();
-        healthManager.DecrementLocalPetCritBuffDurations();
-        
+        // Always use entity system
+        gameManager.GetLocalPetEntity().ProcessTurnStartEffects();
         Debug.Log("Processed Local Pet Turn Start effects");
     }
     
     public void ProcessOpponentPetTurnStartEffects()
     {
-        // Apply DoT Damage FIRST
-        healthManager.ProcessOpponentPetDotEffect();
-        healthManager.ProcessOpponentPetHotEffect();
-        
-        // Then Decrement Status Effects
-        statusEffectManager.DecrementOpponentPetStatusEffects();
-        healthManager.DecrementOpponentPetCritBuffDurations();
-        
+        // Always use entity system
+        gameManager.GetOpponentPetEntity().ProcessTurnStartEffects();
         Debug.Log("Processed Opponent Pet Turn Start effects");
     }
     
@@ -91,43 +72,160 @@ public class PlayerManager
     
     #region Health & Damage Proxies
     
-    public void DamageLocalPlayer(int amount, bool updateUIImmediate = true, HealthManager.DamageSource source = HealthManager.DamageSource.OpponentPetAttack) => healthManager.DamageLocalPlayer(amount, updateUIImmediate, source);
-    public void DamageLocalPet(int amount) => healthManager.DamageLocalPet(amount);
-    public void DamageOpponentPet(int amount) => healthManager.DamageOpponentPet(amount);
+    public void DamageLocalPlayer(int amount, bool updateUIImmediate = true, HealthManager.DamageSource source = HealthManager.DamageSource.OpponentPetAttack)
+    {
+        // Use entity system directly
+        gameManager.GetLocalPlayerEntity().TakeDamage(amount);
+    }
     
-    public CombatCalculator.DamageResult ApplyDamageToLocalPetLocally(int amount) => healthManager.ApplyDamageToLocalPetLocally(amount);
+    public void DamageLocalPet(int amount)
+    {
+        // Use entity system directly
+        gameManager.GetLocalPetEntity().TakeDamage(amount);
+    }
     
-    public void AddBlockToLocalPlayer(int amount) => healthManager.AddBlockToLocalPlayer(amount);
-    public void AddBlockToLocalPet(int amount) => healthManager.AddBlockToLocalPet(amount);
-    public void AddBlockToOpponentPet(int amount, bool updateUIImmediate = true) => healthManager.AddBlockToOpponentPet(amount, updateUIImmediate);
-    public void ResetAllBlock() => healthManager.ResetAllBlock();
+    public void DamageOpponentPet(int amount)
+    {
+        // Use entity system directly
+        gameManager.GetOpponentPetEntity().TakeDamage(amount);
+    }
     
-    public void HealLocalPlayer(int amount) => healthManager.HealLocalPlayer(amount);
-    public void HealLocalPet(int amount) => healthManager.HealLocalPet(amount);
-    public void HealOpponentPet(int amount) => healthManager.HealOpponentPet(amount);
+    public CombatCalculator.DamageResult ApplyDamageToLocalPetLocally(int amount)
+    {
+        // Use entity system, but keep original return type for backward compatibility
+        gameManager.GetLocalPetEntity().TakeDamage(amount);
+        // Create and return a compatible result object
+        return new CombatCalculator.DamageResult
+        {
+            DamageAfterBlock = amount,
+            IsCritical = false, // No way to know from entity system
+            BlockConsumed = 0,
+            DamageBeforeBlock = amount
+        };
+    }
+    
+    public void AddBlockToLocalPlayer(int amount)
+    {
+        // Use entity system directly
+        gameManager.GetLocalPlayerEntity().AddBlock(amount);
+    }
+    
+    public void AddBlockToLocalPet(int amount)
+    {
+        // Use entity system directly
+        gameManager.GetLocalPetEntity().AddBlock(amount);
+    }
+    
+    public void AddBlockToOpponentPet(int amount, bool updateUIImmediate = true)
+    {
+        // Use entity system directly
+        gameManager.GetOpponentPetEntity().AddBlock(amount);
+    }
+    
+    public void ResetAllBlock()
+    {
+        // Use entity system directly
+        gameManager.GetLocalPlayerEntity().ResetBlock();
+        gameManager.GetLocalPetEntity().ResetBlock();
+        gameManager.GetOpponentPetEntity().ResetBlock();
+    }
+    
+    public void HealLocalPlayer(int amount)
+    {
+        // Use entity system directly
+        gameManager.GetLocalPlayerEntity().Heal(amount);
+    }
+    
+    public void HealLocalPet(int amount)
+    {
+        // Use entity system directly
+        gameManager.GetLocalPetEntity().Heal(amount);
+    }
+    
+    public void HealOpponentPet(int amount)
+    {
+        // Use entity system directly
+        gameManager.GetOpponentPetEntity().Heal(amount);
+    }
     
     #endregion
     
     #region Status Effect Proxies
     
-    public void ApplyStatusEffectLocalPlayer(StatusEffectType type, int duration) => statusEffectManager.ApplyStatusEffectLocalPlayer(type, duration);
-    public void ApplyStatusEffectLocalPet(StatusEffectType type, int duration) => statusEffectManager.ApplyStatusEffectLocalPet(type, duration);
-    public void ApplyStatusEffectOpponentPet(StatusEffectType type, int duration) => statusEffectManager.ApplyStatusEffectOpponentPet(type, duration);
+    public void ApplyStatusEffectLocalPlayer(StatusEffectType type, int duration)
+    {
+        // Use entity system directly
+        gameManager.GetLocalPlayerEntity().ApplyStatusEffect(type, duration);
+    }
     
-    public void ApplyDotLocalPlayer(int damage, int duration) => healthManager.ApplyDotLocalPlayer(damage, duration);
-    public void ApplyDotLocalPet(int damage, int duration) => healthManager.ApplyDotLocalPet(damage, duration);
-    public void ApplyDotOpponentPet(int damage, int duration) => healthManager.ApplyDotOpponentPet(damage, duration);
+    public void ApplyStatusEffectLocalPet(StatusEffectType type, int duration)
+    {
+        // Use entity system directly
+        gameManager.GetLocalPetEntity().ApplyStatusEffect(type, duration);
+    }
     
-    public void ApplyHotLocalPlayer(int amount, int duration) => healthManager.ApplyHotLocalPlayer(amount, duration);
-    public void ApplyHotLocalPet(int amount, int duration) => healthManager.ApplyHotLocalPet(amount, duration);
-    public void ApplyHotOpponentPet(int amount, int duration) => healthManager.ApplyHotOpponentPet(amount, duration);
+    public void ApplyStatusEffectOpponentPet(StatusEffectType type, int duration)
+    {
+        // Use entity system directly
+        gameManager.GetOpponentPetEntity().ApplyStatusEffect(type, duration);
+    }
+    
+    public void ApplyDotLocalPlayer(int damage, int duration)
+    {
+        // Use entity system directly
+        gameManager.GetLocalPlayerEntity().ApplyDoT(damage, duration);
+    }
+    
+    public void ApplyDotLocalPet(int damage, int duration)
+    {
+        // Use entity system directly
+        gameManager.GetLocalPetEntity().ApplyDoT(damage, duration);
+    }
+    
+    public void ApplyDotOpponentPet(int damage, int duration)
+    {
+        // Use entity system directly
+        gameManager.GetOpponentPetEntity().ApplyDoT(damage, duration);
+    }
+    
+    public void ApplyHotLocalPlayer(int amount, int duration)
+    {
+        // Use entity system directly
+        gameManager.GetLocalPlayerEntity().ApplyHoT(amount, duration);
+    }
+    
+    public void ApplyHotLocalPet(int amount, int duration)
+    {
+        // Use entity system directly
+        gameManager.GetLocalPetEntity().ApplyHoT(amount, duration);
+    }
+    
+    public void ApplyHotOpponentPet(int amount, int duration)
+    {
+        // Use entity system directly
+        gameManager.GetOpponentPetEntity().ApplyHoT(amount, duration);
+    }
     
     public void IncrementComboCount() => statusEffectManager.IncrementComboCount();
     public void ResetComboCount() => statusEffectManager.ResetComboCount();
     
-    public void ApplyCritChanceBuffPlayer(int amount, int duration) => healthManager.ApplyCritChanceBuffPlayer(amount, duration);
-    public void ApplyCritChanceBuffPet(int amount, int duration) => healthManager.ApplyCritChanceBuffPet(amount, duration);
-    public void ApplyCritChanceBuffOpponentPet(int amount, int duration) => healthManager.ApplyCritChanceBuffOpponentPet(amount, duration);
+    public void ApplyCritChanceBuffPlayer(int amount, int duration)
+    {
+        // Use entity system directly
+        gameManager.GetLocalPlayerEntity().ApplyCritBuff(amount, duration);
+    }
+    
+    public void ApplyCritChanceBuffPet(int amount, int duration)
+    {
+        // Use entity system directly
+        gameManager.GetLocalPetEntity().ApplyCritBuff(amount, duration);
+    }
+    
+    public void ApplyCritChanceBuffOpponentPet(int amount, int duration)
+    {
+        // Use entity system directly
+        gameManager.GetOpponentPetEntity().ApplyCritBuff(amount, duration);
+    }
     
     public void DecrementPlayerCritBuffDurations() => healthManager.DecrementPlayerCritBuffDurations();
     public void DecrementLocalPetCritBuffDurations() => healthManager.DecrementLocalPetCritBuffDurations();
@@ -137,8 +235,17 @@ public class PlayerManager
     
     #region Energy Management Proxies
     
-    public void ConsumeEnergy(int amount) => energyManager.ConsumeEnergy(amount);
-    public void GainEnergy(int amount) => energyManager.GainEnergy(amount);
+    public void ConsumeEnergy(int amount)
+    {
+        // Use entity system directly
+        gameManager.GetLocalPlayerEntity().ConsumeEnergy(amount);
+    }
+    
+    public void GainEnergy(int amount)
+    {
+        // Use entity system directly
+        gameManager.GetLocalPlayerEntity().AddEnergy(amount);
+    }
     
     public void ApplyCostModifierToOpponentHand(int amount, int duration, int cardCount) => 
         energyManager.ApplyCostModifierToOpponentHand(amount, duration, cardCount);
@@ -171,6 +278,10 @@ public class PlayerManager
     
     public void SetCombatEndedForLocalPlayer(bool value) => combatStateManager.SetCombatEndedForLocalPlayer(value);
     
+    public void HandleCombatWin() => combatStateManager.HandleCombatWin();
+    
+    public void HandleCombatLoss() => combatStateManager.HandleCombatLoss();
+    
     #endregion
     
     #region Lobby Management Proxies
@@ -190,42 +301,81 @@ public class PlayerManager
     
     #region Status Check Proxies
     
-    public bool IsPlayerWeak() => statusEffectManager.IsPlayerWeak();
-    public bool IsPlayerBroken() => statusEffectManager.IsPlayerBroken();
-    public bool IsLocalPetWeak() => statusEffectManager.IsLocalPetWeak();
-    public bool IsLocalPetBroken() => statusEffectManager.IsLocalPetBroken();
-    public bool IsOpponentPetWeak() => statusEffectManager.IsOpponentPetWeak();
-    public bool IsOpponentPetBroken() => statusEffectManager.IsOpponentPetBroken();
+    // These methods moved to Getters using Entity system region
     
     #endregion
     
-    #region Getters
+    #region Getters using Entity system
     
-    public int GetLocalPlayerHealth() => healthManager.GetLocalPlayerHealth();
-    public int GetLocalPetHealth() => healthManager.GetLocalPetHealth();
-    public int GetOpponentPetHealth() => healthManager.GetOpponentPetHealth();
+    // Health getters
+    public int GetLocalPlayerHealth() => gameManager.GetLocalPlayerEntity().GetHealth();
+    public int GetLocalPetHealth() => gameManager.GetLocalPetEntity().GetHealth();
+    public int GetOpponentPetHealth() => gameManager.GetOpponentPetEntity().GetHealth();
     
-    public int GetLocalPlayerBlock() => healthManager.GetLocalPlayerBlock();
-    public int GetLocalPetBlock() => healthManager.GetLocalPetBlock();
-    public int GetOpponentPetBlock() => healthManager.GetOpponentPetBlock();
+    // Block getters
+    public int GetLocalPlayerBlock() => gameManager.GetLocalPlayerEntity().GetBlock();
+    public int GetLocalPetBlock() => gameManager.GetLocalPetEntity().GetBlock();
+    public int GetOpponentPetBlock() => gameManager.GetOpponentPetEntity().GetBlock();
     
+    // Energy getters
     public int GetCurrentEnergy() => energyManager.GetCurrentEnergy();
     public void SetCurrentEnergy(int energy) => energyManager.SetCurrentEnergy(energy);
     public int GetStartingEnergy() => energyManager.GetStartingEnergy();
+    public int GetStartingPetEnergy() => gameManager.GetStartingPetEnergy();
     
+    // Combo getters
     public int GetCurrentComboCount() => statusEffectManager.GetCurrentComboCount();
     
-    public int GetPlayerDotTurns() => healthManager.GetPlayerDotTurns();
-    public int GetPlayerDotDamage() => healthManager.GetPlayerDotDamage();
-    public int GetLocalPetDotTurns() => healthManager.GetLocalPetDotTurns();
-    public int GetLocalPetDotDamage() => healthManager.GetLocalPetDotDamage();
-    public int GetOpponentPetDotTurns() => healthManager.GetOpponentPetDotTurns();
-    public int GetOpponentPetDotDamage() => healthManager.GetOpponentPetDotDamage();
+    // Status effect getters
+    public bool IsPlayerWeak() => gameManager.GetLocalPlayerEntity().IsWeakened();
+    public bool IsPlayerBroken() => gameManager.GetLocalPlayerEntity().IsBroken();
+    public bool IsLocalPetWeak() => gameManager.GetLocalPetEntity().IsWeakened();
+    public bool IsLocalPetBroken() => gameManager.GetLocalPetEntity().IsBroken();
+    public bool IsOpponentPetWeak() => gameManager.GetOpponentPetEntity().IsWeakened();
+    public bool IsOpponentPetBroken() => gameManager.GetOpponentPetEntity().IsBroken();
     
-    public int GetEffectivePlayerMaxHealth() => healthManager.GetEffectivePlayerMaxHealth();
-    public int GetEffectivePetMaxHealth() => healthManager.GetEffectivePetMaxHealth();
-    public int GetEffectiveOpponentPetMaxHealth() => healthManager.GetEffectiveOpponentPetMaxHealth();
+    public int GetPlayerWeakTurns() => gameManager.GetLocalPlayerEntity().GetWeakTurns();
+    public int GetPlayerBreakTurns() => gameManager.GetLocalPlayerEntity().GetBreakTurns();
+    public int GetLocalPetWeakTurns() => gameManager.GetLocalPetEntity().GetWeakTurns();
+    public int GetLocalPetBreakTurns() => gameManager.GetLocalPetEntity().GetBreakTurns();
+    public int GetOpponentPetWeakTurns() => gameManager.GetOpponentPetEntity().GetWeakTurns();
+    public int GetOpponentPetBreakTurns() => gameManager.GetOpponentPetEntity().GetBreakTurns();
     
+    public int GetPlayerThorns() => gameManager.GetLocalPlayerEntity().GetThorns();
+    public int GetLocalPetThorns() => gameManager.GetLocalPetEntity().GetThorns();
+    public int GetOpponentPetThorns() => gameManager.GetOpponentPetEntity().GetThorns();
+    
+    public int GetPlayerStrength() => gameManager.GetLocalPlayerEntity().GetStrength();
+    public int GetLocalPetStrength() => gameManager.GetLocalPetEntity().GetStrength();
+    public int GetOpponentPetStrength() => gameManager.GetOpponentPetEntity().GetStrength();
+    
+    // DoT & HoT getters
+    public int GetPlayerDotTurns() => gameManager.GetLocalPlayerEntity().GetDotTurns();
+    public int GetPlayerDotDamage() => gameManager.GetLocalPlayerEntity().GetDotDamage();
+    public int GetLocalPetDotTurns() => gameManager.GetLocalPetEntity().GetDotTurns();
+    public int GetLocalPetDotDamage() => gameManager.GetLocalPetEntity().GetDotDamage();
+    public int GetOpponentPetDotTurns() => gameManager.GetOpponentPetEntity().GetDotTurns();
+    public int GetOpponentPetDotDamage() => gameManager.GetOpponentPetEntity().GetDotDamage();
+    
+    public int GetPlayerHotTurns() => gameManager.GetLocalPlayerEntity().GetHotTurns();
+    public int GetPlayerHotAmount() => gameManager.GetLocalPlayerEntity().GetHotAmount();
+    public int GetLocalPetHotTurns() => gameManager.GetLocalPetEntity().GetHotTurns();
+    public int GetLocalPetHotAmount() => gameManager.GetLocalPetEntity().GetHotAmount();
+    public int GetOpponentPetHotTurns() => gameManager.GetOpponentPetEntity().GetHotTurns();
+    public int GetOpponentPetHotAmount() => gameManager.GetOpponentPetEntity().GetHotAmount();
+    
+    // Crit getters
+    public int GetPlayerEffectiveCritChance() => gameManager.GetLocalPlayerEntity().GetEffectiveCritChance();
+    public int GetPetEffectiveCritChance() => gameManager.GetLocalPetEntity().GetEffectiveCritChance();
+    public int GetOpponentPetEffectiveCritChance() => gameManager.GetOpponentPetEntity().GetEffectiveCritChance();
+    public int GetBaseCritChance() => CombatCalculator.BASE_CRIT_CHANCE;
+    
+    // Max health getters
+    public int GetEffectivePlayerMaxHealth() => gameManager.GetLocalPlayerEntity().GetMaxHealth();
+    public int GetEffectivePetMaxHealth() => gameManager.GetLocalPetEntity().GetMaxHealth();
+    public int GetEffectiveOpponentPetMaxHealth() => gameManager.GetOpponentPetEntity().GetMaxHealth();
+    
+    // Other management getters
     public Player GetOpponentPlayer() => combatStateManager.GetOpponentPlayer();
     public void SetOpponentPlayer(Player player) => combatStateManager.SetOpponentPlayer(player);
     
@@ -234,44 +384,6 @@ public class PlayerManager
     public EnergyManager GetEnergyManager() => energyManager;
     public CombatStateManager GetCombatStateManager() => combatStateManager;
     public LobbyManager GetLobbyManager() => lobbyManager;
-    
-    // Status Effect Turn Getters
-    public int GetPlayerWeakTurns() => statusEffectManager.GetPlayerWeakTurns();
-    public int GetPlayerBreakTurns() => statusEffectManager.GetPlayerBreakTurns();
-    public int GetLocalPetWeakTurns() => statusEffectManager.GetLocalPetWeakTurns();
-    public int GetLocalPetBreakTurns() => statusEffectManager.GetLocalPetBreakTurns();
-    public int GetOpponentPetWeakTurns() => statusEffectManager.GetOpponentPetWeakTurns();
-    public int GetOpponentPetBreakTurns() => statusEffectManager.GetOpponentPetBreakTurns();
-    
-    // Crit Chance Getters
-    public int GetPlayerEffectiveCritChance() => healthManager.GetPlayerEffectiveCritChance();
-    public int GetPetEffectiveCritChance() => healthManager.GetPetEffectiveCritChance();
-    public int GetOpponentPetEffectiveCritChance() => healthManager.GetOpponentPetEffectiveCritChance();
-    public int GetBaseCritChance() => healthManager.GetBaseCritChance();
-    
-    // Energy Getters for Pet Deck
-    public int GetStartingPetEnergy() => gameManager.GetStartingPetEnergy();
-    
-    // --- ADDED: Thorns Proxies --- 
-    public int GetPlayerThorns() => statusEffectManager.GetPlayerThorns();
-    public int GetLocalPetThorns() => statusEffectManager.GetLocalPetThorns();
-    public int GetOpponentPetThorns() => statusEffectManager.GetOpponentPetThorns();
-    // --- END ADDED ---
-    
-    // --- ADDED: HoT Getters --- 
-    public int GetPlayerHotTurns() => healthManager.GetPlayerHotTurns();
-    public int GetPlayerHotAmount() => healthManager.GetPlayerHotAmount();
-    public int GetLocalPetHotTurns() => healthManager.GetLocalPetHotTurns();
-    public int GetLocalPetHotAmount() => healthManager.GetLocalPetHotAmount();
-    public int GetOpponentPetHotTurns() => healthManager.GetOpponentPetHotTurns();
-    public int GetOpponentPetHotAmount() => healthManager.GetOpponentPetHotAmount();
-    // --- END ADDED ---
-    
-    // --- ADDED: Strength Getters --- 
-    public int GetPlayerStrength() => statusEffectManager.GetPlayerStrength();
-    public int GetLocalPetStrength() => statusEffectManager.GetLocalPetStrength();
-    public int GetOpponentPetStrength() => statusEffectManager.GetOpponentPetStrength();
-    // --- END ADDED ---
     
     #endregion
 }
