@@ -176,7 +176,9 @@ public class CardDragHandler : MonoBehaviour, IBeginDragHandler, IDragHandler, I
         {
             // In enemy test mode, this card will be played by the opponent pet
             Debug.Log($"[ENEMY TEST MODE] Opponent pet will play card: {cardData.cardName}");
-            gameManager.GetCardManager().ProcessOpponentPetCardEffect(cardData);
+            
+            // Start the simulation coroutine and snap card back to original position
+            gameManager.StartCoroutine(SimulateOpponentPetCardPlay(cardData, gameObject));
             
             // Snap card back to original position after triggering effect
             transform.SetParent(originalParent, true);
@@ -642,8 +644,28 @@ public class CardDragHandler : MonoBehaviour, IBeginDragHandler, IDragHandler, I
         if (gameManager != null && gameManager.IsDebugEnemyTestMode() && !isDragging && !isDiscarding)
         {
             Debug.Log($"[ENEMY TEST MODE] Card clicked: {cardData.cardName}");
-            gameManager.GetCardManager().ProcessOpponentPetCardEffect(cardData);
+            // Use the proper opponent pet card play path for consistency with normal gameplay
+            gameManager.StartCoroutine(SimulateOpponentPetCardPlay(cardData, gameObject));
         }
     }
-    // --- END ADDED ---
+    
+    // Helper method to simulate opponent pet playing a card
+    private IEnumerator SimulateOpponentPetCardPlay(CardData card, GameObject cardGO)
+    {
+        if (gameManager == null) yield break;
+        
+        // Use the same visualization coroutine that normal opponent pet turns use
+        CombatUIManager uiManager = gameManager.GetCombatUIManager();
+        if (uiManager != null)
+        {
+            // This handles visual effects and animation
+            yield return uiManager.VisualizeOpponentPetCardPlay(card);
+        }
+        
+        // After visualization, process the effect (this is what happens in normal gameplay)
+        gameManager.GetCardManager().ProcessOpponentPetCardEffect(card, cardGO);
+        
+        // Update UI after processing
+        gameManager.UpdateHealthUI();
+    }
 } 

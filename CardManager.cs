@@ -363,9 +363,31 @@ public class CardManager
     }
     // --- END ADDED ---
     
-    public void ProcessOpponentPetCardEffect(CardData cardToPlay)
+    public void ProcessOpponentPetCardEffect(CardData cardToPlay, GameObject cardGameObject = null)
     {
-        cardEffectService.ProcessOpponentPetCardEffect(cardToPlay);
+        if (cardToPlay == null) return;
+        
+        // Get the play count BEFORE processing the effect
+        int previousPlays = GetCardPlayCountThisCombat(cardToPlay, cardGameObject);
+        
+        // Count total copies - look for cards with same card family name or card name
+        // in all opponent pet cards (deck, hand, discard)
+        List<CardData> allOpponentPetCards = new List<CardData>();
+        allOpponentPetCards.AddRange(petDeckManager.GetOpponentPetDeck());
+        allOpponentPetCards.AddRange(petDeckManager.GetOpponentPetHand());
+        allOpponentPetCards.AddRange(petDeckManager.GetOpponentPetDiscard());
+        
+        int totalCopies = allOpponentPetCards.Count(c => 
+            (!string.IsNullOrEmpty(c.cardFamilyName) && !string.IsNullOrEmpty(cardToPlay.cardFamilyName)) ? 
+            c.cardFamilyName == cardToPlay.cardFamilyName : c.cardName == cardToPlay.cardName);
+        
+        // Process the card effect with the play count
+        cardEffectService.ProcessOpponentPetCardEffect(cardToPlay, previousPlays, totalCopies);
+        
+        // Increment the play count AFTER processing the effect
+        IncrementCardPlayCount(cardToPlay, cardGameObject);
+        
+        Debug.Log($"Processed opponent pet card '{cardToPlay.cardName}' - previous plays: {previousPlays}, total copies: {totalCopies}");
     }
     
     public void ProcessEndOfTurnHandEffects()
@@ -387,6 +409,13 @@ public class CardManager
     public void InitializeOpponentPetDeck(List<string> cardNames)
     {
         petDeckManager.InitializeOpponentPetDeck(cardNames);
+        
+        // Assign unique IDs to all cards in the opponent pet deck
+        foreach (CardData card in petDeckManager.GetOpponentPetDeck())
+        {
+            AssignUniqueIdToOpponentPetCard(card);
+        }
+        Debug.Log($"Assigned unique IDs to {petDeckManager.GetOpponentPetDeck().Count} cards in opponent pet deck");
     }
     
     // ----- Draft Methods -----
@@ -490,5 +519,16 @@ public class CardManager
         }
         
         Debug.Log($"Incremented play count for {instanceId} to {cardPlayCountsThisCombat[instanceId]}");
+    }
+
+    // --- ADDED: Method to assign unique IDs to opponent pet cards ---
+    public string AssignUniqueIdToOpponentPetCard(CardData card)
+    {
+        if (card == null) return null;
+        
+        // Use the same AssignUniqueIdToCard method to ensure consistent ID generation
+        string instanceId = AssignUniqueIdToCard(card, null);
+        Debug.Log($"Assigned unique ID to opponent pet card: {instanceId}");
+        return instanceId;
     }
 }

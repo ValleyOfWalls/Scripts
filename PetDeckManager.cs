@@ -147,6 +147,9 @@ public class PetDeckManager
             CardData drawnCard = opponentPetDeck[0];
             opponentPetDeck.RemoveAt(0);
             opponentPetHand.Add(drawnCard);
+            
+            // Assign a unique ID to the card
+            gameManager.GetCardManager().AssignUniqueIdToOpponentPetCard(drawnCard);
         }
     }
     
@@ -157,6 +160,9 @@ public class PetDeckManager
         foreach(CardData card in cardsToDiscard)
         {
             opponentPetDiscard.Add(card);
+            
+            // Re-assign unique ID when card moves to discard pile
+            gameManager.GetCardManager().AssignUniqueIdToOpponentPetCard(card);
         }
         // --- ADDED: Update Opponent Hand UI ---
         gameManager.GetCombatUIManager()?.UpdateOpponentPetHandUI();
@@ -176,6 +182,11 @@ public class PetDeckManager
             CardData cardToDiscard = opponentPetHand[randomIndex];
             opponentPetHand.RemoveAt(randomIndex);
             opponentPetDiscard.Add(cardToDiscard);
+            
+            // Re-assign unique ID when card moves to discard pile
+            // This is important for cards that might have been drawn without getting a unique ID
+            gameManager.GetCardManager().AssignUniqueIdToOpponentPetCard(cardToDiscard);
+            
             Debug.Log($"Randomly discarded opponent pet card: {cardToDiscard.cardName}");
         }
     }
@@ -246,6 +257,10 @@ public class PetDeckManager
                 opponentPetEnergy -= cardToPlay.cost;
                 opponentPetHand.Remove(cardToPlay);
                 opponentPetDiscard.Add(cardToPlay);
+                
+                // Ensure the card has a unique ID when played and when added to discard
+                gameManager.GetCardManager().AssignUniqueIdToOpponentPetCard(cardToPlay);
+                
                 cardPlayedThisLoop = true; // Indicate a card was processed, loop again
                 
                 // --- ADDED: Update Opponent Hand UI ---
@@ -343,6 +358,7 @@ public class PetDeckManager
     public List<CardData> GetLocalPetDeck() => localPetDeck;
     public List<CardData> GetOpponentPetDeck() => opponentPetDeck;
     public List<CardData> GetOpponentPetHand() => opponentPetHand;
+    public List<CardData> GetOpponentPetDiscard() => opponentPetDiscard;
     public List<CardData> GetAllOwnedPetCards() => new List<CardData>(localPetDeck);
     public int GetOpponentPetEnergy() => opponentPetEnergy;
     public void SetOpponentPetEnergy(int energy) => opponentPetEnergy = energy;

@@ -528,7 +528,7 @@ public class CardEffectService
         }
     }
     
-    public void ProcessOpponentPetCardEffect(CardData cardToPlay)
+    public void ProcessOpponentPetCardEffect(CardData cardToPlay, int previousPlays = 0, int totalCopies = 0)
     {
         if (cardToPlay == null) {
             Debug.LogError("ProcessOpponentPetCardEffect: cardToPlay is null!");
@@ -543,9 +543,12 @@ public class CardEffectService
         // Determine target based on card primary target field
         OpponentPetTargetType target = cardToPlay.primaryTargetWhenPlayedByPet;
         
+        // Log scaling info
+        Debug.Log($"Processing opponent pet card '{cardToPlay.cardName}' with previous plays: {previousPlays}, total copies: {totalCopies}");
+        
         // Apply all effects in a structured way
-        ApplyOpponentPetDamageEffect(cardToPlay, target, currentTurn, calculator);
-        ApplyOpponentPetBlockEffect(cardToPlay, target, currentTurn, calculator);
+        ApplyOpponentPetDamageEffect(cardToPlay, target, currentTurn, calculator, previousPlays, totalCopies);
+        ApplyOpponentPetBlockEffect(cardToPlay, target, currentTurn, calculator, previousPlays, totalCopies);
         ApplyOpponentPetHealingEffect(cardToPlay, target);
         ApplyOpponentPetStatusEffect(cardToPlay, target);
         ApplyOpponentPetDoTEffect(cardToPlay, target);
@@ -561,7 +564,7 @@ public class CardEffectService
         gameManager.GetCombatUIManager()?.UpdateOpponentPetHandUI();
     }
     
-    private void ApplyOpponentPetDamageEffect(CardData cardToPlay, OpponentPetTargetType target, int currentTurn, CombatCalculator calculator)
+    private void ApplyOpponentPetDamageEffect(CardData cardToPlay, OpponentPetTargetType target, int currentTurn, CombatCalculator calculator, int previousPlays, int totalCopies)
     {
         if (cardToPlay.damage <= 0) return;
         
@@ -573,8 +576,8 @@ public class CardEffectService
         int actualDamage = calculator.CalculateCardDamageWithScaling(
             cardToPlay,
             currentTurn,
-            0, // Previous plays not tracked for opponent pet
-            0, // Copies not tracked for opponent pet
+            previousPlays,
+            totalCopies,
             false, // Low health threshold not used for opponent pet
             0 // Don't include strength here - it will be applied in damage calculations
         );
@@ -595,7 +598,7 @@ public class CardEffectService
         }
     }
     
-    private void ApplyOpponentPetBlockEffect(CardData cardToPlay, OpponentPetTargetType target, int currentTurn, CombatCalculator calculator)
+    private void ApplyOpponentPetBlockEffect(CardData cardToPlay, OpponentPetTargetType target, int currentTurn, CombatCalculator calculator, int previousPlays, int totalCopies)
     {
         if (cardToPlay.block <= 0) return;
         
@@ -603,8 +606,8 @@ public class CardEffectService
         int totalBlock = calculator.CalculateCardBlockWithScaling(
             cardToPlay,
             currentTurn,
-            0, // Previous plays not tracked for opponent pet
-            0, // Copies not tracked for opponent pet
+            previousPlays,
+            totalCopies,
             false // Low health threshold not used for opponent pet
         );
         

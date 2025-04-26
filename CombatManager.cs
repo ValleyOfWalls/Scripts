@@ -122,4 +122,10 @@ public class CombatManager
     {
         return turnManager;
     }
+
+    public IEnumerator ExecuteOpponentPetTurn()
+    {
+        // Pass this to the card manager's coroutine and yield its result
+        return gameManager.GetCardManager().ExecuteOpponentPetTurn(startingPetEnergy);
+    }
 }
