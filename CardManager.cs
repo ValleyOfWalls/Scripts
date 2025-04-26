@@ -26,7 +26,9 @@ public class CardManager
     private DraftService draftService;
     
     // --- ADDED: Play Count Tracking ---
-    private Dictionary<CardData, int> cardPlayCountsThisCombat = new Dictionary<CardData, int>();
+    private Dictionary<string, int> cardPlayCountsThisCombat = new Dictionary<string, int>();
+    private Dictionary<CardData, string> cardInstanceIds = new Dictionary<CardData, string>();
+    private int nextCardId = 0;
     // --- END ADDED ---
     
     // Constants (maintaining the original API for other classes)
@@ -64,13 +66,86 @@ public class CardManager
         deckManager.InitializeDecks();
         petDeckManager.ShuffleLocalPetDeck();
         ResetCombatCardPlayCounts(); // Reset play counts when decks are initialized for combat
+        
+        // Generate unique IDs for all cards in the deck
+        foreach (CardData card in deckManager.GetDeck())
+        {
+            AssignUniqueIdToCard(card);
+        }
+        Debug.Log($"Assigned unique IDs to {cardInstanceIds.Count} cards in deck");
     }
     
     // --- ADDED: Reset Play Counts ---
     public void ResetCombatCardPlayCounts()
     {
         cardPlayCountsThisCombat.Clear();
+        cardInstanceIds.Clear();
+        nextCardId = 0;
         Debug.Log("Combat card play counts reset.");
+    }
+    // --- END ADDED ---
+    
+    // --- ADDED: Assign Unique ID to Card Instance ---
+    private string AssignUniqueIdToCard(CardData card, GameObject cardGameObject = null)
+    {
+        if (card == null) return null;
+        
+        // If we have a GameObject, use its instance ID for uniqueness
+        if (cardGameObject != null)
+        {
+            int cardInstanceId = cardGameObject.GetInstanceID();
+            string gameObjectKey = $"{card.cardName}_go_{cardInstanceId}";
+            
+            // Check if we already have an ID for this specific GameObject
+            if (!string.IsNullOrEmpty(cardGameObject.name) && 
+                cardGameObject.name.Contains("_instance_"))
+            {
+                // The card GameObject already has an instance ID in its name, extract and reuse it
+                string[] nameParts = cardGameObject.name.Split('_');
+                if (nameParts.Length >= 3)
+                {
+                    string existingInstanceId = $"{card.cardName}_instance_{nameParts[nameParts.Length - 1]}";
+                    Debug.Log($"Reusing existing instance ID from GameObject: {existingInstanceId}");
+                    return existingInstanceId;
+                }
+            }
+            
+            // In Debug Card Reuse Mode, we should use the GameObject's instance ID directly
+            // rather than looking up CardData in our dictionary, since the same CardData might
+            // be reused for different cards with the same name
+            bool debugCardReuseMode = gameManager.IsDebugCardReuseMode();
+            if (debugCardReuseMode)
+            {
+                string instanceId = $"{card.cardName}_instance_{cardInstanceId}";
+                Debug.Log($"Debug Card Reuse Mode: Created unique GameObject-based ID: {instanceId}");
+                return instanceId;
+            }
+            
+            // For normal mode, continue with CardData-based mapping
+            if (cardInstanceIds.TryGetValue(card, out string existingId))
+            {
+                Debug.Log($"Found existing instance ID for {gameObjectKey}: {existingId}");
+                return existingId;
+            }
+            
+            string newInstanceId = $"{card.cardName}_instance_{nextCardId++}";
+            cardInstanceIds[card] = newInstanceId;
+            Debug.Log($"Created new unique instance ID for card: {newInstanceId} using GameObject ID: {cardInstanceId}");
+            return newInstanceId;
+        }
+        else
+        {
+            // Fallback to using CardData reference if no GameObject provided
+            if (cardInstanceIds.TryGetValue(card, out string existingId))
+            {
+                return existingId;
+            }
+            
+            string instanceId = $"{card.cardName}_instance_{nextCardId++}";
+            cardInstanceIds[card] = instanceId;
+            Debug.Log($"Created new unique instance ID for card: {instanceId} (no GameObject provided)");
+            return instanceId;
+        }
     }
     // --- END ADDED ---
     
@@ -79,11 +154,24 @@ public class CardManager
         // Before drawing, ensure no lingering temp upgrades from previous states
         cardModificationService.RevertExpiredHandUpgrades(true); 
         deckManager.DrawHand();
+        
+        // Assign unique IDs to all drawn cards
+        foreach (CardData card in deckManager.GetHand())
+        {
+            AssignUniqueIdToCard(card, null); // Pass null for GameObject as we don't have access to it here
+        }
     }
     
     public void DrawCard()
     {
         deckManager.DrawCard();
+        
+        // Assign unique ID to the newly drawn card
+        List<CardData> hand = deckManager.GetHand();
+        if (hand.Count > 0)
+        {
+            AssignUniqueIdToCard(hand[hand.Count - 1], null); // Pass null for GameObject
+        }
     }
     
     public void DiscardHand()
@@ -194,7 +282,7 @@ public class CardManager
             // --- END MODIFIED ---
             
             // --- MODIFIED: Get play count BEFORE processing effects --- 
-            int previousPlays = GetCardPlayCountThisCombat(cardData);
+            int previousPlays = GetCardPlayCountThisCombat(cardData, cardGO);
             // --- ADDED: Get copy count BEFORE processing effects ---
             int totalCopies = GetTotalCardCopies(cardData);
             
@@ -207,9 +295,8 @@ public class CardManager
             {
                 gameManager.UpdateHealthUI(); // This will also update status effects like combo
                 
-                // --- MODIFIED: Increment play count AFTER successful processing --- 
-                cardPlayCountsThisCombat[cardData] = previousPlays + 1;
-                Debug.Log($"Incremented play count for {cardData.cardName} to {previousPlays + 1}");
+                // Increment the play count for this card
+                IncrementCardPlayCount(cardData, cardGO);
             }
             
             Debug.Log($"Successfully processed effects for card '{cardData.cardName}' on target '{targetType}'.");
@@ -222,28 +309,56 @@ public class CardManager
         }
     }
     
-    // --- ADDED: Get Play Count ---
-    public int GetCardPlayCountThisCombat(CardData cardData)
+    /// <summary>
+    /// Get the number of times this card has been played in this combat.
+    /// </summary>
+    public int GetCardPlayCountThisCombat(CardData card, GameObject cardGameObject = null)
     {
-        if (cardData == null) return 0;
-        return cardPlayCountsThisCombat.GetValueOrDefault(cardData, 0);
+        if (card == null) return 0;
+        
+        // Get the instance ID for this card
+        string instanceId = AssignUniqueIdToCard(card, cardGameObject);
+        
+        // Get the play count for this instance
+        if (cardPlayCountsThisCombat.TryGetValue(instanceId, out int playCount))
+        {
+            Debug.Log($"Play count for {instanceId}: {playCount}");
+            return playCount;
+        }
+        
+        // If not played yet, return 0
+        Debug.Log($"Play count for {instanceId}: 0 (never played)");
+        return 0;
     }
-    // --- END ADDED ---
     
     // --- ADDED: Get Total Card Copies ---
     public int GetTotalCardCopies(CardData cardData)
     {
-        if (cardData == null || string.IsNullOrEmpty(cardData.cardFamilyName))
+        if (cardData == null)
         {
-            Debug.LogWarning($"GetTotalCardCopies: Invalid CardData or missing cardFamilyName for '{cardData?.cardName}'. Returning 0.");
+            Debug.LogWarning($"GetTotalCardCopies: Invalid CardData. Returning 0.");
             return 0;
         }
 
-        string familyNameToCount = cardData.cardFamilyName;
-        List<CardData> allCards = deckManager.GetAllOwnedPlayerCards(); // Includes deck, hand, discard
-        int count = allCards.Count(card => card != null && card.cardFamilyName == familyNameToCount);
+        string nameToCount;
         
-        // Debug.Log($"GetTotalCardCopies for family '{familyNameToCount}': Found {count} copies.");
+        if (!string.IsNullOrEmpty(cardData.cardFamilyName))
+        {
+            // Use cardFamilyName if available
+            nameToCount = cardData.cardFamilyName;
+        }
+        else
+        {
+            // Fall back to cardName if cardFamilyName is missing
+            nameToCount = cardData.cardName;
+            Debug.Log($"GetTotalCardCopies: Using cardName '{cardData.cardName}' instead of missing cardFamilyName");
+        }
+        
+        List<CardData> allCards = deckManager.GetAllOwnedPlayerCards(); // Includes deck, hand, discard
+        int count = allCards.Count(card => card != null && 
+            (!string.IsNullOrEmpty(card.cardFamilyName) ? card.cardFamilyName == nameToCount : card.cardName == nameToCount));
+        
+        Debug.Log($"GetTotalCardCopies for '{nameToCount}': Found {count} copies.");
         return count;
     }
     // --- END ADDED ---
@@ -332,4 +447,48 @@ public class CardManager
     public CardEffectService GetCardEffectService() => cardEffectService;
     public CardModificationService GetCardModificationService() => cardModificationService;
     public DraftService GetDraftService() => draftService;
+    
+    // --- ADDED: Methods to handle cards added to deck during gameplay ---
+    public void AddCardToPlayerDeck(CardData card)
+    {
+        if (card == null) return;
+        
+        // Assign a unique ID before adding to deck
+        AssignUniqueIdToCard(card, null); // Pass null for GameObject
+        
+        // Then add to deck
+        deckManager.AddCardToPlayerDeck(card);
+    }
+    
+    // --- ADDED: Wrapper for any operation that creates or copies cards ---
+    public CardData PrepareCardInstance(CardData cardData)
+    {
+        if (cardData == null) return null;
+        
+        // Assign a unique ID to the card instance
+        AssignUniqueIdToCard(cardData, null); // Pass null for GameObject
+        return cardData;
+    }
+
+    /// <summary>
+    /// Increment the play count for a card.
+    /// </summary>
+    private void IncrementCardPlayCount(CardData card, GameObject cardGameObject = null)
+    {
+        if (card == null) return;
+        
+        string instanceId = AssignUniqueIdToCard(card, cardGameObject);
+        
+        // Increment the play count
+        if (cardPlayCountsThisCombat.ContainsKey(instanceId))
+        {
+            cardPlayCountsThisCombat[instanceId]++;
+        }
+        else
+        {
+            cardPlayCountsThisCombat[instanceId] = 1;
+        }
+        
+        Debug.Log($"Incremented play count for {instanceId} to {cardPlayCountsThisCombat[instanceId]}");
+    }
 }

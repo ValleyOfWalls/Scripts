@@ -110,7 +110,11 @@ public class CombatCalculator
         int playBonusDamage = 0;
         if (cardData.damageScalingPerPlay > 0)
         {
-            playBonusDamage = Mathf.FloorToInt(cardData.damageScalingPerPlay * previousPlaysThisCombat);
+            // Only apply scaling if this is not the first play (previousPlaysThisCombat > 0)
+            if (previousPlaysThisCombat > 0)
+            {
+                playBonusDamage = Mathf.FloorToInt(cardData.damageScalingPerPlay * previousPlaysThisCombat);
+            }
         }
         
         // Copy scaling
@@ -168,7 +172,11 @@ public class CombatCalculator
         int playBonusBlock = 0;
         if (cardData.blockScalingPerPlay > 0)
         {
-            playBonusBlock = Mathf.FloorToInt(cardData.blockScalingPerPlay * previousPlaysThisCombat);
+            // Only apply scaling if this is not the first play (previousPlaysThisCombat > 0)
+            if (previousPlaysThisCombat > 0)
+            {
+                playBonusBlock = Mathf.FloorToInt(cardData.blockScalingPerPlay * previousPlaysThisCombat);
+            }
         }
         
         // Copy scaling

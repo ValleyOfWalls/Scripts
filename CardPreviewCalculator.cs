@@ -9,6 +9,7 @@ using System.Text.RegularExpressions;
 public class CardPreviewCalculator
 {
     private static readonly Color previewColor = new Color(0.2f, 0.6f, 1f); // Light blue color
+    private static readonly string originalDescKey = "OriginalDescription";
 
     private GameManager gameManager;
     private CombatCalculator combatCalculator;

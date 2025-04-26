@@ -908,7 +908,7 @@ public class CardGenerator : MonoBehaviour
             return;
         }
         
-        GameManager gameManager = FindFirstObjectByType<GameManager>();
+        GameManager gameManager = FindObjectOfType<GameManager>();
         if (gameManager == null)
         {
             Debug.LogError("Cannot setup test deck: GameManager not found in scene.");
