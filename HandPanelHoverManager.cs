@@ -103,7 +103,6 @@ public class HandPanelHoverManager : MonoBehaviour, IPointerMoveHandler, IPointe
         // --- END ADDED ---
 
         CardDragHandler hoveredCard = null;
-        float minDepth = float.MaxValue; // Use depth (or sibling index) for tie-breaking if needed
 
         // Iterate in reverse to prioritize cards rendered on top (higher sibling index)
         for (int i = cardsInHand.Count - 1; i >= 0; i--)

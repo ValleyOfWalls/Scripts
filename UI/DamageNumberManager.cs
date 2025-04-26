@@ -54,7 +54,7 @@ public class DamageNumberManager : MonoBehaviour
     private void Start()
     {
         // Register with GameManager
-        GameManager gameManager = FindObjectOfType<GameManager>();
+        GameManager gameManager = FindFirstObjectByType<GameManager>();
         if (gameManager != null)
         {
             gameManager.RegisterDamageNumberManager(this);
@@ -207,7 +207,7 @@ public class DamageNumberManager : MonoBehaviour
         textComponent.color = textColor;
         textComponent.fontSize = fontSize;
         textComponent.alignment = TextAlignmentOptions.Center;
-        textComponent.enableWordWrapping = false;
+        textComponent.textWrappingMode = TextWrappingModes.NoWrap;
         
         // Set font asset if provided
         if (fontAsset != null)

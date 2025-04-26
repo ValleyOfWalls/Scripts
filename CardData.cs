@@ -21,13 +21,6 @@ public enum ComboEffectType
     // Add more complex combo effects later
 }
 
-public enum CostChangeTargetType
-{
-    None,
-    PlayerHand,
-    OpponentHand
-}
-
 public enum UpgradeTargetRule
 {
     Random,
@@ -46,6 +39,22 @@ public enum CritBuffTargetRule
     Target, // Apply buff to the entity the card was dropped on
     Self    // Apply buff to the entity playing the card (Player or Opponent Pet)
 }
+
+// ADDED: Define the role of the combo effect target
+public enum ComboTargetRole
+{
+    Self,   // The entity playing the card (Player)
+    Target  // The entity the card was played on (e.g., EnemyPet, PlayerSelf, OwnPet)
+}
+// END ADDED
+
+// ADDED: Define role for cost modification target
+public enum CostModificationTargetRole
+{
+    Self,   // The hand of the entity triggering the cost modification (e.g., player playing the card)
+    Target  // The hand of the opponent of the entity triggering the modification
+}
+// END ADDED
 
 [CreateAssetMenu(fileName = "New Card", menuName = "Cards/Card Data")]
 public class CardData : ScriptableObject
@@ -104,10 +113,14 @@ public class CardData : ScriptableObject
     public int comboTriggerValue = 3; // How many combo cards needed to trigger the effect
     public ComboEffectType comboEffectType = ComboEffectType.None;
     public int comboEffectValue = 0; // Value for the combo effect (e.g., damage, block)
-    public CardDropZone.TargetType comboEffectTarget = CardDropZone.TargetType.EnemyPet; // Who does the combo effect hit?
+    // ADDED: Determine if combo hits Self (player) or the card's original Target
+    [Tooltip("Determines if the combo effect applies to Self (the player) or the Target the card was played on.")]
+    public ComboTargetRole comboTargetRole = ComboTargetRole.Target; // Default to hitting the original target
 
     [Header("Cost Modification Effect")]
-    public CostChangeTargetType costChangeTarget = CostChangeTargetType.None;
+    // ADDED: Use target role for cost modification
+    [Tooltip("Determines whose hand costs are modified: Self (player triggering) or Target (their opponent).")]
+    public CostModificationTargetRole costModificationTargetRole = CostModificationTargetRole.Self; // Default to modifying own hand
     public int costChangeAmount = 0; // e.g., +1 or -1
     public int costChangeDuration = 1; // Turns the change lasts (e.g., 1 for opponent's next turn)
     public int costChangeCardCount = 0; // How many cards targeted (0 = all, >0 = random count)

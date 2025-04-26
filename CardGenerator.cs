@@ -291,7 +291,7 @@ public class CardGenerator : MonoBehaviour
                 card.comboTriggerValue = 2;
             card.comboEffectType = ComboEffectType.DealDamage;
             card.comboEffectValue = 10;
-            card.comboEffectTarget = CardDropZone.TargetType.EnemyPet;
+            card.comboTargetRole = ComboTargetRole.Target;
             }
         );
         comboTestCards.Add(comboStarter);
@@ -307,7 +307,7 @@ public class CardGenerator : MonoBehaviour
                 card.comboTriggerValue = 2;
             card.comboEffectType = ComboEffectType.GainBlock;
             card.comboEffectValue = 10;
-            card.comboEffectTarget = CardDropZone.TargetType.PlayerSelf;
+            card.comboTargetRole = ComboTargetRole.Self;
             }
         );
         comboTestCards.Add(comboBlockStarter);
@@ -407,7 +407,7 @@ public class CardGenerator : MonoBehaviour
             card => { 
                 card.energyGain = 1;
                 card.discardEffectType = DiscardEffectType.GainEnergy;
-            card.discardEffectValue = 2;
+                card.discardEffectValue = 2;
             }
         );
         discardEffectTestCards.Add(discardEnergy);
@@ -423,7 +423,7 @@ public class CardGenerator : MonoBehaviour
             "Your cards cost 1 less this turn.", 
             2, 
             card => { 
-            card.costChangeTarget = CostChangeTargetType.PlayerHand;
+            card.costModificationTargetRole = CostModificationTargetRole.Self;
             card.costChangeAmount = -1;
             card.costChangeDuration = 1;
             card.costChangeCardCount = 0; // All cards
@@ -437,7 +437,7 @@ public class CardGenerator : MonoBehaviour
             "Enemy cards cost 1 more next turn.", 
             2, 
             card => { 
-            card.costChangeTarget = CostChangeTargetType.OpponentHand;
+            card.costModificationTargetRole = CostModificationTargetRole.Target;
             card.costChangeAmount = 1;
             card.costChangeDuration = 1;
             card.costChangeCardCount = 0; // All cards
@@ -451,7 +451,7 @@ public class CardGenerator : MonoBehaviour
             "2 random cards in your hand cost 1 less this turn.", 
             1, 
             card => { 
-                card.costChangeTarget = CostChangeTargetType.PlayerHand;
+                card.costModificationTargetRole = CostModificationTargetRole.Self;
                 card.costChangeAmount = -1;
                 card.costChangeDuration = 1;
                 card.costChangeCardCount = 2; // 2 random cards
@@ -908,7 +908,7 @@ public class CardGenerator : MonoBehaviour
             return;
         }
         
-        GameManager gameManager = FindObjectOfType<GameManager>();
+        GameManager gameManager = FindFirstObjectByType<GameManager>();
         if (gameManager == null)
         {
             Debug.LogError("Cannot setup test deck: GameManager not found in scene.");

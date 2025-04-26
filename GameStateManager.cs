@@ -86,7 +86,7 @@ public class GameStateManager
     private void FindAndSetupCanvases()
     {
         // Find all canvases in the scene, including inactive ones
-        Canvas[] allCanvases = Object.FindObjectsOfType<Canvas>(true);
+        Canvas[] allCanvases = Object.FindObjectsByType<Canvas>(FindObjectsSortMode.None);
         
         // Find canvases by name
         foreach (Canvas canvas in allCanvases)

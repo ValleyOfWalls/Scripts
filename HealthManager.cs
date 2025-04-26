@@ -62,6 +62,8 @@ public class HealthManager
         OpponentPetThorns, // Damage coming FROM opponent pet's thorns
         PlayerSelfAttack,  // Player hitting themselves with a card/effect
         PlayerSelfThorns,  // Player hitting themselves with their own thorns (recursive prevention)
+        PlayerComboEffect, // Added: Damage from a player's combo effect
+        DiscardEffect,     // Added: Damage from a discard effect
         Other // e.g., DoT effects, environment?
     }
     
@@ -911,7 +913,7 @@ public class HealthManager
     {
         // Return base opponent pet health - Assuming symmetric starting health for now
         // TODO: Revisit if opponent base health can differ significantly and needs specific tracking
-        Player opponentPlayer = gameManager.GetPlayerManager().GetOpponentPlayer();
+        Player opponentPlayer = gameManager.GetPlayerManager()?.GetOpponentPlayer();
         if (opponentPlayer != null && opponentPlayer.CustomProperties.TryGetValue(PlayerManager.PLAYER_BASE_PET_HP_PROP, out object oppBasePetHP))
         {
             try { return (int)oppBasePetHP; } 

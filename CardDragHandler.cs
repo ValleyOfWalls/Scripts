@@ -218,7 +218,7 @@ public class CardDragHandler : MonoBehaviour, IBeginDragHandler, IDragHandler, I
             {
                 Debug.LogError("Could not find PlayerHandPanel! Card will be lost.", this.gameObject);
                 // Find the canvas as a last resort
-                var canvas = FindObjectOfType<Canvas>();
+                var canvas = FindAnyObjectByType<Canvas>();
                 if (canvas != null)
                 {
                     originalParent = canvas.transform;

@@ -86,7 +86,7 @@ public class CardEffectService
             if (playerManager.GetCurrentComboCount() >= cardData.comboTriggerValue)
             {
                 Debug.Log($"COMBO TRIGGERED! ({playerManager.GetCurrentComboCount()}/{cardData.comboTriggerValue}) Applying effect: {cardData.comboEffectType}");
-                ApplyComboEffect(cardData);
+                ApplyComboEffect(cardData, targetType);
             }
         }
         
@@ -470,19 +470,22 @@ public class CardEffectService
         }
     }
     
+    // MODIFIED: Use costModificationTargetRole
     private void ApplyCostModifierEffect(CardData cardData)
     {
-        if (cardData.costChangeTarget == CostChangeTargetType.None || cardData.costChangeAmount == 0) return;
+        if (cardData.costChangeAmount == 0) return; // Check only amount, role determines target
         
         PlayerManager playerManager = gameManager.GetPlayerManager();
         
-        if (cardData.costChangeTarget == CostChangeTargetType.OpponentHand)
+        if (cardData.costModificationTargetRole == CostModificationTargetRole.Target) // Target means opponent's hand
         {
             playerManager.ApplyCostModifierToOpponentHand(cardData.costChangeAmount, cardData.costChangeDuration, cardData.costChangeCardCount);
+            Debug.Log($"Cost Mod Effect: Applying {cardData.costChangeAmount} cost change to Opponent Hand for {cardData.costChangeDuration} turns (Count: {cardData.costChangeCardCount}).");
         }
-        else if (cardData.costChangeTarget == CostChangeTargetType.PlayerHand)
+        else // Self means player's own hand
         {
             playerManager.ApplyCostModifierToLocalHand(cardData.costChangeAmount, cardData.costChangeDuration, cardData.costChangeCardCount);
+            Debug.Log($"Cost Mod Effect: Applying {cardData.costChangeAmount} cost change to Local Hand for {cardData.costChangeDuration} turns (Count: {cardData.costChangeCardCount}).");
         }
     }
     
@@ -773,24 +776,28 @@ public class CardEffectService
         }
     }
     
-    public void HandleDiscardTrigger(CardData card, CardDropZone.TargetType targetType = CardDropZone.TargetType.PlayerSelf)
+    // REVERTED: Back to original logic using target-specific types and default targetType param
+    public void HandleDiscardTrigger(CardData card, CardDropZone.TargetType targetType = CardDropZone.TargetType.PlayerSelf) // Added default back
     {
         // Only process if card has a discard effect
         if (card.discardEffectType == DiscardEffectType.None) return;
 
         PlayerManager playerManager = gameManager.GetPlayerManager();
         int value = card.discardEffectValue;
+        if (value <= 0) return; // Check value after playerManager is obtained
         
-        // --- MODIFIED: Switch logic to respect targetType ---
+        // Use the original switch logic based on the specific DiscardEffectType
         switch (card.discardEffectType)
         {
             case DiscardEffectType.DealDamageToOpponentPet:
                 // This effect always targets the opponent pet regardless of drop target
-                playerManager.DamageOpponentPet(value);
+                // Use the specific DiscardEffect source
+                playerManager.DamageOpponentPet(value, HealthManager.DamageSource.DiscardEffect); // Use correct source
+                Debug.Log($"Discard Effect: Dealt {value} damage to Opponent Pet.");
                 break;
             
             case DiscardEffectType.GainBlockPlayer:
-                // Apply block based on target
+                // Effect targets Player (or Pet if targetType is OwnPet)
                 if (targetType == CardDropZone.TargetType.PlayerSelf)
                 {
                     playerManager.AddBlockToLocalPlayer(value);
@@ -801,20 +808,17 @@ public class CardEffectService
                     playerManager.AddBlockToLocalPet(value);
                     Debug.Log($"Discard Effect: Gained {value} block for own pet.");
                 }
-                else if (targetType == CardDropZone.TargetType.EnemyPet)
-                {
-                    // This would require new methods to add block to opponent pet
-                    Debug.LogWarning($"Discard Effect: GainBlock on EnemyPet not implemented. Target was {targetType}");
-                }
+                // Removed EnemyPet case as it wasn't implemented before
                 break;
             
             case DiscardEffectType.GainBlockPet:
-                // This effect always targets your pet
+                // This effect always targets the player's own pet
                 playerManager.AddBlockToLocalPet(value);
+                 Debug.Log($"Discard Effect: Gained {value} block for own pet.");
                 break;
             
             case DiscardEffectType.DrawCard:
-                // Apply draw based on target
+                // Apply draw based on target (who discarded)
                 if (targetType == CardDropZone.TargetType.PlayerSelf)
                 {
                     Debug.Log($"Discard Effect: Drawing {value} cards for player.");
@@ -825,8 +829,14 @@ public class CardEffectService
                 }
                 else if (targetType == CardDropZone.TargetType.OwnPet)
                 {
-                    Debug.Log($"Discard Effect: Drawing {value} cards for own pet is not yet implemented.");
-                    // TODO: Implement drawing for own pet
+                    // Needs implementation: Tell opponent (who simulates our pet) to draw cards
+                    Player opponentPlayer = playerManager.GetOpponentPlayer();
+                    if (opponentPlayer != null) {
+                         Debug.Log($"Discard Effect: Requesting OwnPet draw {value} cards (sending RPC to {opponentPlayer.NickName}).");
+                        gameManager.GetPhotonView().RPC("RpcDrawCardsForMyPet", opponentPlayer, value);
+                    } else {
+                        Debug.LogWarning("Discard Effect: Could not send RpcDrawCardsForMyPet, opponent player is null.");
+                    }
                 }
                 else if (targetType == CardDropZone.TargetType.EnemyPet)
                 {
@@ -838,7 +848,7 @@ public class CardEffectService
                 break;
             
             case DiscardEffectType.GainEnergy:
-                // Apply energy gain based on target
+                // Apply energy gain based on target (who discarded)
                 if (targetType == CardDropZone.TargetType.PlayerSelf)
                 {
                     playerManager.GainEnergy(value);
@@ -846,64 +856,93 @@ public class CardEffectService
                 }
                 else if (targetType == CardDropZone.TargetType.OwnPet)
                 {
-                    // Add energy to own pet (would need additional method)
-                    Debug.LogWarning($"Discard Effect: GainEnergy for own pet not implemented. Target was {targetType}");
+                     // Update Own Pet's energy custom property
+                    int currentPetEnergy = gameManager.GetStartingPetEnergy();
+                    if (PhotonNetwork.LocalPlayer.CustomProperties.TryGetValue(CombatStateManager.PLAYER_COMBAT_PET_ENERGY_PROP, out object energyObj)) {
+                        try { currentPetEnergy = (int)energyObj; } catch {}
+                    }
+                    int newPetEnergy = currentPetEnergy + value;
+                    ExitGames.Client.Photon.Hashtable petEnergyProp = new ExitGames.Client.Photon.Hashtable { { CombatStateManager.PLAYER_COMBAT_PET_ENERGY_PROP, newPetEnergy } };
+                    PhotonNetwork.LocalPlayer.SetCustomProperties(petEnergyProp);
+                    Debug.Log($"Discard Effect: Gained {value} energy for Own Pet (updated property).");
                 }
                 else if (targetType == CardDropZone.TargetType.EnemyPet)
                 {
-                    // Add energy to opponent pet
                     PetDeckManager petDeckManager = gameManager.GetCardManager().GetPetDeckManager();
                     petDeckManager.AddEnergyToOpponentPet(value);
                     Debug.Log($"Discard Effect: Added {value} energy to opponent's pet.");
                 }
                 break;
         }
-        // --- END MODIFIED ---
     }
     
-    private void ApplyComboEffect(CardData triggeringCard)
+    private void ApplyComboEffect(CardData triggeringCard, CardDropZone.TargetType originalTargetType)
     {
         PlayerManager playerManager = gameManager.GetPlayerManager();
         int value = triggeringCard.comboEffectValue;
         if (value <= 0) return; // No effect if value is zero or less
 
-        CardDropZone.TargetType target = triggeringCard.comboEffectTarget;
+        // Determine the effective target based on ComboTargetRole
+        CardDropZone.TargetType effectiveTarget;
+        if (triggeringCard.comboTargetRole == ComboTargetRole.Self)
+        {
+            effectiveTarget = CardDropZone.TargetType.PlayerSelf; // Combo always targets the player when role is Self
+        }
+        else // ComboTargetRole.Target
+        {
+            effectiveTarget = originalTargetType; // Combo targets whatever the card was played on
+        }
+
+        Debug.Log($"Combo targeting role: {triggeringCard.comboTargetRole}, Original target: {originalTargetType}, Effective target: {effectiveTarget}");
 
         switch (triggeringCard.comboEffectType)
         {
             case ComboEffectType.DealDamage:
-                // Apply damage based on target
-                if (target == CardDropZone.TargetType.EnemyPet) {
-                    playerManager.DamageOpponentPet(value);
+                // Apply damage based on effective target
+                if (effectiveTarget == CardDropZone.TargetType.EnemyPet) {
+                    // Use PlayerComboEffect source
+                    playerManager.DamageOpponentPet(value, HealthManager.DamageSource.PlayerComboEffect); 
                     Debug.Log($"Combo Effect: Dealt {value} damage to Opponent Pet.");
                 }
-                // Add cases for other potential damage targets if needed (e.g., PlayerSelf, OwnPet)
+                else if (effectiveTarget == CardDropZone.TargetType.PlayerSelf)
+                {
+                    // Use PlayerComboEffect source
+                    playerManager.DamageLocalPlayer(value, true, HealthManager.DamageSource.PlayerComboEffect);
+                    Debug.Log($"Combo Effect: Dealt {value} damage to PlayerSelf.");
+                }
+                else if (effectiveTarget == CardDropZone.TargetType.OwnPet)
+                {
+                    // ApplyDamageToLocalPetLocally doesn't take a source, but maybe it should?
+                    // For now, just call it. Consider adding source if needed for thorns etc.
+                    playerManager.ApplyDamageToLocalPetLocally(value); 
+                    Debug.Log($"Combo Effect: Dealt {value} damage to OwnPet.");
+                }
                 else {
-                     Debug.LogWarning($"Combo Effect: DealDamage targeted {target}, which is not implemented for this effect.");
+                     Debug.LogWarning($"Combo Effect: DealDamage targeted {effectiveTarget}, which is not implemented or invalid for this effect.");
                 }
                 break;
 
             case ComboEffectType.GainBlock:
-                // Apply block based on target
-                if (target == CardDropZone.TargetType.PlayerSelf) {
+                // Apply block based on effective target
+                if (effectiveTarget == CardDropZone.TargetType.PlayerSelf) {
                     playerManager.AddBlockToLocalPlayer(value);
                      Debug.Log($"Combo Effect: Gained {value} block for PlayerSelf.");
                 }
-                else if (target == CardDropZone.TargetType.OwnPet) {
+                else if (effectiveTarget == CardDropZone.TargetType.OwnPet) {
                     playerManager.AddBlockToLocalPet(value);
                     Debug.Log($"Combo Effect: Gained {value} block for OwnPet.");
                 }
-                // Add case for EnemyPet if block can target them via combo
-                // else if (target == CardDropZone.TargetType.EnemyPet) {
-                //     playerManager.AddBlockToOpponentPet(value);
-                // }
+                else if (effectiveTarget == CardDropZone.TargetType.EnemyPet) {
+                     playerManager.AddBlockToOpponentPet(value);
+                     Debug.Log($"Combo Effect: Gained {value} block for EnemyPet.");
+                }
                 else {
-                     Debug.LogWarning($"Combo Effect: GainBlock targeted {target}, which is not implemented for this effect.");
+                     Debug.LogWarning($"Combo Effect: GainBlock targeted {effectiveTarget}, which is not implemented or invalid for this effect.");
                 }
                 break;
 
             case ComboEffectType.DrawCard:
-                // DrawCard implicitly targets the player
+                // DrawCard implicitly targets the player, regardless of comboTargetRole or originalTargetType
                 DeckManager deckManager = gameManager.GetCardManager().GetDeckManager();
                 for(int i=0; i < value; i++) deckManager.DrawCard();
                 gameManager.UpdateHandUI();
@@ -912,7 +951,7 @@ public class CardEffectService
                 break;
 
             case ComboEffectType.GainEnergy:
-                // GainEnergy implicitly targets the player
+                // GainEnergy implicitly targets the player, regardless of comboTargetRole or originalTargetType
                 playerManager.GainEnergy(value);
                  Debug.Log($"Combo Effect: Gained {value} energy.");
                 break;
