@@ -59,15 +59,6 @@ public class GameManager : MonoBehaviourPunCallbacks
     private CardModificationService cardModificationService;
     private HandPanelHoverManager handPanelHoverManager;
     private DamageNumberManager damageNumberManager;
-    
-    // --- NEW: Added Combat Entity System ---
-    private CombatEntity localPlayerEntity;
-    private CombatEntity localPetEntity;
-    private CombatEntity opponentPetEntity;
-    private StatusEffectController statusEffectController;
-    private NetworkSyncController networkSyncController;
-    private CombatFlowController combatFlowController;
-    // --- END NEW ---
 
     #region Unity Lifecycle Methods
 
@@ -117,16 +108,6 @@ public class GameManager : MonoBehaviourPunCallbacks
         // --- ADDED: Initialize Card Preview Calculator ---
         cardPreviewCalculator = new CardPreviewCalculator(this);
         // --- END ADDED ---
-        
-        // --- NEW: Initialize new controllers ---
-        statusEffectController = new StatusEffectController(this);
-        
-        // Add NetworkSyncController as a component to the GameManager GameObject
-        networkSyncController = gameObject.AddComponent<NetworkSyncController>();
-        networkSyncController.Initialize(this);
-        
-        combatFlowController = new CombatFlowController(this);
-        // --- END NEW ---
 
         // ** Initialize and sync local pet deck early **
         if (cardManager != null)
@@ -217,124 +198,114 @@ public class GameManager : MonoBehaviourPunCallbacks
     public override void OnDisconnected(DisconnectCause cause) => photonManager.OnDisconnected(cause);
     public override void OnPlayerEnteredRoom(Player newPlayer) => photonManager.OnPlayerEnteredRoom(newPlayer);
     public override void OnPlayerLeftRoom(Player otherPlayer) => photonManager.OnPlayerLeftRoom(otherPlayer);
-    
-    // --- MODIFIED: OnPlayerPropertiesUpdate to use NetworkSyncController ---
     public override void OnPlayerPropertiesUpdate(Player targetPlayer, Hashtable changedProps)
     {
-        // Forward to PhotonManager for original handling
         photonManager.OnPlayerPropertiesUpdate(targetPlayer, changedProps);
         
-        // Forward to NetworkSyncController for standardized handling
-        if (networkSyncController != null)
-        {
-            networkSyncController.ProcessPlayerPropertiesUpdate(targetPlayer, changedProps);
-        }
-        else
-        {
-            // Fall back to original handling if controller not initialized
-            if (targetPlayer == null) return; // Safety check
+        // --- MODIFIED: Update local simulation based on ANY player property changes ---
+        if (targetPlayer == null) return; // Safety check
 
-            Player opponentPlayer = playerManager?.GetOpponentPlayer();
-            bool isOpponent = opponentPlayer != null && targetPlayer == opponentPlayer;
-            bool isSelf = targetPlayer == PhotonNetwork.LocalPlayer;
+        Player opponentPlayer = playerManager?.GetOpponentPlayer();
+        bool isOpponent = opponentPlayer != null && targetPlayer == opponentPlayer;
+        bool isSelf = targetPlayer == PhotonNetwork.LocalPlayer;
 
-            // --- Pet Energy Update (Applies to Opponent Pet Sim or Local Pet Property) ---
-            if (changedProps.ContainsKey(CombatStateManager.PLAYER_COMBAT_PET_ENERGY_PROP))
+        // --- Pet Energy Update (Applies to Opponent Pet Sim or Local Pet Property) ---
+        if (changedProps.ContainsKey(CombatStateManager.PLAYER_COMBAT_PET_ENERGY_PROP))
+        {
+            try
             {
-                try
+                int newPetEnergy = (int)changedProps[CombatStateManager.PLAYER_COMBAT_PET_ENERGY_PROP];
+                if (isOpponent)
                 {
-                    int newPetEnergy = (int)changedProps[CombatStateManager.PLAYER_COMBAT_PET_ENERGY_PROP];
-                    if (isOpponent)
-                    {
-                        // Update our simulation of the opponent's pet
-                        Debug.Log($"OnPlayerPropertiesUpdate: Opponent ({targetPlayer.NickName}) pet energy changed to {newPetEnergy}. Updating local simulation.");
-                        cardManager?.GetPetDeckManager()?.SetOpponentPetEnergy(newPetEnergy);
-                    }
-                    // No action needed if isSelf, as the property was set locally.
+                    // Update our simulation of the opponent's pet
+                    Debug.Log($"OnPlayerPropertiesUpdate: Opponent ({targetPlayer.NickName}) pet energy changed to {newPetEnergy}. Updating local simulation.");
+                    cardManager?.GetPetDeckManager()?.SetOpponentPetEnergy(newPetEnergy);
                 }
-                catch (System.Exception e)
-                {
-                    Debug.LogError($"Failed to cast pet energy property: {e.Message}");
-                }
+                // No action needed if isSelf, as the property was set locally.
             }
-
-            // --- Player Stat Updates (Apply to Opponent Player Simulation) ---
-            if (isOpponent)
+            catch (System.Exception e)
             {
-                HealthManager hm = playerManager?.GetHealthManager();
-                StatusEffectManager sem = playerManager?.GetStatusEffectManager();
-                EnergyManager em = playerManager?.GetEnergyManager();
+                Debug.LogError($"Failed to cast pet energy property: {e.Message}");
+            }
+        }
 
-                if (hm != null) 
-                {
-                    if (changedProps.TryGetValue(CombatStateManager.PLAYER_COMBAT_PLAYER_HP_PROP, out object hpVal)) 
-                        hm.SetOpponentPlayerHealth((int)hpVal);
-                    if (changedProps.TryGetValue(CombatStateManager.PLAYER_COMBAT_PLAYER_BLOCK_PROP, out object blockVal)) 
-                        hm.SetOpponentPlayerBlock((int)blockVal);
-                    if (changedProps.TryGetValue(CombatStateManager.PLAYER_COMBAT_PLAYER_DOT_TURNS_PROP, out object dotTurnsVal) && 
-                        changedProps.TryGetValue(CombatStateManager.PLAYER_COMBAT_PLAYER_DOT_DMG_PROP, out object dotDmgVal)) 
-                        hm.SetOpponentPlayerDot((int)dotTurnsVal, (int)dotDmgVal);
-                    if (changedProps.TryGetValue(CombatStateManager.PLAYER_COMBAT_PLAYER_HOT_TURNS_PROP, out object hotTurnsVal) && 
-                        changedProps.TryGetValue(CombatStateManager.PLAYER_COMBAT_PLAYER_HOT_AMT_PROP, out object hotAmtVal)) 
-                        hm.SetOpponentPlayerHot((int)hotTurnsVal, (int)hotAmtVal);
-                    if (changedProps.TryGetValue(CombatStateManager.PLAYER_COMBAT_PLAYER_CRIT_PROP, out object critVal)) 
-                        hm.SetOpponentPlayerCritChance((int)critVal);
-                }
-                
-                if (sem != null)
-                {
-                     if (changedProps.TryGetValue(CombatStateManager.PLAYER_COMBAT_PLAYER_WEAK_PROP, out object weakVal)) 
-                        sem.SetOpponentPlayerWeakTurns((int)weakVal);
-                     if (changedProps.TryGetValue(CombatStateManager.PLAYER_COMBAT_PLAYER_BREAK_PROP, out object breakVal)) 
-                        sem.SetOpponentPlayerBreakTurns((int)breakVal);
-                     if (changedProps.TryGetValue(CombatStateManager.PLAYER_COMBAT_PLAYER_THORNS_PROP, out object thornsVal)) 
-                        sem.SetOpponentPlayerThorns((int)thornsVal);
-                     if (changedProps.TryGetValue(CombatStateManager.PLAYER_COMBAT_PLAYER_STRENGTH_PROP, out object strengthVal)) 
-                        sem.SetOpponentPlayerStrength((int)strengthVal);
-                }
-                
-                if (em != null)
-                {
-                    if (changedProps.TryGetValue(CombatStateManager.PLAYER_COMBAT_ENERGY_PROP, out object energyVal)) 
-                        em.SetOpponentPlayerEnergy((int)energyVal);
-                }
+        // --- Player Stat Updates (Apply to Opponent Player Simulation) ---
+        if (isOpponent)
+        {
+            HealthManager hm = playerManager?.GetHealthManager();
+            StatusEffectManager sem = playerManager?.GetStatusEffectManager();
+            EnergyManager em = playerManager?.GetEnergyManager();
+
+            if (hm != null) 
+            {
+                if (changedProps.TryGetValue(CombatStateManager.PLAYER_COMBAT_PLAYER_HP_PROP, out object hpVal)) 
+                    hm.SetOpponentPlayerHealth((int)hpVal);
+                if (changedProps.TryGetValue(CombatStateManager.PLAYER_COMBAT_PLAYER_BLOCK_PROP, out object blockVal)) 
+                    hm.SetOpponentPlayerBlock((int)blockVal);
+                if (changedProps.TryGetValue(CombatStateManager.PLAYER_COMBAT_PLAYER_DOT_TURNS_PROP, out object dotTurnsVal) && 
+                    changedProps.TryGetValue(CombatStateManager.PLAYER_COMBAT_PLAYER_DOT_DMG_PROP, out object dotDmgVal)) 
+                    hm.SetOpponentPlayerDot((int)dotTurnsVal, (int)dotDmgVal);
+                if (changedProps.TryGetValue(CombatStateManager.PLAYER_COMBAT_PLAYER_HOT_TURNS_PROP, out object hotTurnsVal) && 
+                    changedProps.TryGetValue(CombatStateManager.PLAYER_COMBAT_PLAYER_HOT_AMT_PROP, out object hotAmtVal)) 
+                    hm.SetOpponentPlayerHot((int)hotTurnsVal, (int)hotAmtVal);
+                if (changedProps.TryGetValue(CombatStateManager.PLAYER_COMBAT_PLAYER_CRIT_PROP, out object critVal)) 
+                    hm.SetOpponentPlayerCritChance((int)critVal);
             }
             
-            // Update Score UI and Other Fights UI regardless of who changed properties
-            if (gameStateManager.GetCurrentState() == GameState.Combat || gameStateManager.GetCurrentState() == GameState.Drafting)
+            if (sem != null)
             {
-                playerManager.GetCombatStateManager().UpdateScoreUI();
-                if (combatUIManager != null)
-                {
-                    combatUIManager.UpdateOtherFightsUI();
-                }
-                combatManager.UpdateHealthUI();
+                 if (changedProps.TryGetValue(CombatStateManager.PLAYER_COMBAT_PLAYER_WEAK_PROP, out object weakVal)) 
+                    sem.SetOpponentPlayerWeakTurns((int)weakVal);
+                 if (changedProps.TryGetValue(CombatStateManager.PLAYER_COMBAT_PLAYER_BREAK_PROP, out object breakVal)) 
+                    sem.SetOpponentPlayerBreakTurns((int)breakVal);
+                 if (changedProps.TryGetValue(CombatStateManager.PLAYER_COMBAT_PLAYER_THORNS_PROP, out object thornsVal)) 
+                    sem.SetOpponentPlayerThorns((int)thornsVal);
+                 if (changedProps.TryGetValue(CombatStateManager.PLAYER_COMBAT_PLAYER_STRENGTH_PROP, out object strengthVal)) 
+                    sem.SetOpponentPlayerStrength((int)strengthVal);
             }
-
-            // --- Pet Health Update ---
-            if (changedProps.ContainsKey(CombatStateManager.PLAYER_COMBAT_PET_HP_PROP))
+            
+            if (em != null)
             {
-                try
+                if (changedProps.TryGetValue(CombatStateManager.PLAYER_COMBAT_ENERGY_PROP, out object energyVal)) 
+                    em.SetOpponentPlayerEnergy((int)energyVal);
+            }
+            
+            Debug.Log($"Updated opponent ({targetPlayer.NickName}) simulated stats based on received properties.");
+        }
+        // --- END Player Stat Updates ---
+        
+        // Update Score UI and Other Fights UI regardless of who changed properties, if in relevant game states
+        if (gameStateManager.GetCurrentState() == GameState.Combat || gameStateManager.GetCurrentState() == GameState.Drafting)
+        {
+            playerManager.GetCombatStateManager().UpdateScoreUI(); // Use CombatStateManager via PlayerManager
+            if (combatUIManager != null)
+            {
+                combatUIManager.UpdateOtherFightsUI();
+            }
+            combatManager.UpdateHealthUI(); // Update main Health UI as well for property changes
+        }
+
+        // --- Pet Health Update ---
+        if (changedProps.ContainsKey(CombatStateManager.PLAYER_COMBAT_PET_HP_PROP))
+        {
+            try
+            {
+                int newPetHealth = (int)changedProps[CombatStateManager.PLAYER_COMBAT_PET_HP_PROP];
+                if (isOpponent)
                 {
-                    int newPetHealth = (int)changedProps[CombatStateManager.PLAYER_COMBAT_PET_HP_PROP];
-                    if (isOpponent)
-                    {
-                        // This is the health of the opponent's pet (which could be the pet we are fighting)
-                        Debug.Log($"OnPlayerPropertiesUpdate: Opponent pet health changed to {newPetHealth}. Updating local simulation.");
-                        playerManager?.GetHealthManager()?.SetOpponentPetHealth(newPetHealth);
-                        // Update UI immediately to reflect the change
-                        UpdateHealthUI();
-                    }
+                    // This is the health of the opponent's pet (which could be the pet we are fighting)
+                    Debug.Log($"OnPlayerPropertiesUpdate: Opponent pet health changed to {newPetHealth}. Updating local simulation.");
+                    playerManager?.GetHealthManager()?.SetOpponentPetHealth(newPetHealth);
+                    // Update UI immediately to reflect the change
+                    UpdateHealthUI();
                 }
-                catch (System.Exception e)
-                {
-                    Debug.LogError($"Failed to cast pet health property: {e.Message}");
-                }
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogError($"Failed to cast pet health property: {e.Message}");
             }
         }
     }
-    // --- END MODIFIED ---
-    
     public override void OnRoomPropertiesUpdate(Hashtable propertiesThatChanged) => photonManager.OnRoomPropertiesUpdate(propertiesThatChanged);
     public override void OnMasterClientSwitched(Player newMasterClient) => photonManager.OnMasterClientSwitched(newMasterClient);
     
@@ -507,76 +478,8 @@ public class GameManager : MonoBehaviourPunCallbacks
         }
 
         // Initialize combat state for this player
-        InitializeCombatState(opponentPetOwnerActorNum);
+        combatManager.InitializeCombatState(opponentPetOwnerActorNum);
     }
-
-    // --- MODIFIED: InitializeCombatState to use new entity system ---
-    public void InitializeCombatState(int opponentPetOwnerActorNum)
-    {
-        Debug.Log($"Initializing combat state against opponent pet owner: {opponentPetOwnerActorNum}");
-        
-        // Create entities
-        Player localPlayer = PhotonNetwork.LocalPlayer;
-        Player opponentPetOwner = null;
-        
-        if (opponentPetOwnerActorNum > 0)
-        {
-            opponentPetOwner = PhotonNetwork.CurrentRoom.GetPlayer(opponentPetOwnerActorNum);
-        }
-        
-        // Create the entity instances
-        localPlayerEntity = new CombatEntity(this, CombatEntity.EntityType.LocalPlayer, 
-                                           PhotonNetwork.LocalPlayer.NickName, 
-                                           startingPlayerHealth, startingEnergy, 
-                                           PhotonNetwork.LocalPlayer);
-                                           
-        localPetEntity = new CombatEntity(this, CombatEntity.EntityType.LocalPet, 
-                                        GetPlayerManager().GetLocalPetName(), 
-                                        startingPetHealth, startingPetEnergy, 
-                                        PhotonNetwork.LocalPlayer);
-                                        
-        opponentPetEntity = new CombatEntity(this, CombatEntity.EntityType.OpponentPet, 
-                                           opponentPetOwner?.NickName + "'s Pet" ?? "Opponent Pet", 
-                                           startingPetHealth, startingPetEnergy, 
-                                           opponentPetOwner);
-        
-        // Initialize controllers
-        statusEffectController.Initialize();
-        statusEffectController.RegisterEntity(localPlayerEntity);
-        statusEffectController.RegisterEntity(localPetEntity);
-        statusEffectController.RegisterEntity(opponentPetEntity);
-        
-        networkSyncController.ClearCaches();
-        networkSyncController.RegisterEntity(localPlayerEntity, PhotonNetwork.LocalPlayer);
-        networkSyncController.RegisterEntity(localPetEntity, PhotonNetwork.LocalPlayer);
-        if (opponentPetOwner != null)
-        {
-            networkSyncController.RegisterEntity(opponentPetEntity, opponentPetOwner);
-        }
-        
-        combatFlowController.Initialize(localPlayerEntity, localPetEntity, opponentPetEntity, 
-                                      startingEnergy, startingPetEnergy);
-        
-        // Initialize legacy systems
-        playerManager.InitializeCombatState(opponentPetOwnerActorNum, startingPlayerHealth, startingPetHealth);
-        GetCardManager().InitializeDecks();
-        
-        // Set opponent pet energy for local simulation
-        GetCardManager().GetPetDeckManager().SetOpponentPetEnergy(startingPetEnergy);
-        
-        // Setup Initial UI
-        GetCombatUIManager().InitializeUIState();
-        GetCombatUIManager().UpdateHealthUI();
-        GetCombatUIManager().UpdateDeckCountUI();
-        
-        // Start combat via flow controller
-        combatFlowController.StartCombat();
-        
-        // Update other UI elements
-        GetCombatUIManager().UpdateOtherFightsUI();
-        GetCombatUIManager().UpdateHealthUI();
-    }
-    // --- END MODIFIED ---
 
     public void InitializeCombatScreenReferences(GameObject combatInstance)
     {
@@ -587,12 +490,10 @@ public class GameManager : MonoBehaviourPunCallbacks
 
     #region Card Play Functions
 
-    // --- MODIFIED: IsPlayerTurn to use CombatFlowController ---
     public bool IsPlayerTurn()
     {
-        return combatFlowController.IsPlayerTurn();
+        return combatManager.IsPlayerTurn();
     }
-    // --- END MODIFIED ---
 
     public bool AttemptPlayCard(CardData cardData, CardDropZone.TargetType targetType, GameObject cardGO = null)
     {
@@ -666,7 +567,8 @@ public class GameManager : MonoBehaviourPunCallbacks
 
         Debug.Log($"RPC Received: Opponent Pet (the one I'm fighting) taking {damageAmount} damage.");
         // Apply this damage to the pet we are fighting, WITHOUT triggering another RPC
-        playerManager.GetHealthManager().ApplyDamageToOpponentPetLocally(damageAmount);
+        // Use DamageSource.Other as this isn't a direct attack from the opponent pet itself
+        playerManager.GetHealthManager().ApplyDamageToOpponentPetLocally(damageAmount, HealthManager.DamageSource.Other);
     }
     // --- END ADDED ---
 
@@ -1236,43 +1138,36 @@ public class GameManager : MonoBehaviourPunCallbacks
     // --- ADDED: Method to reset all status effects ---
     public void ResetAllStatusEffects(bool fromRPC = false)
     {
-        // Use new controller if available
-        if (statusEffectController != null)
+        if (playerManager == null) return;
+
+        Debug.Log("Resetting all status effects for all entities");
+        
+        // Reset player status effects
+        StatusEffectManager statusEffectManager = playerManager.GetStatusEffectManager();
+        HealthManager healthManager = playerManager.GetHealthManager();
+        
+        if (statusEffectManager != null)
         {
-            statusEffectController.ResetAllStatusEffects();
-        }
-        // Fallback to original implementation
-        else if (playerManager == null) return;
-        {
-            Debug.Log("Resetting all status effects for all entities");
+            // Reset combo count
+            statusEffectManager.ResetComboCount();
             
             // Reset player status effects
-            StatusEffectManager statusEffectManager = playerManager.GetStatusEffectManager();
-            HealthManager healthManager = playerManager.GetHealthManager();
+            statusEffectManager.ResetAllPlayerStatusEffects();
+            statusEffectManager.ResetAllLocalPetStatusEffects();
+            statusEffectManager.ResetAllOpponentPetStatusEffects();
+        }
+        
+        if (healthManager != null)
+        {
+            // Reset DoT/HoT effects
+            healthManager.ResetAllDoTEffects();
+            healthManager.ResetAllHoTEffects();
             
-            if (statusEffectManager != null)
-            {
-                // Reset combo count
-                statusEffectManager.ResetComboCount();
-                
-                // Reset player status effects
-                statusEffectManager.ResetAllPlayerStatusEffects();
-                statusEffectManager.ResetAllLocalPetStatusEffects();
-                statusEffectManager.ResetAllOpponentPetStatusEffects();
-            }
+            // Reset block
+            healthManager.ResetAllBlock();
             
-            if (healthManager != null)
-            {
-                // Reset DoT/HoT effects
-                healthManager.ResetAllDoTEffects();
-                healthManager.ResetAllHoTEffects();
-                
-                // Reset block
-                healthManager.ResetAllBlock();
-                
-                // Reset crit buffs
-                healthManager.ResetAllCritBuffs();
-            }
+            // Reset crit buffs
+            healthManager.ResetAllCritBuffs();
         }
         
         // Update UI
@@ -1312,15 +1207,6 @@ public class GameManager : MonoBehaviourPunCallbacks
     {
         return damageNumberManager;
     }
-    
-    // --- NEW: Added getters for new controllers ---
-    public StatusEffectController GetStatusEffectController() => statusEffectController;
-    public NetworkSyncController GetNetworkSyncController() => networkSyncController;
-    public CombatFlowController GetCombatFlowController() => combatFlowController;
-    public CombatEntity GetLocalPlayerEntity() => localPlayerEntity;
-    public CombatEntity GetLocalPetEntity() => localPetEntity;
-    public CombatEntity GetOpponentPetEntity() => opponentPetEntity;
-    // --- END NEW ---
 
     #endregion
 }

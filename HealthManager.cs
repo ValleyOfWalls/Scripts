@@ -195,7 +195,17 @@ public class HealthManager
             attackerCritChance = playerManager.GetPlayerEffectiveCritChance();
             attackerIsWeak = isPlayerWeak; // Use player's weak status
         }
-        // OpponentPetAttack strength/crit is handled within their attack logic before calling this.
+        // --- ADDED: Handle OpponentPetAttack Source --- 
+        else if (source == DamageSource.OpponentPetAttack)
+        {
+            // Opponent Pet is attacking, use their strength and crit chance
+            attackerStrength = playerManager.GetOpponentPetStrength();
+            attackerCritChance = playerManager.GetOpponentPetEffectiveCritChance(); 
+            // Use opponent pet's weak status (which should be synced/available)
+            attackerIsWeak = playerManager.GetStatusEffectManager().IsOpponentPetWeak(); 
+            Debug.Log($"Opponent Pet Attacking Player. Strength: {attackerStrength}, Crit: {attackerCritChance}, Weak: {attackerIsWeak}");
+        }
+        // --- END ADDED ---
         // Thorns damage (OpponentPetThorns, PlayerSelfThorns) doesn't use strength/crit.
         
         CombatCalculator.DamageResult result = calculator.CalculateDamage(
@@ -234,10 +244,10 @@ public class HealthManager
         int playerThornsValue = gameManager.GetPlayerManager().GetPlayerThorns();
 
         // 1. Should Player reflect thorns back to the attacker?
-        if (playerThornsValue > 0 && source == DamageSource.OpponentPetAttack)
+        if (playerThornsValue > 0 && source != DamageSource.PlayerSelfThorns && source != DamageSource.OpponentPetThorns)
         {
             Debug.Log($"Player has {playerThornsValue} Thorns! Reflecting damage back to Opponent Pet.");
-            DamageOpponentPet(playerThornsValue);
+            DamageOpponentPet(playerThornsValue, DamageSource.PlayerSelfThorns); 
         }
 
         // 2. Should Player take damage from their own thorns (due to self-attack)?
@@ -266,7 +276,9 @@ public class HealthManager
     /// This method performs the actual health/block modification and UI update.
     /// It does NOT send any network notifications.
     /// </summary>
-    public CombatCalculator.DamageResult ApplyDamageToOpponentPetLocally(int amount)
+    /// <param name="amount">The base damage amount</param>
+    /// <param name="source">The original source of the damage</param>
+    public CombatCalculator.DamageResult ApplyDamageToOpponentPetLocally(int amount, DamageSource source)
     {
         if (amount <= 0) 
         {
@@ -299,7 +311,7 @@ public class HealthManager
         opponentPetBlock -= result.BlockConsumed;
         if (opponentPetBlock < 0) opponentPetBlock = 0;
 
-        Debug.Log($"ApplyDamageToOpponentPetLocally: Incoming={amount}, Est. Block={result.BlockConsumed}, RemainingDamage={result.DamageAfterBlock}");
+        Debug.Log($"ApplyDamageToOpponentPetLocally: Incoming={amount}, Source={source}, Est. Block={result.BlockConsumed}, RemainingDamage={result.DamageAfterBlock}");
         
         if (result.DamageAfterBlock > 0)
         {
@@ -334,11 +346,14 @@ public class HealthManager
         
         // Apply Thorns Damage Back
         int opponentPetThorns = gameManager.GetPlayerManager().GetOpponentPetThorns();
-        if (opponentPetThorns > 0)
+        if (opponentPetThorns > 0 && source != DamageSource.PlayerSelfThorns)
         {
-            Debug.Log($"Opponent Pet has {opponentPetThorns} Thorns! Dealing damage back to Player.");
-            // Player attacked Opponent Pet, so damage Player
-            DamageLocalPlayer(opponentPetThorns, false, DamageSource.OpponentPetThorns); // Mark this as thorns damage to prevent infinite loops
+            Debug.Log($"Opponent Pet has {opponentPetThorns} Thorns! Dealing damage back to Player (Source was {source}).");
+            DamageLocalPlayer(opponentPetThorns, false, DamageSource.OpponentPetThorns);
+        }
+        else if (opponentPetThorns > 0 && source == DamageSource.PlayerSelfThorns)
+        {
+            Debug.Log($"Opponent Pet has {opponentPetThorns} Thorns, but skipping reflection because source was PlayerSelfThorns.");
         }
 
         // Trigger damage number popup if damage was dealt
@@ -359,15 +374,17 @@ public class HealthManager
     /// Processes damage dealt by the local player to the opponent's pet.
     /// Applies the damage locally and notifies the opponent via RPC.
     /// </summary>
-    public void DamageOpponentPet(int amount)
+    /// <param name="amount">Damage amount</param>
+    /// <param name="source">The original source of the damage (e.g., card attack, thorns)</param>
+    public void DamageOpponentPet(int amount, DamageSource source = DamageSource.PlayerSelfAttack)
     {
         if (amount <= 0) return;
         
         PlayerManager playerManager = gameManager.GetPlayerManager();
         Player opponentPlayer = playerManager.GetOpponentPlayer();
         
-        // Deal damage locally first
-        CombatCalculator.DamageResult result = ApplyDamageToOpponentPetLocally(amount);
+        // Deal damage locally first, passing the source
+        CombatCalculator.DamageResult result = ApplyDamageToOpponentPetLocally(amount, source);
         
         if (opponentPlayer != null)
         {
@@ -490,14 +507,6 @@ public class HealthManager
         if (updateUIImmediate)
         {
             gameManager.UpdateHealthUI();
-        }
-        
-        // Add damage numbers if damage was dealt
-        DamageNumberManager damageManager = gameManager.GetDamageNumberManager();
-        if (damageManager != null)
-        {
-            GameObject ownPetObject = gameManager.GetCombatUIManager().GetOwnPetUIArea();
-            damageManager.ShowDamageNumber(finalDamageAmount, ownPetObject, false);
         }
     }
     
@@ -648,37 +657,27 @@ public class HealthManager
     {
         if (amount <= 0) return;
         int effectiveMaxHP = GetEffectivePlayerMaxHealth();
-        int previousHealth = localPlayerHealth;
-        localPlayerHealth += amount;
-        if (localPlayerHealth > effectiveMaxHP) localPlayerHealth = effectiveMaxHP;
-        
-        if (localPlayerHealth != previousHealth) // Only log and update if health changed
-        {
-             Debug.Log($"Healed Local Player by {amount}. New health: {localPlayerHealth} / {effectiveMaxHP}");
-             gameManager.UpdateHealthUI();
-             // --- ADDED: Update Property ---
-             UpdatePlayerStatProperties(CombatStateManager.PLAYER_COMBAT_PLAYER_HP_PROP);
-             // --- END ADDED ---
-        }
+        int previousHealth = localPlayerHealth; // Store previous health for comparison
 
-        // Calculate how much healing to apply
-        int actualHealing = Mathf.Min(amount, GetEffectivePlayerMaxHealth() - localPlayerHealth);
-        
-        // Apply healing
+        // Calculate how much healing can actually be applied (don't exceed max HP)
+        int actualHealing = Mathf.Min(amount, effectiveMaxHP - localPlayerHealth);
+
+        if (actualHealing <= 0) return; // No healing needed if already at max HP
+
+        // Apply the calculated healing
         localPlayerHealth += actualHealing;
-        
-        // Update UI
+
+        // Log, update UI, and update properties only if health actually changed
+        Debug.Log($"Healed Local Player by {actualHealing} (requested {amount}). New health: {localPlayerHealth} / {effectiveMaxHP}");
         gameManager.UpdateHealthUI();
-        
-        // Show healing number popup
-        if (actualHealing > 0)
+        UpdatePlayerStatProperties(CombatStateManager.PLAYER_COMBAT_PLAYER_HP_PROP);
+
+        // Show healing number popup for the actual amount healed
+        DamageNumberManager damageManager = gameManager.GetDamageNumberManager();
+        if (damageManager != null)
         {
-            DamageNumberManager damageManager = gameManager.GetDamageNumberManager();
-            if (damageManager != null)
-            {
-                GameObject playerObject = gameManager.GetCombatUIManager().GetPlayerUIArea();
-                damageManager.ShowHealNumber(actualHealing, playerObject);
-            }
+            GameObject playerObject = gameManager.GetCombatUIManager().GetPlayerUIArea();
+            damageManager.ShowHealNumber(actualHealing, playerObject);
         }
     }
 
@@ -686,55 +685,42 @@ public class HealthManager
     {
         if (amount <= 0) return;
         int effectiveMaxHP = GetEffectivePetMaxHealth();
-        int previousHealth = localPetHealth;
-        localPetHealth += amount;
-        if (localPetHealth > effectiveMaxHP) localPetHealth = effectiveMaxHP;
-        
-        Debug.Log($"Healed Local Pet by {amount}. New health: {localPetHealth} / {effectiveMaxHP}");
+        int previousHealth = localPetHealth; // Store previous health for comparison
+
+        // Calculate how much healing can actually be applied (don't exceed max HP)
+        int actualHealing = Mathf.Min(amount, effectiveMaxHP - localPetHealth);
+
+        if (actualHealing <= 0) return; // No healing needed if already at max HP
+
+        // Apply the calculated healing
+        localPetHealth += actualHealing;
+
+        Debug.Log($"Healed Local Pet by {actualHealing} (requested {amount}). New health: {localPetHealth} / {effectiveMaxHP}");
         gameManager.UpdateHealthUI();
-        
-        // --- ADDED: Update pet health property for network sync ---
+
+        // --- Update pet health property for network sync ---
         if (PhotonNetwork.InRoom)
         {
-            // Create a property update for the pet's health
             Hashtable petProps = new Hashtable();
-            
-            // We want to track our own pet's health as a separate property
             petProps.Add(CombatStateManager.PLAYER_COMBAT_PET_HP_PROP, localPetHealth);
-            
-            // Set the custom property
             PhotonNetwork.LocalPlayer.SetCustomProperties(petProps);
             Debug.Log($"Updated local pet health property to {localPetHealth}");
-            
-            // --- ADDED: Notify opponent directly via RPC ---
+
             Player opponentPlayer = gameManager.GetPlayerManager().GetOpponentPlayer();
             if (opponentPlayer != null)
             {
                 Debug.Log($"Sending RpcNotifyOpponentOfLocalPetHealthChange({localPetHealth}) to opponent {opponentPlayer.NickName} after local pet was healed.");
                 gameManager.GetPhotonView().RPC("RpcNotifyOpponentOfLocalPetHealthChange", opponentPlayer, localPetHealth);
             }
-            // --- END ADDED ---
         }
-        // --- END ADDED ---
+        // --- END Update ---
 
-        // Calculate how much healing to apply
-        int actualHealing = Mathf.Min(amount, GetEffectivePetMaxHealth() - localPetHealth);
-        
-        // Apply healing
-        localPetHealth += actualHealing;
-        
-        // Update UI
-        gameManager.UpdateHealthUI();
-        
-        // Show healing number popup
-        if (actualHealing > 0)
+        // Show healing number popup for the actual amount healed
+        DamageNumberManager damageManager = gameManager.GetDamageNumberManager();
+        if (damageManager != null)
         {
-            DamageNumberManager damageManager = gameManager.GetDamageNumberManager();
-            if (damageManager != null)
-            {
-                GameObject ownPetObject = gameManager.GetCombatUIManager().GetOwnPetUIArea();
-                damageManager.ShowHealNumber(actualHealing, ownPetObject);
-            }
+            GameObject ownPetObject = gameManager.GetCombatUIManager().GetOwnPetUIArea();
+            damageManager.ShowHealNumber(actualHealing, ownPetObject);
         }
     }
     
@@ -890,6 +876,15 @@ public class HealthManager
     
     public void ProcessOpponentPetDotEffect()
     {
+        // Use the generic processor to apply damage locally and decrement turns
+        ProcessDoTEffect(
+            ref opponentPetDotTurns,
+            ref opponentPetDotDamage,
+            (damage) => DamageOpponentPet(damage, DamageSource.Other), // Apply damage locally, source is DoT
+            "Opponent Pet (local sim)"
+            // No properties to update here, as opponent health is synced separately
+        );
+        /*
         if (opponentPetDotTurns > 0 && opponentPetDotDamage > 0)
         {
             Debug.Log($"Opponent Pet DoT duration ticking (local sim). Turns remaining: {opponentPetDotTurns - 1}");
@@ -897,6 +892,7 @@ public class HealthManager
             opponentPetDotTurns--; 
             if (opponentPetDotTurns == 0) opponentPetDotDamage = 0; 
         }
+        */
     }
     
     public int GetEffectivePlayerMaxHealth()

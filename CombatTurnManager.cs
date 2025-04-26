@@ -34,9 +34,8 @@ public class CombatTurnManager
         // Reset combo counter at the start of the turn
         playerManager.ResetComboCount();
 
-        // Process turn start effects (like DoT) and decrement buffs/debuffs
+        // Process turn start effects (like DoT) and decrement buffs/debuffs for the PLAYER ONLY
         playerManager.ProcessPlayerTurnStartEffects();
-        playerManager.ProcessLocalPetTurnStartEffects();
         
         // Check for deaths after DoT
         if (playerManager.IsCombatEndedForLocalPlayer()) return; // End turn early if player/pet died
@@ -110,6 +109,8 @@ public class CombatTurnManager
 
         // --- ADDED: Decrement Player Crit Buffs at end of player turn ---
         gameManager.GetPlayerManager()?.GetHealthManager()?.DecrementPlayerCritBuffDurations();
+        // --- ADDED: Decrement Player Strength at end of player turn ---
+        gameManager.GetPlayerManager()?.GetStatusEffectManager()?.DecrementPlayerStrengthAtTurnEnd();
         uiManager.UpdateHealthUI(); // Update UI after decrementing player buffs
         // --- END ADDED ---
 
@@ -155,6 +156,10 @@ public class CombatTurnManager
             }
         }
         Debug.Log("...Opponent Pet Action Phase Finished");
+
+        // --- ADDED: Decrement Opponent Pet Strength after their turn ---
+        gameManager.GetPlayerManager()?.GetStatusEffectManager()?.DecrementOpponentPetStrengthAtTurnEnd();
+        // --- END ADDED ---
 
         uiManager.UpdateHealthUI(); // Update UI after all actions
 

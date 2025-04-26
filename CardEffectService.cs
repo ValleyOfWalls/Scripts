@@ -186,7 +186,7 @@ public class CardEffectService
         switch (targetType)
         {
             case CardDropZone.TargetType.EnemyPet:
-                playerManager.DamageOpponentPet(totalDamage);
+                playerManager.DamageOpponentPet(totalDamage, HealthManager.DamageSource.PlayerSelfAttack);
                 Debug.Log($"Dealt {totalDamage} damage to Opponent Pet. Base: {cardData.damage}, Strength: {playerStrength}");
                 break;
                 

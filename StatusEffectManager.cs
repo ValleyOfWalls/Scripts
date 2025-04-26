@@ -199,26 +199,26 @@ public class StatusEffectManager
     {
         bool weakChanged = localPlayerWeakTurns > 0;
         bool breakChanged = localPlayerBreakTurns > 0;
-        bool thornsChanged = localPlayerThorns > 0; // Thorns don't normally decrement, but Strength does
-        bool strengthChanged = localPlayerStrength > 0;
+        bool thornsChanged = localPlayerThorns > 0; // Check if thorns existed before decrementing
+        // bool strengthChanged = localPlayerStrength > 0; // Removed Strength check from here
 
         if (localPlayerWeakTurns > 0) localPlayerWeakTurns--;
         if (localPlayerBreakTurns > 0) localPlayerBreakTurns--;
-        // Thorns generally don't decay per turn unless specifically designed
-        // if (localPlayerThorns > 0) localPlayerThorns--; 
-        if (localPlayerStrength > 0) localPlayerStrength--; // Strength decays
+        if (localPlayerThorns > 0) localPlayerThorns--; // Uncommented: Decrement Thorns
+        // if (localPlayerStrength > 0) localPlayerStrength--; // Strength decays -> Moved to Turn End
         
-        Debug.Log($"Decremented Player Status. Weak: {localPlayerWeakTurns}, Break: {localPlayerBreakTurns}, Thorns: {localPlayerThorns}, Strength: {localPlayerStrength}");
+        Debug.Log($"Decremented Player Status (Turn Start). Weak: {localPlayerWeakTurns}, Break: {localPlayerBreakTurns}, Thorns: {localPlayerThorns}"); // Removed Strength from log
 
         // --- ADDED: Update Properties if changed ---
         List<string> propsToUpdate = new List<string>();
-        if (weakChanged) propsToUpdate.Add(CombatStateManager.PLAYER_COMBAT_PLAYER_WEAK_PROP);
-        if (breakChanged) propsToUpdate.Add(CombatStateManager.PLAYER_COMBAT_PLAYER_BREAK_PROP);
-        // if (thornsChanged) propsToUpdate.Add(CombatStateManager.PLAYER_COMBAT_PLAYER_THORNS_PROP); // Only if thorns decay
-        if (strengthChanged) propsToUpdate.Add(CombatStateManager.PLAYER_COMBAT_PLAYER_STRENGTH_PROP);
+        if (weakChanged && localPlayerWeakTurns == 0) propsToUpdate.Add(CombatStateManager.PLAYER_COMBAT_PLAYER_WEAK_PROP);
+        if (breakChanged && localPlayerBreakTurns == 0) propsToUpdate.Add(CombatStateManager.PLAYER_COMBAT_PLAYER_BREAK_PROP);
+        if (thornsChanged) propsToUpdate.Add(CombatStateManager.PLAYER_COMBAT_PLAYER_THORNS_PROP); // Uncommented: Add thorns prop if it changed
+        // if (strengthChanged && localPlayerStrength == 0) propsToUpdate.Add(CombatStateManager.PLAYER_COMBAT_PLAYER_STRENGTH_PROP); // Removed Strength property update from here
 
         if (propsToUpdate.Count > 0)
         {
+            // Only update properties whose values actually changed (or expired)
             UpdatePlayerStatusProperties(type: null, propertyKeysToUpdate: propsToUpdate.ToArray());
         }
         // --- END ADDED ---
@@ -226,11 +226,29 @@ public class StatusEffectManager
     
     public void DecrementLocalPetStatusEffects()
     {
+        bool weakChanged = localPetWeakTurns > 0;
+        bool breakChanged = localPetBreakTurns > 0;
+        bool thornsChanged = localPetThorns > 0;
+        bool strengthChanged = localPetStrength > 0;
+
         if (localPetWeakTurns > 0) localPetWeakTurns--;
         if (localPetBreakTurns > 0) localPetBreakTurns--;
-        // if (localPetThorns > 0) localPetThorns--; // Decrement Thorns if needed
+        if (localPetThorns > 0) localPetThorns--; // Uncommented: Decrement Thorns
         if (localPetStrength > 0) localPetStrength--; // Decrement Strength
+
         Debug.Log($"Decremented Local Pet Status. Weak: {localPetWeakTurns}, Break: {localPetBreakTurns}, Thorns: {localPetThorns}, Strength: {localPetStrength}");
+
+        // Update relevant pet properties if they changed (specifically if they expired or thorns decremented)
+        List<string> propsToUpdate = new List<string>();
+        if (weakChanged && localPetWeakTurns == 0) propsToUpdate.Add(CombatStateManager.PLAYER_COMBAT_PET_WEAK_PROP);
+        if (breakChanged && localPetBreakTurns == 0) propsToUpdate.Add(CombatStateManager.PLAYER_COMBAT_PET_BREAK_PROP);
+        if (thornsChanged) propsToUpdate.Add(CombatStateManager.PLAYER_COMBAT_PET_THORNS_PROP);
+        if (strengthChanged && localPetStrength == 0) propsToUpdate.Add(CombatStateManager.PLAYER_COMBAT_PET_STRENGTH_PROP);
+
+        if (propsToUpdate.Count > 0)
+        {
+            UpdatePetStatusProperties(propsToUpdate.ToArray()); // Call helper to update pet properties
+        }
     }
     
     public void DecrementOpponentPetStatusEffects()
@@ -238,9 +256,44 @@ public class StatusEffectManager
         if (opponentPetWeakTurns > 0) opponentPetWeakTurns--;
         if (opponentPetBreakTurns > 0) opponentPetBreakTurns--;
         // if (opponentPetThorns > 0) opponentPetThorns--; // Decrement Thorns if needed
-        if (opponentPetStrength > 0) opponentPetStrength--; // Decrement Strength
-        Debug.Log($"Decremented Opponent Pet Status (local sim). Weak: {opponentPetWeakTurns}, Break: {opponentPetBreakTurns}, Thorns: {opponentPetThorns}, Strength: {opponentPetStrength}");
+        // if (opponentPetStrength > 0) opponentPetStrength--; // Decrement Strength -> Moved to Turn End
+        Debug.Log($"Decremented Opponent Pet Status (local sim - Turn Start). Weak: {opponentPetWeakTurns}, Break: {opponentPetBreakTurns}, Thorns: {opponentPetThorns}"); // Removed Strength from log
     }
+    
+    public void DecrementOpponentPetThorns()
+    {
+        if (opponentPetThorns > 0)
+        {
+            opponentPetThorns--;
+            Debug.Log($"Decremented Opponent Pet Thorns (local sim). Thorns: {opponentPetThorns}");
+        }
+    }
+    
+    // --- ADDED: Strength Decrement at Turn End ---
+    public void DecrementPlayerStrengthAtTurnEnd()
+    {
+        if (localPlayerStrength > 0)
+        {
+            localPlayerStrength--;
+            Debug.Log($"Decremented Player Strength at Turn End. Remaining: {localPlayerStrength}");
+            // Update property if strength reaches 0
+            if (localPlayerStrength == 0)
+            {
+                UpdatePlayerStatusProperties(type: StatusEffectType.Strength); 
+            }
+        }
+    }
+
+    public void DecrementOpponentPetStrengthAtTurnEnd()
+    {
+        if (opponentPetStrength > 0)
+        {
+            opponentPetStrength--;
+            Debug.Log($"Decremented Opponent Pet Strength at Turn End (local sim). Remaining: {opponentPetStrength}");
+            // Note: Opponent pet strength is purely local simulation, no property update needed here.
+        }
+    }
+    // --- END ADDED ---
     
     #endregion
     
@@ -392,7 +445,7 @@ public class StatusEffectManager
     }
     
     // Helper method to update all pet status properties
-    private void UpdatePetStatusProperties()
+    private void UpdatePetStatusProperties(params string[] propertyKeysToUpdate)
     {
         List<string> petProps = new List<string>
         {
@@ -404,7 +457,10 @@ public class StatusEffectManager
         
         foreach (string prop in petProps)
         {
-            gameManager.GetPlayerManager()?.GetHealthManager()?.UpdatePlayerStatProperties(prop);
+            if (propertyKeysToUpdate.Contains(prop))
+            {
+                gameManager.GetPlayerManager()?.GetHealthManager()?.UpdatePlayerStatProperties(prop);
+            }
         }
     }
     // --- END ADDED ---
